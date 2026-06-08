@@ -767,6 +767,10 @@ function pasteImage(e,i){
 function delImage(i,k){S.book.chapters[i].images.splice(k,1);save();renderCompile();}
 function setCover(input){const f=input.files&&input.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{S.book.cover={data:String(r.result),mime:(f.type||'image/jpeg')};save();renderCompile();};r.readAsDataURL(f);}
 function delCover(){S.book.cover=null;save();renderCompile();}
+function ctaSet(k,v){if(!S.book.cta)S.book.cta={};S.book.cta[k]=v;save();}
+function ctaTemplate(){if(!S.book.cta)S.book.cta={};const c=S.book.cta;c.enabled=true;if(!c.heading)c.heading='読者限定プレゼントのお知らせ';if(!c.linkText)c.linkText='LINEで読者特典を受け取る';c.body='最後までお読みいただき、ありがとうございました。\n\n本書で紹介した内容を、今日からすぐ実践できる「◯◯◯（特典名）」を、読者の方限定で無料プレゼントしています。\n\n受け取りは、下のボタン（公式LINE）にご登録いただくだけ。登録後すぐにお送りします。\n\nあなたの最初の一歩を、心から応援しています。';save();renderCompile();}
+function ctaImage(input){const f=input.files&&input.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{if(!S.book.cta)S.book.cta={};S.book.cta.image={data:String(r.result),mime:(f.type||'image/png')};save();renderCompile();};r.readAsDataURL(f);}
+function ctaDelImage(){if(S.book.cta)S.book.cta.image=null;save();renderCompile();}
 
 /* ---------- 本物のEPUB生成（外部ライブラリなし・ZIPを自前生成） ---------- */
 const _crc=(()=>{let t=[];for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
@@ -790,6 +794,8 @@ function zipStore(files){
 function buildEpub(){
   const ch=S.book.chapters.filter(c=>(c.body||'').trim());
   const title=S.book.title||'無題';
+  const cta=S.book.cta||{};
+  const ctaOn=!!(cta.enabled&&((cta.url||'').trim()||(cta.body||'').trim()||(cta.heading||'').trim()));
   const files=[{name:'mimetype',bytes:sB('application/epub+zip')},
     {name:'META-INF/container.xml',bytes:sB('<?xml version="1.0"?>\n<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>')}];
   const manifest=['<item id="css" href="style.css" media-type="text/css"/>','<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>'];
@@ -817,11 +823,26 @@ function buildEpub(){
       if(l.startsWith('■'))return `<h2>${escXml(l.replace(/^■\s*/,''))}</h2>`;
       return `<p>${escXml(l)}</p>`;}).filter(x=>x).join('\n');
     imgs.forEach((im,k)=>{if(!placed.has(k))body+='\n'+im._tag;});
+    if(ctaOn&&cta.perChapter&&(cta.url||'').trim())body+=`\n<hr/>\n<p style="text-indent:0">▶ ${escXml(cta.linkText||'LINEで読者特典を受け取る')}：<a href="${escXml(cta.url)}">${escXml(cta.url)}</a></p>`;
     const xhtml=`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>${escXml(c.title||'')}</title><link rel="stylesheet" type="text/css" href="style.css"/></head><body><h1>第${i+1}章　${escXml(c.title||'')}</h1>${c.author?`<p>著：${escXml(c.author)}</p>`:''}\n${body}</body></html>`;
     files.push({name:'OEBPS/'+id+'.xhtml',bytes:sB(xhtml)});
     manifest.push(`<item id="${id}" href="${id}.xhtml" media-type="application/xhtml+xml"/>`);
     spine.push(`<itemref idref="${id}"/>`);
     navli.push(`<li><a href="${id}.xhtml">第${i+1}章　${escXml(c.title||'（無題）')}</a></li>`);});
+  if(ctaOn){
+    let cimg='';
+    if(cta.image&&cta.image.data){const cmm=cta.image.mime||'image/png',ce=(cmm==='image/png')?'png':'jpg';
+      files.push({name:'OEBPS/images/cta.'+ce,bytes:b64B((cta.image.data.split(',')[1]||''))});
+      manifest.push(`<item id="cta-img" href="images/cta.${ce}" media-type="${cmm}"/>`);
+      cimg=`<figure><img src="images/cta.${ce}" alt="読者特典のご案内"/></figure>`;}
+    const cbody=(cta.body||'').split(/\n/).map(l=>l.trim()).filter(x=>x).map(l=>`<p>${escXml(l)}</p>`).join('\n');
+    const clink=(cta.url||'').trim()?`<p style="text-align:center;text-indent:0;margin:1.4em 0"><a href="${escXml(cta.url)}" style="display:inline-block;padding:.6em 1.4em;border:2px solid #06c755;border-radius:8px;font-weight:bold;text-decoration:none">${escXml(cta.linkText||'LINEで読者特典を受け取る')}</a></p><p style="text-align:center;text-indent:0;font-size:.9em">${escXml(cta.url)}</p>`:'';
+    const cx=`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>${escXml(cta.heading||'読者特典')}</title><link rel="stylesheet" type="text/css" href="style.css"/></head><body><h1>${escXml(cta.heading||'読者限定プレゼントのお知らせ')}</h1>\n${cbody}\n${cimg}\n${clink}</body></html>`;
+    files.push({name:'OEBPS/cta.xhtml',bytes:sB(cx)});
+    manifest.push('<item id="ctapage" href="cta.xhtml" media-type="application/xhtml+xml"/>');
+    spine.push('<itemref idref="ctapage"/>');
+    navli.push(`<li><a href="cta.xhtml">${escXml(cta.heading||'読者特典')}</a></li>`);
+  }
   const landmarks=`<nav epub:type="landmarks" id="landmarks" hidden="hidden"><h2>ガイド</h2><ol><li><a epub:type="toc" href="nav.xhtml">目次</a></li>${ch.length?`<li><a epub:type="bodymatter" href="ch1.xhtml">本文の先頭</a></li>`:''}</ol></nav>`;
   files.push({name:'OEBPS/nav.xhtml',bytes:sB(`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="ja"><head><meta charset="utf-8"/><title>目次</title></head><body><nav epub:type="toc" id="toc"><h1>目次</h1><ol>${navli.join('')}</ol></nav>${landmarks}</body></html>`)});
   const authors=[...new Set(ch.map(c=>(c.author||'').trim()).filter(Boolean))];
@@ -890,6 +911,27 @@ function renderCompile(){
       <button class="btn gray" id="goUnify" onclick="unifyBook()">🤖 文体を統一（AI）</button>
     </div>
     <div id="mergePreview"></div>
+
+    <h3 style="margin:18px 0 6px;font-size:15px">🎁 巻末の読者特典（LINE誘導）</h3>
+    <p class="muted small">📌 <b>Kindle規約</b>：特典の条件は<b>LINE登録だけ</b>（「レビューしたら特典」はNG）／<b>本そのものを特典にしない</b>（テンプレ・動画など別物に）／<b>個人情報フォームの直リンクはNG・公式LINEはOK</b>。本の<b>いちばん最後のページ</b>に置くのが定番です。</p>
+    <label style="display:block;margin:6px 0"><input type="checkbox" ${(S.book.cta||{}).enabled?'checked':''} onchange="ctaSet('enabled',this.checked)"> 巻末に特典案内ページを入れる</label>
+    <label class="f">特典の見出し</label>
+    <input type="text" value="${esc((S.book.cta||{}).heading||'')}" oninput="ctaSet('heading',this.value)" placeholder="例：読者限定プレゼントのお知らせ">
+    <label class="f">案内文（お礼＋特典の中身＋登録のお願い）</label>
+    <textarea oninput="ctaSet('body',this.value)" placeholder="例：最後までお読みいただきありがとうございました。本書の内容をすぐ実践できる『◯◯テンプレート』を無料でお渡しします。下のボタンから公式LINEにご登録ください。">${esc((S.book.cta||{}).body||'')}</textarea>
+    <div><button class="btn gray" onclick="ctaTemplate()">✍ 案内文のテンプレを入れる</button></div>
+    <div class="row" style="margin-top:8px">
+      <div style="flex:2"><label class="f">公式LINEのURL</label>
+        <input type="text" value="${esc((S.book.cta||{}).url||'')}" oninput="ctaSet('url',this.value)" placeholder="https://lin.ee/xxxxxxx"></div>
+      <div style="flex:1"><label class="f">ボタンの文字</label>
+        <input type="text" value="${esc((S.book.cta||{}).linkText||'')}" oninput="ctaSet('linkText',this.value)" placeholder="LINEで読者特典を受け取る"></div>
+    </div>
+    <label class="f" style="margin-top:8px">QRコード／バナー画像（任意）</label>
+    <div class="row" style="align-items:center;gap:10px">
+      <label class="btn ok" style="cursor:pointer;display:inline-block">🖼 画像を選ぶ<input type="file" accept="image/*" style="display:none" onchange="ctaImage(this)"></label>
+      ${(S.book.cta||{}).image&&S.book.cta.image.data?`<img src="${S.book.cta.image.data}" style="height:60px;border:1px solid #ccc;border-radius:4px"><button class="btn gray" onclick="ctaDelImage()">画像を外す</button>`:'<span class="muted small">スマホで読む読者向けにLINEのQRコードを入れると親切です</span>'}
+    </div>
+    <label style="display:block;margin:8px 0"><input type="checkbox" ${(S.book.cta||{}).perChapter?'checked':''} onchange="ctaSet('perChapter',this.checked)"> 各章の最後にも短い特典リンクを入れる（戦略メモ推奨）</label>
 
     <h3 style="margin:18px 0 6px;font-size:15px">メタデータ（Kindle提出用）</h3>
     <label class="f">内容紹介文</label>
