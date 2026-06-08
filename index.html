@@ -418,7 +418,11 @@ function renderGuide(){
       <b>はじめての人が止まりやすいTOP5</b>
       <ol style="margin:6px 0 0;padding-left:18px">${GUIDE_PITFALLS.map(x=>`<li style="margin:3px 0">${x}</li>`).join('')}</ol>
     </div>
-    <div class="row" style="margin-top:12px">
+    <div class="row" style="margin-top:10px">
+      <button class="btn ok" onclick="renderKdp()">📤 KDPにアップする手順</button>
+      <button class="btn ok" onclick="renderStrategy()">🏆 1位をたくさん取る施策</button>
+    </div>
+    <div class="row" style="margin-top:8px">
       <button class="btn" onclick="startGuideAct()">▶ さっそく始める（最初の画面へ）</button>
       <button class="btn gray" onclick="exportGuide()">⬇ ガイドを保存（テキスト）</button>
     </div>
@@ -431,6 +435,31 @@ function exportGuide(){
   GUIDE.forEach(p=>{t+=`■ STEP ${p.n}：${p.t}（目安 ${p.time}）\n`;if(p.note)t+=`  ヒント：${p.note}\n`;p.items.forEach(x=>t+=`  ・${x}\n`);t+='\n';});
   t+='■ 止まりやすいTOP5\n'+GUIDE_PITFALLS.map((x,i)=>`  ${i+1}. ${x}`).join('\n')+'\n';
   dl('はじめての出版ガイド.txt',t);
+}
+const KDPSTEPS=[
+ {tab:'① Kindle本の詳細',items:['言語：日本語','タイトル：検索される言葉を自然に入れる','サブタイトル：ベネフィット＋読者を明確に','著者：ペンネーム可。共著は「寄稿者」に他メンバーを追加','内容紹介：最初の2行で引き込む→章の要点→巻末LINE特典→行動喚起','キーワード7枠：検索語＋ニッチ語（1枠2〜3語OK）','カテゴリ3つ：競合の弱いニッチ枝に散らす（1位の肝）','権利：「著作権を保有」を選択']},
+ {tab:'② コンテンツ',items:['原稿：このアプリの 📗EPUB をアップロード','表紙：表紙画像をアップ（またはCover Creator）','プレビュー(Kindle Previewer)で目次・改ページ・図・特典を必ず確認','ISBN不要（ASINが自動付与）']},
+ {tab:'③ 価格設定',items:['KDPセレクトに登録（無料キャンペーン＆70%印税枠が使える）','出版地域：すべての地域','価格：¥250〜¥1,250で印税70%／未満は35%','無料配布は「無料キャンペーン」を週末に設定','「出版」→ 審査は通常72時間以内に販売開始']}
+];
+const STRATEGY=[
+ {t:'カテゴリ選び（最重要）',d:'大部門でなく深い枝（例：副業／モチベーション）を狙う。無料中は無料ランキングで競うので1位を取りやすい。3枠は違う枝に散らして同時1位を狙う。'},
+ {t:'キーワード7枠',d:'読者が実際に検索する語＋ニッチ語。タイトル・サブタイトル・説明文と言葉を一致させると検索で当たりやすい。'},
+ {t:'ローンチの初速',d:'無料キャンペーン5日を週末に。複数人＋知人で同時刻に一斉DL＆拡散。1日に朝・昼・夜の3回告知。'},
+ {t:'1位スクショを資産に',d:'「○○部門 1位」が取れたらスクショを保存→次の宣伝（帯・SNS）の素材にする。'},
+ {t:'レビュー（規約内）',d:'自然なお願いはOK。ただし「レビューしたら特典」はNG（特典条件はLINE登録のみ）。'},
+ {t:'価格の段階',d:'無料で順位を上げる→終了後 ¥99→¥250 と段階的に。カウントダウンセールで再ブースト。'},
+ {t:'リスト＆シリーズ',d:'巻末・各章末のLINEで読者を育て、次回作の発売・無料化を通知→毎回の初速に。シリーズ化で相互送客。'},
+ {t:'継続が最強',d:'ニッチに複数冊出すほど「1位の数」が増える（リスト×ランキングの複利）。'}
+];
+function renderKdp(){
+  const tabs=KDPSTEPS.map(s=>`<div class="card" style="background:#fafbff"><b>${s.tab}</b><ul style="margin:6px 0 0;padding-left:18px">${s.items.map(x=>`<li style="margin:3px 0">${x}</li>`).join('')}</ul></div>`).join('');
+  document.getElementById('guideCard').innerHTML=`<div class="card"><h2>📤 KDPにアップする手順</h2><p class="muted">KDPの「本棚 → ＋新しいタイトルを作成 → Kindle本」で、3つのタブを上から埋めるだけ。途中保存OK。</p>${tabs}<div class="card" style="background:#fff7ed;border:1px solid #fed7aa"><b>内容紹介文のコツ</b><div class="small" style="margin-top:4px">最初の2行で「悩み→解決」を提示／章の要点を箇条書き／巻末LINE特典を告知／最後に行動喚起。</div></div><div class="row" style="margin-top:12px"><button class="btn" onclick="renderStrategy()">🏆 次：1位を取る施策 →</button><button class="btn gray" onclick="renderGuide()">← ガイドへ戻る</button></div></div>`;
+  window.scrollTo(0,0);
+}
+function renderStrategy(){
+  const list=STRATEGY.map((s,i)=>`<div class="card" style="background:#fafbff"><b>${i+1}. ${s.t}</b><div class="small muted" style="margin-top:3px">${s.d}</div></div>`).join('');
+  document.getElementById('guideCard').innerHTML=`<div class="card"><h2>🏆 1位をたくさん取る施策</h2><p class="muted">核心：<b>競合の弱いニッチ部門を複数</b>押さえ、<b>無料キャンペーンで初速を集中</b>させると、複数部門で同時に「1位」を取れます。</p>${list}<div class="card" style="background:#eef6ff;border:1px solid #bcdcff"><b>ローンチ当日の例</b><div class="small" style="margin-top:4px">金0時=無料開始／金 朝昼夜=一斉拡散／土=順位確認＆1位スクショ／日=「今日まで」告知／月=有料(¥99〜)に戻す。</div></div><div class="row" style="margin-top:12px"><button class="btn gray" onclick="renderKdp()">← KDP手順へ</button><button class="btn gray" onclick="renderGuide()">← ガイドへ戻る</button></div></div>`;
+  window.scrollTo(0,0);
 }
 
 function count(){const n=(S.body||'').replace(/\s/g,'').length;const t=chapterTarget();
