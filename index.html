@@ -66,6 +66,7 @@
   .pastezone{border:2px dashed #b9c2d0;border-radius:10px;padding:14px;min-height:60px;width:100%;text-align:center;color:#6b7280;
     cursor:text;margin-top:8px;background:#fcfcff;font-size:14px;font-family:inherit;resize:none;line-height:1.6}
   .pastezone:focus,.pastezone.active{outline:none;border-color:var(--brand);background:var(--brand-soft)}
+  .choice.sel{border-color:var(--brand);background:var(--brand-soft);box-shadow:0 0 0 2px var(--brand-soft) inset}
 </style>
 </head>
 <body>
@@ -79,8 +80,32 @@
   <!-- HOME -->
   <section id="home">
     <div class="card">
+      <h2>① まず、出版のしかたを選ぶ</h2>
+      <div class="home-choices" style="margin-bottom:4px">
+        <div class="choice" id="modeSolo" onclick="setMode(false)">
+          <div class="emo">👤</div>
+          <b>ひとりで出す</b>
+          <span>はじめての人向け。あなた一人で全部の章を書いて1冊にします。</span>
+        </div>
+        <div class="choice" id="modeCo" onclick="setMode(true)">
+          <div class="emo">👥</div>
+          <b>複数人で1冊（共著）</b>
+          <span>仲間と分担して1冊に。何人で出すか選べます（5人・6人・10人など）。</span>
+        </div>
+      </div>
+      <div id="countPick" style="margin-top:12px">
+        <label class="f" id="countLabel">章の数</label>
+        <div class="row" id="countQuick" style="flex-wrap:wrap;gap:6px"></div>
+        <div class="row" style="margin-top:8px;align-items:center;gap:8px">
+          <span class="muted small">自由に指定：</span>
+          <input type="number" min="1" max="50" id="people" style="width:90px" oninput="S.people=Math.max(1,parseInt(this.value)||1);save();renderModeUI();updTarget()">
+          <span class="muted small" id="countUnit">章</span>
+        </div>
+      </div>
+    </div>
+    <div class="card">
       <h2>はじめましょう</h2>
-      <p class="muted">本を書いたことがなくても大丈夫。流れは <b>① ChatGPTで書く → ② 貼るだけで電子書籍に → ③ 5人の章を1冊に</b> の3ステップです。</p>
+      <p class="muted" id="introText">本を書いたことがなくても大丈夫。流れは <b>① ChatGPTで書く → ② 貼るだけで電子書籍に → ③ 章を1冊にまとめる</b> の3ステップです。</p>
       <div class="home-choices">
         <div class="choice" onclick="startTemplate()" style="border-color:var(--brand)">
           <div class="emo">💬</div>
@@ -94,31 +119,27 @@
         </div>
         <div class="choice" onclick="startCompile()">
           <div class="emo">📚</div>
-          <b>5人の章を1冊にまとめる</b>
-          <span>統括の人へ。各章を結合し、Kindle提出物（原稿＋メタデータ）を作ります</span>
+          <b id="compileTitle">章を1冊にまとめる</b>
+          <span id="compileDesc">書いた章を結合して、Kindle提出物（原稿＋メタデータ＋EPUB）を作ります</span>
         </div>
       </div>
     </div>
     <div class="card">
-      <h2 style="font-size:16px">本のプロジェクト設定（5人で共有）</h2>
-      <p class="muted small">テーマと全体の目標文字数を決めると、1人あたり（＝あなたの章）の目標が自動で出ます。</p>
-      <label class="f">本のテーマ（5人共通）</label>
+      <h2 style="font-size:16px" id="projTitle">本の設定</h2>
+      <p class="muted small">テーマと全体の目標文字数を決めると、1章あたりの目標が自動で出ます。</p>
+      <label class="f" id="themeLabel">本のテーマ</label>
       <input type="text" id="theme" placeholder="例：30代女性のための小さな副業のはじめ方" oninput="S.theme=this.value;save()">
-      <div class="row" style="margin-top:6px">
-        <div style="flex:1"><label class="f">全体の目標文字数</label>
-          <input type="text" id="totalTarget" placeholder="25000" oninput="S.totalTarget=parseInt(this.value)||0;save();updTarget()"></div>
-        <div style="flex:1"><label class="f">人数（＝章の数）</label>
-          <input type="text" id="people" placeholder="5" oninput="S.people=parseInt(this.value)||1;save();updTarget()"></div>
-      </div>
+      <label class="f" style="margin-top:6px">全体の目標文字数</label>
+      <input type="text" id="totalTarget" placeholder="25000" oninput="S.totalTarget=parseInt(this.value)||0;save();updTarget()">
       <div class="hint" id="targetHint"></div>
       <label class="f">AIキー（任意・入れると本物のAIが文章を書き起こします）</label>
       <input type="password" id="apiKey" placeholder="sk-ant-... （Anthropicのキー。空ならデモ動作）" oninput="S.apiKey=this.value;save()">
       <p class="muted small">※キーはこのブラウザだけに保存され、AnthropicのAIに直接送られます。本番アプリでは統括が1つ用意して共有する想定です。</p>
     </div>
 
-    <div class="card">
+    <div class="card" id="authorCard">
       <h2 style="font-size:16px">この章の担当者（共著用）</h2>
-      <p class="muted small">5人で1冊なので、自分の名前と担当章を入れておくと、あとで結合しやすくなります。</p>
+      <p class="muted small">複数人で1冊なので、自分の名前と担当章を入れておくと、あとで結合しやすくなります。</p>
       <div class="row">
         <input type="text" id="author" placeholder="あなたの名前（例：田中）" style="flex:1" oninput="save()">
         <input type="text" id="chapTitle" placeholder="担当する章タイトル（例：第2章 まず1万円稼ぐ）" style="flex:2" oninput="save()">
@@ -161,7 +182,7 @@
 const S = {
   step:1, mode:'new',
   author:'', chapTitle:'',
-  theme:'', totalTarget:25000, people:5, apiKey:'',
+  theme:'', totalTarget:25000, people:5, coauthor:true, apiKey:'',
   reader:'', goal:'', type:'', outline:['','',''], memos:{}, body:'', edited:'',
   tmplPaste:'', tmplResult:'',
   talk:{}, deep:{}, talkStep:0,
@@ -169,7 +190,29 @@ const S = {
 };
 function chapterTarget(){return Math.max(500,Math.round((S.totalTarget||25000)/(S.people||5)));}
 function updTarget(){const el=document.getElementById('targetHint');if(el)el.innerHTML=
-  `📏 あなたの章の目標：<b>約 ${chapterTarget().toLocaleString()} 字</b>（小見出し3〜5個）。Kindleのビジネス書は全体2万〜2.5万字が標準。5人なら1人あたり約5,000字が目安です。`;}
+  `📏 ${S.coauthor?'1人（＝1章）':'1章'}あたりの目標：<b>約 ${chapterTarget().toLocaleString()} 字</b>（小見出し3〜5個）。Kindleのビジネス書は全体2万〜2.5万字が標準です。`;}
+function setMode(co){S.coauthor=!!co;if(co&&(S.people||1)<2)S.people=5;if(!co&&!(S.people>=1))S.people=5;save();renderModeUI();updTarget();}
+function setCount(n){S.people=Math.max(1,n);save();renderModeUI();updTarget();}
+function renderModeUI(){
+  const co=!!S.coauthor;
+  const ms=document.getElementById('modeSolo'),mc=document.getElementById('modeCo');
+  if(ms&&mc){ms.classList.toggle('sel',!co);mc.classList.toggle('sel',co);}
+  const cl=document.getElementById('countLabel');if(cl)cl.textContent=co?'人数（＝章の数）':'章の数';
+  const cu=document.getElementById('countUnit');if(cu)cu.textContent=co?'人':'章';
+  const picks=co?[2,3,5,6,10]:[3,4,5,6,7];
+  const q=document.getElementById('countQuick');
+  if(q)q.innerHTML=picks.map(n=>`<button class="btn ${ (S.people||5)===n?'':'gray'}" onclick="setCount(${n})">${n}${co?'人':'章'}</button>`).join('');
+  const pe=document.getElementById('people');if(pe&&document.activeElement!==pe)pe.value=S.people||5;
+  const intro=document.getElementById('introText');
+  if(intro)intro.innerHTML=co
+    ?'本を書いたことがなくても大丈夫。流れは <b>① ChatGPTで書く → ② 貼るだけで電子書籍に → ③ みんなの章を1冊に</b> の3ステップです。'
+    :'本を書いたことがなくても大丈夫。流れは <b>① ChatGPTで書く → ② 貼るだけで電子書籍に → ③ 章を1冊にまとめる</b> の3ステップです。';
+  const pt=document.getElementById('projTitle');if(pt)pt.textContent=co?'本のプロジェクト設定（みんなで共有）':'本の設定';
+  const tl=document.getElementById('themeLabel');if(tl)tl.textContent=co?'本のテーマ（みんな共通）':'本のテーマ';
+  const ct=document.getElementById('compileTitle');if(ct)ct.textContent=co?'みんなの章を1冊にまとめる':'章を1冊にまとめて出版';
+  const cd=document.getElementById('compileDesc');if(cd)cd.textContent=co?'統括の人へ。各章を結合し、Kindle提出物（原稿＋メタデータ）を作ります':'書いた章を結合して、Kindle提出物（原稿＋メタデータ＋EPUB）を作ります';
+  const ac=document.getElementById('authorCard');if(ac)ac.style.display=co?'':'none';
+}
 function bar(cur,target){const p=Math.min(100,Math.round(cur/target*100));
   return `<div style="background:#eef0f4;border-radius:99px;height:14px;overflow:hidden"><div style="width:${p}%;height:100%;background:${p>=100?'var(--ok)':'var(--brand)'};transition:.3s"></div></div>
   <div class="small muted" style="margin-top:4px">${cur.toLocaleString()} / ${target.toLocaleString()} 字（${p}%）</div>`;}
@@ -183,6 +226,7 @@ function load(){
   set('author',S.author||'');set('chapTitle',S.chapTitle||'');
   set('theme',S.theme||'');set('totalTarget',S.totalTarget||25000);set('people',S.people||5);
   set('apiKey',S.apiKey||'');
+  renderModeUI();
   updTarget();
 }
 function val(id){const e=document.getElementById(id);return e?e.value:''}
@@ -800,8 +844,8 @@ function renderCompile(){
   const total=ch.reduce((s,c)=>s+(c.body||'').replace(/\s/g,'').length,0);
   document.getElementById('compileCard').innerHTML=`
    <div class="card">
-    <h2>📚 5人の章を1冊にまとめる（統括用）</h2>
-    <p class="muted">まず<b>「誰がどの章を、どんなねらいで」</b>を決めて<b>設計図を5人に配る</b>と、共著でもバラバラになりません。各章がそろったら結合→Kindle用に書き出します。</p>
+    <h2>📚 ${S.coauthor?'みんなの章を1冊にまとめる（統括用）':'章を1冊にまとめて出版'}</h2>
+    <p class="muted">${S.coauthor?'まず<b>「誰がどの章を、どんなねらいで」</b>を決めて<b>設計図を配る</b>と、共著でもバラバラになりません。各章がそろったら結合→Kindle用に書き出します。':'各章を書いて並べ、結合→Kindle用（EPUB）に書き出します。表紙も設定できます。'}</p>
     <label class="f">本のタイトル</label>
     <input type="text" value="${esc(S.book.title)}" oninput="S.book.title=this.value;save()" placeholder="例：はじめての小さな副業">
     <label class="f">サブタイトル</label>
