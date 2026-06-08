@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kindle共著ライター（プロトタイプ）</title>
+<style>
+  :root{
+    --bg:#f6f7fb; --card:#ffffff; --ink:#1f2430; --sub:#6b7280;
+    --brand:#3b5bdb; --brand-soft:#e7ecff; --ok:#2f9e44; --line:#e5e7eb;
+    --warn:#fff4e6; --warn-ink:#b35309;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Hiragino Kaku Gothic ProN","Yu Gothic UI",Meiryo,system-ui,sans-serif;
+    background:var(--bg);color:var(--ink);line-height:1.7;}
+  header{background:var(--brand);color:#fff;padding:14px 20px;display:flex;align-items:center;gap:12px;
+    position:sticky;top:0;z-index:10;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+  header h1{font-size:18px;margin:0;font-weight:700}
+  header .tag{font-size:12px;background:rgba(255,255,255,.2);padding:2px 8px;border-radius:99px}
+  .wrap{max-width:860px;margin:0 auto;padding:24px 16px 80px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;margin-bottom:18px;
+    box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  h2{font-size:20px;margin:0 0 4px}
+  .muted{color:var(--sub);font-size:14px}
+  button{font-family:inherit;cursor:pointer;border:none;border-radius:10px;font-size:15px;padding:11px 18px;transition:.15s}
+  .btn{background:var(--brand);color:#fff;font-weight:700}
+  .btn:hover{filter:brightness(1.07)}
+  .btn.ghost{background:var(--brand-soft);color:var(--brand)}
+  .btn.gray{background:#eef0f4;color:#444}
+  .btn.ok{background:var(--ok);color:#fff}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .home-choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:14px}
+  .choice{border:2px solid var(--line);border-radius:14px;padding:20px;text-align:center;cursor:pointer;background:#fff;transition:.15s}
+  .choice:hover{border-color:var(--brand);background:var(--brand-soft)}
+  .choice .emo{font-size:34px}
+  .choice b{display:block;margin:6px 0 4px;font-size:16px}
+  .choice span{font-size:13px;color:var(--sub)}
+  /* progress */
+  .steps{display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap}
+  .pill{flex:1;min-width:54px;text-align:center;font-size:11px;color:var(--sub);padding:6px 4px;border-radius:8px;background:#eef0f4}
+  .pill.active{background:var(--brand);color:#fff;font-weight:700}
+  .pill.done{background:#d3f9d8;color:#2b8a3e}
+  label.f{display:block;font-weight:700;margin:14px 0 6px}
+  input[type=text],textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:12px;font:inherit;background:#fff}
+  textarea{min-height:160px;resize:vertical}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+  .chip{background:var(--brand-soft);color:var(--brand);border:1px solid #cdd9ff;border-radius:99px;padding:7px 12px;font-size:13px;cursor:pointer}
+  .chip:hover{background:#d7e1ff}
+  .hint{background:var(--warn);color:var(--warn-ink);border-radius:10px;padding:10px 12px;font-size:13px;margin:10px 0}
+  .navrow{display:flex;justify-content:space-between;margin-top:20px}
+  .counter{font-size:13px;color:var(--sub);text-align:right;margin-top:6px}
+  .outline-item{display:flex;gap:8px;align-items:center;margin:8px 0}
+  .outline-item input{flex:1}
+  .small{font-size:13px}
+  /* 添削 */
+  .diff{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+  .diff .box{border:1px solid var(--line);border-radius:10px;padding:12px;font-size:14px}
+  .diff .box h4{margin:0 0 6px;font-size:13px;color:var(--sub)}
+  .feedback li{margin:6px 0}
+  .badge{display:inline-block;background:#d3f9d8;color:#2b8a3e;border-radius:99px;font-size:12px;padding:2px 10px;font-weight:700}
+  .savebar{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);
+    padding:8px 16px;font-size:12px;color:var(--sub);text-align:center}
+  .hide{display:none}
+  .center{text-align:center}
+  .pastezone{border:2px dashed #b9c2d0;border-radius:10px;padding:14px;min-height:60px;width:100%;text-align:center;color:#6b7280;
+    cursor:text;margin-top:8px;background:#fcfcff;font-size:14px;font-family:inherit;resize:none;line-height:1.6}
+  .pastezone:focus,.pastezone.active{outline:none;border-color:var(--brand);background:var(--brand-soft)}
+</style>
+</head>
+<body>
+<header>
+  <h1>📖 Kindle共著ライター</h1>
+  <span class="tag">プロトタイプ（使いやすさ確認用）</span>
+</header>
+
+<div class="wrap">
+
+  <!-- HOME -->
+  <section id="home">
+    <div class="card">
+      <h2>はじめましょう</h2>
+      <p class="muted">本を書いたことがなくても大丈夫。流れは <b>① ChatGPTで書く → ② 貼るだけで電子書籍に → ③ 5人の章を1冊に</b> の3ステップです。</p>
+      <div class="home-choices">
+        <div class="choice" onclick="startTemplate()" style="border-color:var(--brand)">
+          <div class="emo">💬</div>
+          <b>ChatGPTで下書きを作る</b>
+          <span>まだ決まっていない人へ。コピペ用の質問テンプレで、ChatGPTが上手にまとめてくれます</span>
+        </div>
+        <div class="choice" onclick="startConvert()" style="border-color:var(--ok)">
+          <div class="emo">📋</div>
+          <b>貼るだけで電子書籍に</b>
+          <span>ChatGPT等で完成した文章を、句読点・添削・見出しまで整えてKindle用に</span>
+        </div>
+        <div class="choice" onclick="startCompile()">
+          <div class="emo">📚</div>
+          <b>5人の章を1冊にまとめる</b>
+          <span>統括の人へ。各章を結合し、Kindle提出物（原稿＋メタデータ）を作ります</span>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2 style="font-size:16px">本のプロジェクト設定（5人で共有）</h2>
+      <p class="muted small">テーマと全体の目標文字数を決めると、1人あたり（＝あなたの章）の目標が自動で出ます。</p>
+      <label class="f">本のテーマ（5人共通）</label>
+      <input type="text" id="theme" placeholder="例：30代女性のための小さな副業のはじめ方" oninput="S.theme=this.value;save()">
+      <div class="row" style="margin-top:6px">
+        <div style="flex:1"><label class="f">全体の目標文字数</label>
+          <input type="text" id="totalTarget" placeholder="25000" oninput="S.totalTarget=parseInt(this.value)||0;save();updTarget()"></div>
+        <div style="flex:1"><label class="f">人数（＝章の数）</label>
+          <input type="text" id="people" placeholder="5" oninput="S.people=parseInt(this.value)||1;save();updTarget()"></div>
+      </div>
+      <div class="hint" id="targetHint"></div>
+      <label class="f">AIキー（任意・入れると本物のAIが文章を書き起こします）</label>
+      <input type="password" id="apiKey" placeholder="sk-ant-... （Anthropicのキー。空ならデモ動作）" oninput="S.apiKey=this.value;save()">
+      <p class="muted small">※キーはこのブラウザだけに保存され、AnthropicのAIに直接送られます。本番アプリでは統括が1つ用意して共有する想定です。</p>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:16px">この章の担当者（共著用）</h2>
+      <p class="muted small">5人で1冊なので、自分の名前と担当章を入れておくと、あとで結合しやすくなります。</p>
+      <div class="row">
+        <input type="text" id="author" placeholder="あなたの名前（例：田中）" style="flex:1" oninput="save()">
+        <input type="text" id="chapTitle" placeholder="担当する章タイトル（例：第2章 まず1万円稼ぐ）" style="flex:2" oninput="save()">
+      </div>
+    </div>
+  </section>
+
+  <!-- TALK（話しながらまとめる・旧／未使用） -->
+  <section id="talk" class="hide">
+    <div id="talkCard"></div>
+  </section>
+
+  <!-- TEMPLATE（ChatGPT用 コピペテンプレ） -->
+  <section id="tmpl" class="hide">
+    <div id="tmplCard"></div>
+  </section>
+
+  <!-- CONVERT（貼るだけ電子書籍化） -->
+  <section id="convert" class="hide">
+    <div id="convertCard"></div>
+  </section>
+
+  <!-- COMPILE（5人の章を1冊に） -->
+  <section id="compile" class="hide">
+    <div id="compileCard"></div>
+  </section>
+
+  <!-- WIZARD -->
+  <section id="wizard" class="hide">
+    <div class="steps" id="steps"></div>
+    <div class="card" id="stepCard"></div>
+  </section>
+
+</div>
+
+<div class="savebar" id="savebar">💾 自動保存：このブラウザに保存中（閉じても続きから書けます）</div>
+
+<script>
+/* ---------- データ ---------- */
+const S = {
+  step:1, mode:'new',
+  author:'', chapTitle:'',
+  theme:'', totalTarget:25000, people:5, apiKey:'',
+  reader:'', goal:'', type:'', outline:['','',''], memos:{}, body:'', edited:'',
+  tmplPaste:'', tmplResult:'',
+  talk:{}, deep:{}, talkStep:0,
+  book:{chapters:[],title:'',subtitle:'',desc:'',keywords:'',cats:'',manuscript:''}
+};
+function chapterTarget(){return Math.max(500,Math.round((S.totalTarget||25000)/(S.people||5)));}
+function updTarget(){const el=document.getElementById('targetHint');if(el)el.innerHTML=
+  `📏 あなたの章の目標：<b>約 ${chapterTarget().toLocaleString()} 字</b>（小見出し3〜5個）。Kindleのビジネス書は全体2万〜2.5万字が標準。5人なら1人あたり約5,000字が目安です。`;}
+function bar(cur,target){const p=Math.min(100,Math.round(cur/target*100));
+  return `<div style="background:#eef0f4;border-radius:99px;height:14px;overflow:hidden"><div style="width:${p}%;height:100%;background:${p>=100?'var(--ok)':'var(--brand)'};transition:.3s"></div></div>
+  <div class="small muted" style="margin-top:4px">${cur.toLocaleString()} / ${target.toLocaleString()} 字（${p}%）</div>`;}
+function save(){
+  S.author=val('author'); S.chapTitle=val('chapTitle');
+  try{localStorage.setItem('kdpwriter', JSON.stringify(S));}catch(e){/* 画像など容量超過時も落ちないように */}
+}
+function load(){
+  const r=localStorage.getItem('kdpwriter'); if(r){Object.assign(S,JSON.parse(r));}
+  const set=(id,v)=>{const e=document.getElementById(id);if(e)e.value=v;};
+  set('author',S.author||'');set('chapTitle',S.chapTitle||'');
+  set('theme',S.theme||'');set('totalTarget',S.totalTarget||25000);set('people',S.people||5);
+  set('apiKey',S.apiKey||'');
+  updTarget();
+}
+function val(id){const e=document.getElementById(id);return e?e.value:''}
+
+/* ---------- ジャンル別 自動補完サンプル（ビジネス/副業） ---------- */
+const SUGGEST = {
+  reader:["副業を始めたいけど何からか分からない会社員","在宅で月3万円の収入を作りたい主婦","時間がない中で小さく稼ぎたい初心者"],
+  goal:["最初の1万円を稼ぐまでの最短ステップが分かる","自分に合う副業を1つ選べるようになる","今日から動ける具体的な手順を持ち帰れる"],
+  outlineByType:{
+    "結論→理由→具体例→まとめ":["結論：まず◯◯から始めよう","なぜそれが初心者向きなのか","実際にやってみた具体例","まとめと次の一歩"],
+    "ストーリー型（体験談）":["うまくいかなかった頃の話","転機になった気づき","やってみた結果どう変わったか","あなたへのメッセージ"],
+    "ノウハウ列挙型":["ポイント①","ポイント②","ポイント③","つまずきやすい注意点"]
+  }
+};
+
+/* ---------- ステップ定義 ---------- */
+const STEPS = ["読者とゴール","章の型","小見出し","言いたいこと","書く","AI添削","仕上げ"];
+
+function startNew(){S.mode='new';S.step=1;show();}
+function startPaste(){S.mode='paste';S.step=5;show();}
+
+function screen(name){['home','talk','tmpl','convert','compile','wizard'].forEach(s=>document.getElementById(s).classList.toggle('hide',s!==name));}
+function show(){
+  save();
+  screen('wizard');
+  renderSteps(); renderStep();
+  window.scrollTo(0,0);
+}
+function renderSteps(){
+  document.getElementById('steps').innerHTML = STEPS.map((t,i)=>{
+    const n=i+1; let c='pill'; if(n<S.step)c+=' done'; if(n===S.step)c+=' active';
+    return `<div class="${c}">${n}. ${t}</div>`;
+  }).join('');
+}
+
+function renderStep(){
+  const c=document.getElementById('stepCard');
+  if(S.step===1){
+    c.innerHTML=`
+      <h2>① 読者とゴールを決める</h2>
+      <p class="muted">「誰の」「どうなる」を1文で。下の候補を押すと自動で入ります（あとで直せます）。</p>
+      <label class="f">この章は誰に向けて書く？</label>
+      <div class="chips">${SUGGEST.reader.map(t=>`<span class="chip" onclick="fill('reader','${t}')">${t}</span>`).join('')}</div>
+      <input type="text" id="reader" placeholder="例：副業を始めたい会社員" value="${esc(S.reader)}" oninput="S.reader=this.value;save()">
+      <label class="f">読み終えたら、その人はどうなる？（ゴール）</label>
+      <div class="chips">${SUGGEST.goal.map(t=>`<span class="chip" onclick="fill('goal','${t}')">${t}</span>`).join('')}</div>
+      <input type="text" id="goal" placeholder="例：最初の1万円を稼ぐ手順が分かる" value="${esc(S.goal)}" oninput="S.goal=this.value;save()">
+      <div class="hint">💡 ここが決まると、このあとの見出しもAIが提案しやすくなります。</div>
+      ${nav(false,true)}`;
+  }
+  else if(S.step===2){
+    const types=Object.keys(SUGGEST.outlineByType);
+    c.innerHTML=`
+      <h2>② 章の「型」を選ぶ</h2>
+      <p class="muted">迷ったら一番上でOK。型を選ぶと、次のステップで見出しの下書きが自動で入ります。</p>
+      ${types.map(t=>`
+        <div class="choice" style="text-align:left;margin:10px 0;${S.type===t?'border-color:var(--brand);background:var(--brand-soft)':''}" onclick="S.type='${t}';save();renderStep()">
+          <b>${t}</b>
+          <span>${typeDesc(t)}</span>
+        </div>`).join('')}
+      ${nav(true,true,S.type!=='')}`;
+  }
+  else if(S.step===3){
+    if(S.type && (!S.outline.some(Boolean))){
+      S.outline = (SUGGEST.outlineByType[S.type]||['','','']).slice();
+    }
+    c.innerHTML=`
+      <h2>③ 小見出しを先に作る</h2>
+      <p class="muted">いきなり本文を書かず、まず「見出しだけ」。3〜5個でOK。型に合わせて下書きが入っています。</p>
+      <div id="outlineList">${S.outline.map((o,i)=>outlineRow(o,i)).join('')}</div>
+      <button class="btn ghost" onclick="addOutline()">＋ 見出しを追加</button>
+      ${nav(true,true,S.outline.filter(Boolean).length>=2)}`;
+  }
+  else if(S.step===4){
+    const items=S.outline.filter(Boolean);
+    c.innerHTML=`
+      <h2>④ 各見出しに「言いたいこと1つ」をメモ</h2>
+      <p class="muted">完璧じゃなくていい。1行ずつ、伝えたいことをメモするだけ。</p>
+      ${items.map((o,i)=>`
+        <label class="f">${i+1}. ${esc(o)}</label>
+        <input type="text" placeholder="ここで言いたいことを1行で" value="${esc(S.memos[o]||'')}" oninput="S.memos['${esc(o)}']=this.value;save()">
+      `).join('')}
+      ${nav(true,true)}`;
+  }
+  else if(S.step===5){
+    if(S.mode==='new' && !S.body){
+      // メモから話し言葉のたたき台を自動生成
+      const items=S.outline.filter(Boolean);
+      S.body = items.map(o=>`■ ${o}\n${S.memos[o]?S.memos[o]+'。':'（ここに、上の見出しの内容を話すように書いてみましょう）'}\n`).join('\n');
+    }
+    c.innerHTML=`
+      <h2>⑤ 書く（まず書き切るモード）</h2>
+      <p class="muted">きれいに書こうとしないで、話すように一気に。あとでAIが整えます。${S.mode==='paste'?'<b>※貼り付けはここに。</b>':''}</p>
+      <textarea id="body" placeholder="ここに本文を書く / 貼り付ける" oninput="S.body=this.value;save();count()">${esc(S.body)}</textarea>
+      <div class="counter" id="cnt"></div>
+      <div class="row" style="margin-top:8px"><button class="btn gray" id="mic_body" onclick="startVoice('body')">🎤 話して入力</button><span class="muted small">しゃべって書いてもOK（Chrome推奨）</span></div>
+      ${nav(true,true,true,'AIに添削してもらう →')}`;
+    setTimeout(count,0);
+  }
+  else if(S.step===6){
+    c.innerHTML=`
+      <h2>⑥ AI添削（ベストセラー視点・強め）</h2>
+      <p class="muted">読みやすさ・構成・「最後まで読まれる工夫」「章末でLINE特典に自然につなぐ」までチェックします。</p>
+      <div class="center" style="margin:16px 0"><button class="btn" id="goEdit" onclick="runEdit()">🤖 この文章を添削する</button></div>
+      <div id="editResult"></div>
+      ${nav(true,true,true,'仕上げへ →')}`;
+  }
+  else if(S.step===7){
+    const text=S.edited||S.body;
+    c.innerHTML=`
+      <h2>⑦ 仕上げ・章を書き出す <span class="badge">完成</span></h2>
+      <p class="muted">この章を1ファイルで書き出します。統括の人がこれを集めて1冊に結合します。</p>
+      <div class="card" style="background:#fafbff">
+        <div class="small muted">担当：${esc(S.author||'（名前未入力）')} ／ ${esc(S.chapTitle||'（章タイトル未入力）')}</div>
+        <div class="small muted">読者：${esc(S.reader)}｜ゴール：${esc(S.goal)}</div>
+      </div>
+      <div class="row" style="margin-top:14px">
+        <button class="btn ok" onclick="exportChapter()">⬇️ この章を書き出す（.txt）</button>
+        <button class="btn gray" onclick="copyText()">📋 本文をコピー</button>
+      </div>
+      <div class="hint" style="margin-top:16px">
+        📌 Kindle提出物（原稿の結合・タイトル/紹介文/キーワード/カテゴリ・規約チェック）は、本番アプリで統括画面がまとめて出力します。ここはプロトタイプなので章の書き出しまでを体験できます。
+      </div>
+      ${nav(true,false)}`;
+  }
+  renderSteps();
+}
+
+/* ---------- 部品 ---------- */
+function outlineRow(o,i){return `<div class="outline-item"><span>•</span>
+  <input type="text" value="${esc(o)}" placeholder="見出し ${i+1}" oninput="S.outline[${i}]=this.value;save()">
+  <button class="btn gray" onclick="delOutline(${i})">×</button></div>`}
+function addOutline(){S.outline.push('');save();renderStep()}
+function delOutline(i){S.outline.splice(i,1);save();renderStep()}
+function typeDesc(t){return ({
+  "結論→理由→具体例→まとめ":"いちばん分かりやすい王道。初心者におすすめ。",
+  "ストーリー型（体験談）":"自分の体験を語る。共感されやすい。",
+  "ノウハウ列挙型":"コツを並べる。実用書向き。"})[t]||''}
+function fill(k,v){S[k]=v;save();renderStep()}
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+function nav(back,next,canNext=true,nextLabel='次へ →'){
+  return `<div class="navrow">
+    ${back?`<button class="btn gray" onclick="prev()">← 戻る</button>`:`<button class="btn gray" onclick="goHome()">← 最初へ</button>`}
+    ${next?`<button class="btn" onclick="nextStep()" ${canNext?'':'disabled'}>${nextLabel}</button>`:`<span></span>`}
+  </div>`;
+}
+function nextStep(){ if(S.step<7){S.step++; if(S.mode==='paste'&&S.step<5)S.step=5; save();renderStep();window.scrollTo(0,0);} }
+function prev(){ if(S.step>1){S.step--; if(S.mode==='paste'&&S.step<5){goHome();return;} save();renderStep();window.scrollTo(0,0);} }
+function goHome(){screen('home');load();}
+
+function count(){const n=(S.body||'').replace(/\s/g,'').length;const t=chapterTarget();
+  const el=document.getElementById('cnt');if(el)el.innerHTML=`この章の目標 約${t.toLocaleString()}字（小見出し3〜5個）${bar(n,t)}`;}
+
+/* ---------- AI添削（モック：本番はClaude API） ---------- */
+function runEdit(){
+  const btn=document.getElementById('goEdit'); btn.textContent='添削中…'; btn.disabled=true;
+  setTimeout(()=>{
+    const before=(S.body||'').trim();
+    // 簡易デモ整形：長い文を句点で改行、冒頭フックと章末フックを足す
+    let body=before.replace(/。/g,'。\n').replace(/\n{3,}/g,'\n\n');
+    const hook = `【ここがポイント】${S.goal||'この章で得られること'}を、最後まで読めば必ず持ち帰れます。\n\n`;
+    const cta = `\n\n――最後まで読んでくれてありがとうございます。この章の「実践チェックリスト」を読者限定でLINEにご用意しました（登録するだけで受け取れます）。`;
+    S.edited = hook + body.trim() + cta;
+    save();
+    document.getElementById('editResult').innerHTML = `
+      <div class="diff">
+        <div class="box"><h4>あなたの文章（前）</h4>${esc(before).replace(/\n/g,'<br>')||'<span class=muted>本文が空です</span>'}</div>
+        <div class="box" style="border-color:#cdd9ff;background:#fafbff"><h4>添削後（例）</h4>${esc(S.edited).replace(/\n/g,'<br>')}</div>
+      </div>
+      <h4 style="margin:16px 0 4px">なぜ直したか（ベストセラー視点）</h4>
+      <ul class="feedback small">
+        <li>✅ <b>冒頭にフック</b>を追加：読者が「自分に関係ある」と感じ、読み進めやすくなります。</li>
+        <li>✅ <b>一文を短く改行</b>：スマホで読む人が多いKindleでは、短い文ほど離脱しにくいです。</li>
+        <li>✅ <b>章末でLINE特典へ自然に誘導</b>：規約OKの形（登録のみが条件・レビュー誘導なし）で導線を設置。</li>
+        <li>💡 さらに良くするなら：具体例を1つ足すと説得力が上がります。</li>
+      </ul>
+      <div class="hint">※これはプロトタイプのサンプル添削です。本番では Claude API が、あなたの文章に合わせて本格的に添削・提案します。</div>`;
+  }, 700);
+}
+
+/* ---------- 書き出し ---------- */
+function exportChapter(){
+  const text=`【章タイトル】${S.chapTitle||''}\n【担当】${S.author||''}\n【読者】${S.reader||''}\n【ゴール】${S.goal||''}\n\n`+ (S.edited||S.body||'');
+  const blob=new Blob([text],{type:'text/plain;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=(S.chapTitle||'章')+'.txt';a.click();
+}
+function copyText(){navigator.clipboard.writeText(S.edited||S.body||'').then(()=>alert('本文をコピーしました'))}
+
+/* ---------- 話しながらまとめるモード ---------- */
+const TALK_Q=[
+  {k:'reader', q:'どんな人の役に立ちたいですか？', ex:'顔が思い浮かぶ知り合いでもOK（昔の自分、友だち…）。', ph:'例：副業を始めたいけど何からか分からない人'},
+  {k:'pain',   q:'その人は今、どんなことで困っていますか？', ex:'思いつくまま書いてOK。', ph:'例：時間がない、何が自分に合うか分からない'},
+  {k:'say',    q:'あなたが伝えたいこと・体験・気づきは？', ex:'箇条書きでも、しゃべるみたいに書いてもOK。ここが章の中身になります。', ph:'例：私も最初は不安だった。でも、まず◯◯をしたら…', big:true},
+  {k:'become', q:'読み終わった人に、どうなってほしいですか？', ex:'一言でOK。', ph:'例：今日から一歩踏み出せる気持ちになってほしい'},
+  {k:'free',   q:'ほかにも、言いたいこと・エピソード・想いは？', ex:'なければスキップでOK。', ph:'自由に…（🎤でしゃべって入力もできます）', big:true, optional:true}
+];
+/* 深掘り質問：素材を増やして“要約”を“章”に育てる */
+const DEEP_Q=[
+  {k:'episode', q:'具体的なエピソードを1つ', ex:'「いつ・どこで・何があった」が入ると一気に面白くなります。'},
+  {k:'number',  q:'数字や事実はありますか？', ex:'例：3ヶ月で◯円／毎日10分／5人中4人。説得力が増します。'},
+  {k:'fail',    q:'失敗・遠回りした経験は？', ex:'読者は「成功談」より「つまずき」に共感します。'},
+  {k:'step',    q:'読者が“今日できる最初の一歩”は？', ex:'具体的な行動を1つ。章の締めに使えます。'}
+];
+function startTalk(){S.mode='talk';S.talk=S.talk||{};S.deep=S.deep||{};S.talkStep=0;save();screen('talk');renderTalk();window.scrollTo(0,0);}
+function renderTalk(){
+  const i=S.talkStep, q=TALK_Q[i], id='talk_'+q.k;
+  document.getElementById('talkCard').innerHTML=`
+   <div class="card">
+    <div class="steps">${TALK_Q.map((_,n)=>`<div class="pill ${n<i?'done':''} ${n===i?'active':''}">${n+1}</div>`).join('')}</div>
+    <h2>${q.q}</h2>
+    <p class="muted">${q.ex}</p>
+    <textarea id="${id}" placeholder="${q.ph}" oninput="S.talk['${q.k}']=this.value;save()">${esc(S.talk[q.k]||'')}</textarea>
+    <div class="row" style="margin-top:8px">
+      <button class="btn gray" id="mic_${id}" onclick="startVoice('${id}')">🎤 話して入力</button>
+      <span class="muted small">マイクでしゃべると文字になります（Chrome推奨）</span>
+    </div>
+    <div class="navrow">
+      <button class="btn gray" onclick="talkPrev()">← ${i===0?'最初へ':'戻る'}</button>
+      ${i<TALK_Q.length-1
+        ? `<button class="btn" onclick="talkNext()">${q.optional?'スキップ / ':''}次へ →</button>`
+        : `<button class="btn" onclick="renderDeep()">次へ（深掘り）→</button>`}
+    </div>
+   </div>`;
+}
+function talkNext(){if(S.talkStep<TALK_Q.length-1){S.talkStep++;save();renderTalk();window.scrollTo(0,0);}}
+function talkPrev(){if(S.talkStep>0){S.talkStep--;save();renderTalk();window.scrollTo(0,0);}else{goHome();}}
+
+function renderDeep(){
+  document.getElementById('talkCard').innerHTML=`
+   <div class="card">
+    <h2>もう少し深掘りしましょう 🔍</h2>
+    <p class="muted">ここに答えるほど、章の中身が濃く・長くなります（この章の目標：約${chapterTarget().toLocaleString()}字）。分かるものだけでOK。</p>
+    ${DEEP_Q.map(q=>{const id='deep_'+q.k;return `
+      <label class="f">${q.q}</label>
+      <p class="muted small">${q.ex}</p>
+      <textarea id="${id}" oninput="S.deep['${q.k}']=this.value;save()">${esc((S.deep||{})[q.k]||'')}</textarea>
+      <div class="row" style="margin:6px 0 2px"><button class="btn gray" id="mic_${id}" onclick="startVoice('${id}')">🎤 話して入力</button></div>`;}).join('')}
+    <div class="navrow">
+      <button class="btn gray" onclick="S.talkStep=TALK_Q.length-1;renderTalk()">← 質問にもどる</button>
+      <button class="btn ok" onclick="summarizeTalk()">🪄 章の形にまとめる</button>
+    </div>
+   </div>`;
+}
+
+/* 話した素材を“小見出し付きの章”に展開（本番はClaude APIが本文を膨らませる） */
+function summarizeTalk(){
+  const t=S.talk||{}, d=S.deep||{};
+  S.reader=t.reader||S.reader;
+  S.goal=t.become||S.goal;
+  const secs=[
+    {h:'はじめに｜こんなこと、ありませんか？', body:(t.pain?t.pain+'\n':'')+'——もしそうなら、この章はあなたのために書きました。', thin:!t.pain, prompt:'読者が「自分のことだ」と感じる場面を具体的に'},
+    {h:'私の体験・きっかけ', body:[d.fail,d.episode,t.say].filter(Boolean).join('\n'), thin:!(d.episode||d.fail), prompt:'いつ・どこで・何があったか（エピソード）'},
+    {h:'具体的な方法・ポイント', body:[t.say,d.number].filter(Boolean).join('\n'), thin:!d.number, prompt:'手順や数字（◯ヶ月で◯、毎日◯分 など）'},
+    {h:'つまずきやすいポイント', body:d.fail||'', thin:!d.fail, prompt:'読者が陥りがちな失敗と、その回避法'},
+    {h:'まとめ｜今日からの一歩', body:(d.step?'まずはこれだけ。'+d.step+'\n':'')+(t.become?`この章を読み終えたら、${t.become}——そう願っています。`:''), thin:!d.step, prompt:'読者が今日できる小さな行動を1つ'}
+  ];
+  S.outline=secs.map(s=>s.h);
+  S.memos={};
+  S.body=secs.map(s=>{
+    let b='■ '+s.h+'\n'+(s.body||'');
+    if(s.thin && s.prompt) b+=`\n✍️【もっと具体的に：${s.prompt}】`;
+    return b;
+  }).join('\n\n');
+  S.type=S.type||'結論→理由→具体例→まとめ';
+  save(); renderTalkSummary(); window.scrollTo(0,0);
+}
+function renderTalkSummary(){
+  const n=(S.body||'').replace(/\s/g,'').length, t=chapterTarget(), short=n<t;
+  document.getElementById('talkCard').innerHTML=`
+   <div class="card">
+    <h2>🪄 話を「小見出し付きの章」にしました <span class="badge">下書き</span></h2>
+    <p class="muted">${S.theme?'テーマ「'+esc(S.theme)+'」に沿って、':''}章の骨組みに整理しました。<b>※今はまだ“話し言葉のまま”です。下の「🤖AIに書き起こし」で読みやすい本の文章に変わります。</b></p>
+    <label class="f">目標まであとどれくらい？</label>
+    ${bar(n,t)}
+    ${short
+      ? `<div class="hint">⚠️ いま約${n.toLocaleString()}字。目標 約${t.toLocaleString()}字にはまだ足りません。<b>各見出しの「✍️もっと具体的に」を埋める／「← 深掘りに戻る」で素材を足す</b>と伸びます。<br>本番ではここで <b>Claude APIが各見出しを自動で膨らませ</b>、目標字数まで読みごたえのある文章に仕上げます。</div>`
+      : `<div class="hint" style="background:#d3f9d8;color:#2b8a3e">✅ 目標字数に到達！このままAI添削へ進めます。</div>`}
+    <label class="f">読者 / ゴール</label>
+    <input type="text" value="${esc(S.reader)}" oninput="S.reader=this.value;save()" placeholder="読者">
+    <input type="text" style="margin-top:6px" value="${esc(S.goal)}" oninput="S.goal=this.value;save()" placeholder="ゴール">
+    <label class="f">小見出し（章の骨組み）</label>
+    <div>${S.outline.map((o,i)=>`<div class="outline-item"><span>•</span><input type="text" value="${esc(o)}" oninput="S.outline[${i}]=this.value;save()"><button class="btn gray" onclick="S.outline.splice(${i},1);save();renderTalkSummary()">×</button></div>`).join('')}</div>
+    <button class="btn ghost" onclick="S.outline.push('');save();renderTalkSummary()">＋ 見出しを追加</button>
+    <label class="f">本文の下書き（小見出し付き）</label>
+    <textarea style="min-height:240px" oninput="S.body=this.value;save()">${esc(S.body)}</textarea>
+    <div class="center" style="margin:12px 0"><button class="btn" id="goAiWrite" onclick="aiRewrite('talk')">🤖 AIに“本の文章”へ書き起こしてもらう</button></div>
+    <div id="aiMsg" class="small"></div>
+    <div class="navrow">
+      <button class="btn gray" onclick="renderDeep()">← 深掘りに戻る</button>
+      <button class="btn ok" onclick="startFromSummary()">✍️ この内容でAI添削へ →</button>
+    </div>
+   </div>`;
+}
+function startFromSummary(){S.mode='new';S.step=5;save();screen('wizard');renderSteps();renderStep();window.scrollTo(0,0);}
+
+/* ---------- 本物のClaudeで「本の文章」に書き起こす ---------- */
+const REWRITE_SYS=`あなたは年間何冊もベストセラーを生み出すプロの編集者・ブックライターです。
+著者が「話し言葉」で語ったメモや、AIで作った下書きを受け取り、読者が引き込まれる「本の本文」にリライトします。
+ルール：
+- 要約しない。具体例・情景・たとえを足して、読者が場面を思い浮かべられるよう膨らませる。
+- 話し言葉のクセ（えーと/なんか/〜みたいな/同じ語の繰り返し）は消し、自然で読みやすい書き言葉にする。
+- 著者の体験・主張・人柄（声）は残す。事実・数字・固有名詞を捏造しない。不明な点は一般化して書く。
+- 構成を作る：内容に合った【小見出し】を3〜5個付け、結論→理由→具体例→まとめ の流れで読ませる。
+- 冒頭に読者を引き込むフック、章末に「次が読みたくなる一言」を置く。
+- スマホで読みやすい短めの文・段落。
+- 目標文字数に届くよう内容を深める（同じ事の水増しはしない）。
+- 出力は本文のみ。前置き・解説・「以下が〜」などは書かない。`;
+async function callClaude(system,user,maxTokens){
+  const key=(S.apiKey||'').trim(); if(!key) throw new Error('AIキーが未入力です');
+  const res=await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({model:'claude-opus-4-8',max_tokens:maxTokens||8000,system,messages:[{role:'user',content:user}]})
+  });
+  if(!res.ok) throw new Error('API '+res.status+'：'+(await res.text()).slice(0,200));
+  const data=await res.json();
+  return (data.content||[]).map(b=>b.text||'').join('').trim();
+}
+async function aiRewrite(kind){
+  const btnId=kind==='talk'?'goAiWrite':'goConv';
+  const btn=document.getElementById(btnId), orig=btn?btn.textContent:'';
+  const msgBox=document.getElementById(kind==='talk'?'aiMsg':'convResult');
+  if(!(S.apiKey||'').trim()){
+    if(msgBox)msgBox.innerHTML=`<div class="hint">🔑 本物のAIで“面白い本の文章に書き直す”には、最初の画面の「AIキー」にAnthropicのキーを入れてください。<br><b>キー無しのデモは、文章を整える（句読点・改行）だけで、話し言葉を本の文章に書き直すことはできません。</b>書き直しは本物のAIが必要です。</div>`;
+    return;
+  }
+  if(btn){btn.textContent='🤖 AIが書き起こし中…（20〜40秒）';btn.disabled=true;}
+  try{
+    const ctx=`本のテーマ：${S.theme||'(未設定)'}\n読者：${S.reader||'(未設定)'}\n読者に届けたいゴール：${S.goal||'(未設定)'}\n目標文字数：約${chapterTarget()}字`;
+    const user=`${ctx}\n\n--- 著者が話した／下書きした素材（これを本にする）---\n${S.body||''}\n\n上の素材を、上記テーマ・読者に向けた「本の本文」にリライトしてください。`;
+    const out=await callClaude(REWRITE_SYS,user,8000);
+    if(kind==='talk'){ S.body=out; save(); renderTalkSummary(); }
+    else { S.edited=out; save(); renderConvResult(true); }
+  }catch(e){
+    if(msgBox)msgBox.innerHTML=`<div class="hint">⚠️ エラー：${esc(String(e.message||e))}<br>キーが正しいか・ネット接続をご確認ください。</div>`;
+  }finally{ if(btn){btn.textContent=orig;btn.disabled=false;} }
+}
+
+/* ---------- 貼るだけで“売れる電子書籍”に（変換モード） ---------- */
+function startConvert(){S.mode='convert';save();screen('convert');renderConvert();window.scrollTo(0,0);}
+function renderConvert(){
+  document.getElementById('convertCard').innerHTML=`
+   <div class="card">
+    <h2>📋 貼るだけで“売れる電子書籍”に ✨</h2>
+    <p class="muted">ChatGPTなどで作った文章・ストーリーを貼ってください。<b>AIが「本の文章」に書き直し</b>、句読点・誤字・改行・小見出し・売れる要素まで整えてKindleに出せる形にします。</p>
+    <label class="f">できあがった文章を貼り付け</label>
+    <textarea id="cbody" style="min-height:200px" placeholder="ここに全文を貼り付け（章ごとでも、まるごとでもOK）" oninput="S.body=this.value;save();cvCount()">${esc(S.body)}</textarea>
+    <div class="counter" id="cvcnt"></div>
+    <div class="row" style="margin-top:8px"><button class="btn gray" id="mic_cbody" onclick="startVoice('cbody')">🎤 話して入力</button></div>
+    <div class="center" style="margin:16px 0">
+      <button class="btn ok" onclick="copyConvertPolishPrompt()">📋 ChatGPTで本格リライト（無料・コピペ）</button>
+      <button class="btn" id="goConv" onclick="aiRewrite('convert')">🤖 AIで本格リライト（要キー）</button>
+      <button class="btn gray" onclick="runConvert()">デモ整形（キー不要・整えるだけ）</button>
+    </div>
+    <div class="hint"><b>📋 無料で使う場合：</b>左ボタンで「プロ編集者プロンプト＋上の文章」を一発コピー → ChatGPTに貼って実行 → 出てきた仕上げ文章を下の貼り戻し欄に貼る → 「この結果を採用する」で電子書籍化。</div>
+    <div id="convPasteBox" style="display:none;margin-top:14px;padding-top:14px;border-top:2px dashed #b6e6c4">
+      <label class="f"><b>📥 ChatGPTで仕上げた文章をここに貼り戻す</b></label>
+      <textarea id="convPaste" class="pastezone" style="min-height:200px" placeholder="ChatGPTからの仕上げ結果を貼り付け"></textarea>
+      <div class="row" style="margin-top:8px"><button class="btn ok" onclick="applyConvertPaste()">✨ この結果を採用する（電子書籍化へ）</button></div>
+    </div>
+    <div id="convResult"></div>
+    <div class="navrow"><button class="btn gray" onclick="goHome()">← 最初へ</button><span></span></div>
+   </div>`;
+  setTimeout(cvCount,0);
+}
+function cvCount(){const n=(S.body||'').replace(/\s/g,'').length,t=chapterTarget();
+  const el=document.getElementById('cvcnt');if(el)el.innerHTML=`目安 約${t.toLocaleString()}字${bar(n,t)}`;}
+function copyConvertPolishPrompt(){
+  const src=(S.body||'').trim();
+  if(!src){alert('まず上の欄に文章を貼ってください'); return;}
+  const ctx=`本のテーマ：${S.theme||'(未設定)'}\n読者：${S.reader||'(未設定)'}\n読者に届けたいゴール：${S.goal||'(未設定)'}\n目標文字数：約${chapterTarget()}字`;
+  const full=`${REWRITE_SYS}\n\n${ctx}\n\n--- 素材 ---\n${src}\n\n上の素材を、上記テーマ・読者に向けた「本の本文」にリライトしてください。出力は本文のみで、前置きや解説は書かないでください。`;
+  try{navigator.clipboard.writeText(full);}catch(e){}
+  const box=document.getElementById('convPasteBox'); if(box){box.style.display='block'; setTimeout(()=>box.scrollIntoView({behavior:'smooth',block:'start'}),50);}
+  alert('✅ プロンプトをコピーしました。\n① ChatGPTに貼って実行\n② 出てきた仕上げ文章を、下の貼り戻し欄に貼って「✨ この結果を採用する」をクリック');
+}
+function applyConvertPaste(){
+  const el=document.getElementById('convPaste');
+  const v=el?el.value.trim():'';
+  if(!v){alert('まず貼り付けてください'); return;}
+  S.edited=v; save(); renderConvResult(true);
+  window.scrollTo(0,document.body.scrollHeight);
+}
+function kw(){const base=(S.theme||'').replace(/[、。]/g,' ').split(/\s+/).filter(s=>s.length>=2).slice(0,4);
+  return (base.length?base:['副業','初心者','在宅','スマホ']).join('／');}
+function runConvert(){
+  let txt=(S.body||'').trim();
+  txt=txt.replace(/，/g,'、').replace(/．/g,'。').replace(/!/g,'！').replace(/\?/g,'？')
+         .replace(/、+/g,'、').replace(/。+/g,'。').replace(/[ \t]+/g,' ');
+  const read=txt.split(/\n+/).map(p=>p.trim()).filter(Boolean).map(p=>p.replace(/。/g,'。\n').trim()).join('\n\n');
+  const hook=`【この章でわかること】${S.goal||S.theme||'読み終えたら、次の一歩がはっきりします'}。\n\n`;
+  const cta=`\n\n――最後まで読んでくれてありがとうございます。読者限定の特典を公式LINEでお渡ししています（登録するだけで受け取れます）。`;
+  S.edited=hook+read.trim()+cta; save(); renderConvResult(false);
+  window.scrollTo(0,document.body.scrollHeight);
+}
+function renderConvResult(isAI){
+  const n=(S.edited||'').replace(/\s/g,'').length,t=chapterTarget(),ok=n>=t;
+  document.getElementById('convResult').innerHTML=`
+    <h4 style="margin:14px 0 6px">${isAI?'🤖 AIが「本の文章」に書き起こしました':'チェック結果（デモ整形）'}</h4>
+    ${isAI?'':`<ul class="feedback small">
+      <li>✅ 句読点・記号を統一（，．!? → 、。！？）</li>
+      <li>✅ スマホで読みやすい改行・段落に整理</li>
+      <li>⚠️ ただし<b>話し言葉のままです</b>。読者が引き込まれる本の文章に書き直すには、上の「🤖 AIで本格リライト」を使ってください（要キー）。</li>
+    </ul>`}
+    ${bar(n,t)}
+    <div class="diff">
+      <div class="box"><h4>元の文章（前）</h4>${esc((S.body||'').trim()).replace(/\n/g,'<br>')||'<span class=muted>空です</span>'}</div>
+      <div class="box" style="border-color:#cdd9ff;background:#fafbff"><h4>${isAI?'AIリライト後':'整えた後'}</h4>${esc(S.edited).replace(/\n/g,'<br>')}</div>
+    </div>
+    <h4 style="margin:16px 0 6px">売れる要素（メタデータ提案）</h4>
+    <div class="card" style="background:#fafbff">
+      <div class="small"><b>タイトル候補：</b>${esc(S.theme||'（テーマ未入力）')}〜${esc(S.reader||'読者')}のための一冊〜</div>
+      <div class="small"><b>紹介文：</b>${esc(S.reader||'こんな方')}へ。${esc(S.goal||'読めば次の一歩がわかります')}。</div>
+      <div class="small"><b>キーワード案：</b>${kw()}</div>
+      <div class="small"><b>カテゴリ：</b>競合の弱いニッチ3枠を選定（戦略プラン参照）</div>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn ok" onclick="exportChapter()">⬇️ Kindle用に書き出し</button>
+      <button class="btn gray" onclick="copyText()">📋 コピー</button>
+    </div>`;
+}
+
+/* ---------- 5人の章を1冊にまとめる（統括モード） ---------- */
+function startCompile(){
+  S.mode='compile';
+  if(!S.book) S.book={chapters:[],title:'',subtitle:'',desc:'',keywords:'',cats:'',manuscript:''};
+  const p=S.people||5; while(S.book.chapters.length<p) S.book.chapters.push({author:'',title:'',body:''});
+  if(!S.book.chapters[0].body && (S.edited||S.body)) S.book.chapters[0]={author:S.author||'',title:S.chapTitle||'第1章',body:S.edited||S.body};
+  if(!S.book.title && S.theme) S.book.title=S.theme;
+  if(!S.book.desc && (S.reader||S.goal)) S.book.desc=`${S.reader||'こんな方'}へ。${S.goal||'読めば次の一歩がわかります'}。`;
+  if(!S.book.keywords) S.book.keywords=kw();
+  save(); screen('compile'); renderCompile(); window.scrollTo(0,0);
+}
+function moveChapter(i,d){const a=S.book.chapters,j=i+d;if(j<0||j>=a.length)return;[a[i],a[j]]=[a[j],a[i]];save();renderCompile();}
+function delChapter(i){S.book.chapters.splice(i,1);save();renderCompile();}
+function addChapter(){S.book.chapters.push({author:'',title:'',body:''});save();renderCompile();}
+function importChapter(i,input){
+  const f=input.files&&input.files[0]; if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{let txt=String(r.result||'');
+    const m=txt.match(/【章タイトル】(.*)/); if(m && !S.book.chapters[i].title) S.book.chapters[i].title=m[1].trim();
+    txt=txt.replace(/^【[^】]*】.*$/gm,'').replace(/^\s+/,'');
+    S.book.chapters[i].body=txt.trim(); save(); renderCompile();
+  };
+  r.readAsText(f,'utf-8');
+}
+function styleOf(t){const polite=(t.match(/(です|ます)/g)||[]).length;const plain=(t.match(/(である|だ[。、])/g)||[]).length;return polite>=plain?'敬体':'常体';}
+function mergeBook(){
+  const ch=S.book.chapters.filter(c=>(c.body||'').trim());
+  if(!ch.length){document.getElementById('mergePreview').innerHTML='<div class="hint">本文が入った章がありません。</div>';return;}
+  const toc=ch.map((c,i)=>`${i+1}. ${c.title||'（無題）'}${c.author?'（'+c.author+'）':''}`).join('\n');
+  const body=ch.map((c,i)=>`第${i+1}章　${c.title||''}\n${c.author?'（著：'+c.author+'）\n':''}\n${(c.body||'').trim()}`).join('\n\n＊　＊　＊\n\n');
+  S.book.manuscript=`${S.book.title||'（タイトル未定）'}\n${S.book.subtitle||''}\n\n― 目次 ―\n${toc}\n\n========================\n\n${body}`;
+  save();
+  const total=ch.reduce((s,c)=>s+(c.body||'').replace(/\s/g,'').length,0);
+  const styles=ch.map((c,i)=>({i,s:styleOf(c.body||'')}));
+  const mixed=new Set(styles.map(x=>x.s)).size>1;
+  document.getElementById('mergePreview').innerHTML=`
+    <div style="margin:12px 0">${bar(total,S.totalTarget||25000)}</div>
+    <div class="hint" style="${mixed?'':'background:#d3f9d8;color:#2b8a3e'}">${mixed?'⚠️ 章ごとに文体が混在（'+styles.map(x=>'第'+(x.i+1)+'章:'+x.s).join(' / ')+'）。「🤖 文体を統一」で揃えると読みやすくなります。':'✅ 文体は揃っています。'}</div>
+    <div class="box" style="border:1px solid var(--line);border-radius:10px;padding:12px;max-height:360px;overflow:auto;white-space:pre-wrap;font-size:14px">${esc(S.book.manuscript)}</div>`;
+}
+async function unifyBook(){
+  if(!S.book.manuscript) mergeBook();
+  const btn=document.getElementById('goUnify'),orig=btn?btn.textContent:'',box=document.getElementById('mergePreview');
+  if(!(S.apiKey||'').trim()){if(box)box.innerHTML=`<div class="hint">🔑 文体の統一（AI）にはAIキーが必要です。最初の画面の「AIキー」に入れてください。</div>`+(box.innerHTML||'');return;}
+  if(btn){btn.textContent='🤖 統一中…（30〜60秒）';btn.disabled=true;}
+  try{
+    const sys=`あなたは共著本の編集者です。5人が別々に書いた章を1冊にまとめます。内容や主張は変えず、文体（敬体/常体）・見出しの書式・語調を全体で統一し、章のつなぎを自然にし、誤字脱字を直します。事実や数字を捏造しない。出力は整えた原稿全文のみ（前置き不要）。`;
+    const out=await callClaude(sys,S.book.manuscript,8000);
+    S.book.manuscript=out; save(); renderCompile();
+    setTimeout(()=>{const b=document.getElementById('mergePreview');if(b)b.innerHTML=`<div class="hint" style="background:#d3f9d8;color:#2b8a3e">✅ AIが文体を統一しました。</div><div class="box" style="border:1px solid var(--line);border-radius:10px;padding:12px;max-height:360px;overflow:auto;white-space:pre-wrap;font-size:14px">${esc(out)}</div>`;},0);
+  }catch(e){if(box)box.innerHTML=`<div class="hint">⚠️ エラー：${esc(String(e.message||e))}</div>`;}
+  finally{if(btn){btn.textContent=orig;btn.disabled=false;}}
+}
+function dl(name,text,mime){const b=new Blob([text],{type:(mime||'text/plain')+';charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();}
+/* 結合原稿を「Kindleの型」(見出し・目次・改ページ)のHTMLに整形 */
+function buildBookHTML(){
+  const ch=S.book.chapters.filter(c=>(c.body||'').trim());
+  const toc=ch.map((c,i)=>`<li><a href="#ch${i+1}">第${i+1}章　${esc(c.title||'（無題）')}</a></li>`).join('');
+  const body=ch.map((c,i)=>{
+    const inner=(c.body||'').split(/\n/).map(l=>{l=l.trim();if(!l)return '';
+      if(l.startsWith('■'))return `<h2>${esc(l.replace(/^■\s*/,''))}</h2>`;
+      return `<p>${esc(l)}</p>`;}).filter(Boolean).join('\n');
+    return `<h1 id="ch${i+1}">第${i+1}章　${esc(c.title||'')}</h1>\n${c.author?`<p class="author">著：${esc(c.author)}</p>`:''}\n${inner}`;
+  }).join('\n');
+  return `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>${esc(S.book.title||'無題')}</title>
+<style>
+body{font-family:"Yu Mincho","Hiragino Mincho ProN",serif;line-height:1.85;}
+h1{page-break-before:always;font-size:1.6em;border-bottom:2px solid #333;padding-bottom:.2em;}
+h2{font-size:1.25em;margin-top:1.4em;}
+p{text-indent:1em;margin:.4em 0;}
+.title-page{text-align:center;margin-top:30%;page-break-after:always;}
+.title-page h1{page-break-before:auto;border:none;font-size:2em;}
+.author{text-align:right;color:#555;text-indent:0;}
+.toc{page-break-after:always;} .toc a{text-decoration:none;color:#000;}
+</style></head><body>
+<div class="title-page"><h1>${esc(S.book.title||'無題')}</h1><p>${esc(S.book.subtitle||'')}</p></div>
+<div class="toc"><h1 style="page-break-before:auto;border:none">目次</h1><ul>${toc}</ul></div>
+${body}
+</body></html>`;
+}
+function exportKindleDoc(){
+  if(!S.book.chapters.some(c=>(c.body||'').trim())){alert('章の本文がありません。先に本文を入れて「📖 結合」してください。');return;}
+  dl((S.book.title||'原稿')+'.doc', buildBookHTML(), 'application/msword');
+}
+function exportKindleHtml(){
+  if(!S.book.chapters.some(c=>(c.body||'').trim())){alert('章の本文がありません。');return;}
+  dl((S.book.title||'原稿')+'.html', buildBookHTML(), 'text/html');
+}
+function exportManuscript(){if(!S.book.manuscript)mergeBook();dl((S.book.title||'原稿')+'.txt',S.book.manuscript||'');}
+function exportPlan(){
+  const ch=S.book.chapters, tgt=Math.round((S.totalTarget||25000)/(S.people||ch.length||5));
+  let t=`【本の設計図（メンバー配布用）】\n\nテーマ：${S.theme||''}\n読者：${S.reader||''}\nゴール：${S.goal||''}\n全体の目標：${(S.totalTarget||25000).toLocaleString()}字 ／ 1章あたり約${tgt.toLocaleString()}字\n\n― 章割り ―\n`;
+  ch.forEach((c,i)=>{t+=`第${i+1}章　${c.title||'（章タイトル未定）'}\n  担当：${c.author||'（未定）'}\n  ねらい：${c.purpose||'（未記入）'}\n  目標：約${tgt.toLocaleString()}字\n\n`;});
+  t+=`※各自、自分の章をChatGPT/Geminiで書き、Bの「専門家仕上げ」で磨いてから、統括にファイルで渡してください。`;
+  dl('本の設計図.txt',t);
+}
+
+/* ---------- 図（画像）の追加 ---------- */
+function addImage(i,input){
+  const arr=Array.prototype.slice.call(input.files||[]).filter(f=>f.type&&f.type.indexOf('image')===0);
+  if(!arr.length)return;let done=0;
+  arr.forEach(f=>{const r=new FileReader();r.onload=()=>{const c=S.book.chapters[i];if(!c.images)c.images=[];
+    c.images.push({data:String(r.result),mime:(f.type||'image/jpeg'),caption:''});done++;if(done===arr.length){save();renderCompile();}};r.readAsDataURL(f);});}
+function pasteImage(e,i){
+  e.preventDefault(); // 枠に文字や画像が直接入らないようにする
+  const cd=e.clipboardData||window.clipboardData; if(!cd)return;
+  const blobs=[];
+  for(const it of (cd.items||[])){ if(it.type&&it.type.indexOf('image')===0){const f=it.getAsFile();if(f)blobs.push(f);} }
+  for(const f of (cd.files||[])){ if(f.type&&f.type.indexOf('image')===0)blobs.push(f); }
+  if(!blobs.length){const z=document.getElementById('pz'+i);if(z)z.textContent='⚠️ 画像が見つかりません。画像をコピー／スクショしてから、ここでCtrl+Vしてください';return;}
+  blobs.forEach(f=>{const r=new FileReader();r.onload=()=>{const c=S.book.chapters[i];if(!c.images)c.images=[];
+    c.images.push({data:String(r.result),mime:(f.type||'image/png'),caption:''});save();renderCompile();};r.readAsDataURL(f);});
+}
+function delImage(i,k){S.book.chapters[i].images.splice(k,1);save();renderCompile();}
+
+/* ---------- 本物のEPUB生成（外部ライブラリなし・ZIPを自前生成） ---------- */
+const _crc=(()=>{let t=[];for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
+function crc32(b){let c=0xFFFFFFFF;for(let i=0;i<b.length;i++)c=_crc[(c^b[i])&0xFF]^(c>>>8);return (c^0xFFFFFFFF)>>>0;}
+function sB(s){return new TextEncoder().encode(s);}
+function b64B(b64){const bin=atob(b64);const a=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i);return a;}
+function escXml(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function zipStore(files){
+  const chunks=[];let off=0;const central=[];
+  const push=a=>{chunks.push(a);off+=a.length;};
+  const u16=n=>[n&0xFF,(n>>8)&0xFF],u32=n=>[n&0xFF,(n>>8)&0xFF,(n>>16)&0xFF,(n>>24)&0xFF];
+  files.forEach(f=>{const name=sB(f.name),data=f.bytes,crc=crc32(data),o=off;
+    push(Uint8Array.from([].concat(u32(0x04034b50),u16(20),u16(0),u16(0),u16(0),u16(0),u32(crc),u32(data.length),u32(data.length),u16(name.length),u16(0))));
+    push(name);push(data);
+    central.push(Uint8Array.from([].concat(u32(0x02014b50),u16(20),u16(20),u16(0),u16(0),u16(0),u16(0),u32(crc),u32(data.length),u32(data.length),u16(name.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(o))));
+    central.push(name);});
+  const cdStart=off;central.forEach(push);const cdSize=off-cdStart;
+  push(Uint8Array.from([].concat(u32(0x06054b50),u16(0),u16(0),u16(files.length),u16(files.length),u32(cdSize),u32(cdStart),u16(0))));
+  let total=chunks.reduce((s,a)=>s+a.length,0),out=new Uint8Array(total),p=0;
+  chunks.forEach(a=>{out.set(a,p);p+=a.length;});return out;}
+function buildEpub(){
+  const ch=S.book.chapters.filter(c=>(c.body||'').trim());
+  const title=S.book.title||'無題';
+  const files=[{name:'mimetype',bytes:sB('application/epub+zip')},
+    {name:'META-INF/container.xml',bytes:sB('<?xml version="1.0"?>\n<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>')}];
+  const manifest=['<item id="css" href="style.css" media-type="text/css"/>','<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>'];
+  const spine=[],navli=[];let imgN=0;
+  files.push({name:'OEBPS/style.css',bytes:sB('body{font-family:serif;line-height:1.85;margin:1em;}h1{font-size:1.5em;margin:1.2em 0;}h2{font-size:1.2em;margin:1.3em 0 .4em;}p{text-indent:1em;margin:.5em 0;}.sp{height:1em;}img{max-width:100%;}figure{margin:1.2em 0;text-align:center;}figcaption{font-size:.85em;color:#555;text-indent:0;}')});
+  ch.forEach((c,i)=>{
+    const id='ch'+(i+1),imgs=c.images||[];
+    imgs.forEach((im,k)=>{imgN++;const ext=(im.mime==='image/png')?'png':'jpg';const fn='img'+imgN+'.'+ext;
+      files.push({name:'OEBPS/images/'+fn,bytes:b64B((im.data.split(',')[1]||''))});
+      manifest.push(`<item id="img${imgN}" href="images/${fn}" media-type="${im.mime}"/>`);
+      im._tag=`<figure><img src="images/${fn}" alt="図${k+1}"/>${im.caption?`<figcaption>${escXml(im.caption)}</figcaption>`:''}</figure>`;});
+    const placed=new Set();
+    let body=(c.body||'').replace(/，/g,'、').replace(/．/g,'。').split(/\n/).map(l=>{l=l.trim();
+      if(!l)return '<div class="sp"></div>';
+      const m=l.match(/^\[図(\d+)\]$/);if(m){const k=parseInt(m[1])-1;const im=imgs[k];if(im){placed.add(k);return im._tag;}return '';}
+      if(l.startsWith('■'))return `<h2>${escXml(l.replace(/^■\s*/,''))}</h2>`;
+      return `<p>${escXml(l)}</p>`;}).join('\n');
+    imgs.forEach((im,k)=>{if(!placed.has(k))body+='\n'+im._tag;});
+    const xhtml=`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>${escXml(c.title||'')}</title><link rel="stylesheet" type="text/css" href="style.css"/></head><body><h1>第${i+1}章　${escXml(c.title||'')}</h1>${c.author?`<p>著：${escXml(c.author)}</p>`:''}\n${body}</body></html>`;
+    files.push({name:'OEBPS/'+id+'.xhtml',bytes:sB(xhtml)});
+    manifest.push(`<item id="${id}" href="${id}.xhtml" media-type="application/xhtml+xml"/>`);
+    spine.push(`<itemref idref="${id}"/>`);
+    navli.push(`<li><a href="${id}.xhtml">第${i+1}章　${escXml(c.title||'（無題）')}</a></li>`);});
+  files.push({name:'OEBPS/nav.xhtml',bytes:sB(`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="ja"><head><meta charset="utf-8"/><title>目次</title></head><body><nav epub:type="toc" id="toc"><h1>目次</h1><ol>${navli.join('')}</ol></nav></body></html>`)});
+  const authors=[...new Set(ch.map(c=>(c.author||'').trim()).filter(Boolean))];
+  const creatorTags=authors.map(a=>`<dc:creator>${escXml(a)}</dc:creator>`).join('');
+  if(!S.book.uuid){S.book.uuid=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return (c==='x'?r:(r&3|8)).toString(16);});save();}
+  files.push({name:'OEBPS/content.opf',bytes:sB(`<?xml version="1.0" encoding="utf-8"?>\n<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="bookid">urn:uuid:${S.book.uuid}</dc:identifier><dc:title>${escXml(title)}</dc:title><dc:language>ja</dc:language>${creatorTags}<meta property="dcterms:modified">2026-01-01T00:00:00Z</meta></metadata><manifest>${manifest.join('')}</manifest><spine>${spine.join('')}</spine></package>`)});
+  return zipStore(files);
+}
+function exportEpub(){
+  if(!S.book.chapters.some(c=>(c.body||'').trim())){alert('章の本文がありません。');return;}
+  const blob=new Blob([buildEpub()],{type:'application/epub+zip'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(S.book.title||'本')+'.epub';a.click();
+}
+function exportMeta(){
+  const t=`■ タイトル：${S.book.title||''}\n■ サブタイトル：${S.book.subtitle||''}\n\n■ 内容紹介文：\n${S.book.desc||''}\n\n■ キーワード（7枠）：\n${S.book.keywords||''}\n\n■ カテゴリ（3枠・ニッチ）：\n${S.book.cats||''}\n\n■ 出版前チェックリスト（規約）：\n[ ] 特典条件はLINE登録のみ（レビュー誘導なし）\n[ ] 本そのものを特典にしていない（別コンテンツ）\n[ ] 個人情報フォーム直リンクなし（公式LINEのみ）\n[ ] メタデータに詰め込み・虚偽なし\n[ ] 無料キャンペーンは週末に設定\n[ ] 各章末にLINE特典リンク設置`;
+  dl('メタデータとチェックリスト.txt',t);
+}
+function renderCompile(){
+  const ch=S.book.chapters;
+  const total=ch.reduce((s,c)=>s+(c.body||'').replace(/\s/g,'').length,0);
+  document.getElementById('compileCard').innerHTML=`
+   <div class="card">
+    <h2>📚 5人の章を1冊にまとめる（統括用）</h2>
+    <p class="muted">まず<b>「誰がどの章を、どんなねらいで」</b>を決めて<b>設計図を5人に配る</b>と、共著でもバラバラになりません。各章がそろったら結合→Kindle用に書き出します。</p>
+    <label class="f">本のタイトル</label>
+    <input type="text" value="${esc(S.book.title)}" oninput="S.book.title=this.value;save()" placeholder="例：はじめての小さな副業">
+    <label class="f">サブタイトル</label>
+    <input type="text" value="${esc(S.book.subtitle)}" oninput="S.book.subtitle=this.value;save()" placeholder="例：30代女性が無理なく月3万円">
+    <h3 style="margin:18px 0 6px;font-size:15px">章（${ch.length}）</h3>
+    ${ch.map((c,i)=>`
+      <div class="card" style="background:#fafbff" onmousedown="_activeChap=${i};markActive(${i})">
+        <div class="row" style="justify-content:space-between">
+          <b>第${i+1}章</b>
+          <span><button class="btn gray" onclick="moveChapter(${i},-1)">↑</button>
+          <button class="btn gray" onclick="moveChapter(${i},1)">↓</button>
+          <button class="btn gray" onclick="delChapter(${i})">×</button></span>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <input type="text" style="flex:1" value="${esc(c.author)}" oninput="S.book.chapters[${i}].author=this.value;save()" placeholder="著者名">
+          <input type="text" style="flex:2" value="${esc(c.title)}" oninput="S.book.chapters[${i}].title=this.value;save()" placeholder="章タイトル">
+        </div>
+        <input type="text" style="margin-top:8px;width:100%" value="${esc(c.purpose||'')}" oninput="S.book.chapters[${i}].purpose=this.value;save()" placeholder="この章のねらい・役割（例：読者の不安をほぐす導入／具体的な手順を見せる）">
+        <textarea style="margin-top:8px" placeholder="この章の本文を貼り付け" oninput="S.book.chapters[${i}].body=this.value;save()">${esc(c.body)}</textarea>
+        <div class="row" style="margin-top:6px">
+          <input type="file" accept=".txt,.md" onchange="importChapter(${i},this)">
+          <span class="muted small">書き出した章ファイル(.txt)を取り込めます／約${(c.body||'').replace(/\s/g,'').length.toLocaleString()}字</span>
+        </div>
+        <label class="f" style="margin-top:10px">🖼 この章の図（画像）</label>
+        <div class="row" style="align-items:center;gap:10px">
+          <label class="btn ok" style="cursor:pointer;display:inline-block">📁 画像ファイルを選ぶ<input type="file" accept="image/*" multiple style="display:none" onchange="addImage(${i},this)"></label>
+          <span class="muted small">スクショは「ピクチャ ＞ スクリーンショット」に保存されています。複数まとめて選べます</span>
+        </div>
+        <textarea class="pastezone" id="pz${i}" onclick="_activeChap=${i};markActive(${i})" onpaste="pasteZone(event,${i})" ondragover="event.preventDefault()" ondrop="dropImage(event,${i})" placeholder="（または）画像ファイルをここにドラッグ＆ドロップ／クリックしてCtrl+V"></textarea>
+        <div class="muted small" style="margin-top:4px">本文に [図1] [図2] と書くとその位置に入ります（書かなければ章末）</div>
+        ${(c.images||[]).map((im,k)=>`<div class="row" style="align-items:center;margin-top:4px"><img src="${im.data}" style="height:38px;border:1px solid #ccc;border-radius:4px"><input type="text" style="flex:1" value="${esc(im.caption||'')}" oninput="S.book.chapters[${i}].images[${k}].caption=this.value;save()" placeholder="図${k+1}の説明（任意）"><button class="btn gray" onclick="delImage(${i},${k})">×</button></div>`).join('')}
+      </div>`).join('')}
+    <button class="btn ghost" onclick="addChapter()">＋ 章を追加</button>
+    <div style="margin:14px 0">全体の文字数 ${bar(total,S.totalTarget||25000)}</div>
+    <div class="row">
+      <button class="btn" onclick="mergeBook()">📖 1冊に結合してプレビュー</button>
+      <button class="btn gray" id="goUnify" onclick="unifyBook()">🤖 文体を統一（AI）</button>
+    </div>
+    <div id="mergePreview"></div>
+
+    <h3 style="margin:18px 0 6px;font-size:15px">メタデータ（Kindle提出用）</h3>
+    <label class="f">内容紹介文</label>
+    <textarea oninput="S.book.desc=this.value;save()">${esc(S.book.desc)}</textarea>
+    <label class="f">キーワード（7枠・カンマ区切り）</label>
+    <input type="text" value="${esc(S.book.keywords)}" oninput="S.book.keywords=this.value;save()">
+    <label class="f">カテゴリ（3枠・ニッチ）</label>
+    <input type="text" value="${esc(S.book.cats)}" oninput="S.book.cats=this.value;save()" placeholder="競合の弱いニッチ3枠">
+
+    <h3 style="margin:18px 0 6px;font-size:15px">出版前チェックリスト（規約）</h3>
+    <div class="small">
+      <label style="display:block"><input type="checkbox"> 特典条件はLINE登録のみ（レビュー誘導なし）</label>
+      <label style="display:block"><input type="checkbox"> 本そのものを特典にしていない（別コンテンツ）</label>
+      <label style="display:block"><input type="checkbox"> 個人情報フォーム直リンクなし（公式LINEのみ）</label>
+      <label style="display:block"><input type="checkbox"> メタデータに詰め込み・虚偽なし</label>
+      <label style="display:block"><input type="checkbox"> 無料キャンペーンは週末に設定</label>
+      <label style="display:block"><input type="checkbox"> 各章末にLINE特典リンク設置</label>
+      <label style="display:block"><input type="checkbox"> 表紙(カバー)を用意（ジャンルが一目で伝わるプロ品質）</label>
+    </div>
+
+    <div class="row" style="margin-top:16px">
+      <button class="btn ok" onclick="exportEpub()">📗 EPUBで書き出し（図・目次つき／KDP推奨）</button>
+      <button class="btn gray" onclick="exportKindleDoc()">📕 Word(.doc)</button>
+      <button class="btn gray" onclick="exportKindleHtml()">🌐 HTML</button>
+    </div>
+    <p class="muted small">📗<b>EPUBがKDP公式の推奨形式</b>。<b>図（画像）も埋め込まれ</b>、見出し・目次・段落の間もついた状態で、<b>そのままKDPにアップ</b>できます（前回のような“型入れ直し”は不要）。</p>
+    <div class="row" style="margin-top:8px">
+      <button class="btn gray" onclick="exportPlan()">📐 章割り設計図（メンバー配布用）</button>
+      <button class="btn gray" onclick="exportManuscript()">テキスト(.txt)</button>
+      <button class="btn gray" onclick="exportMeta()">メタデータ＋チェックリスト</button>
+    </div>
+    <div class="navrow"><button class="btn gray" onclick="goHome()">← 最初へ</button><span></span></div>
+   </div>`;
+}
+
+/* ---------- ChatGPT用テンプレ（話す・まとめるはChatGPTに任せる） ---------- */
+function startTemplate(){S.mode='tmpl';save();screen('tmpl');renderTemplate();window.scrollTo(0,0);}
+function copyTA(id){const t=document.getElementById(id);if(!t)return;t.focus();t.select();try{navigator.clipboard.writeText(t.value);}catch(e){}alert('コピーしました。ChatGPTを開いて貼り付けてください。');}
+function buildTmplPrompts(){
+  const th=S.theme||'（本のテーマ）', rd=S.reader||'（読者）', gl=S.goal||'（読み終えたら読者にどうなってほしいか）', tg=chapterTarget().toLocaleString();
+  const a=`あなたはベストセラーを何冊も手がけるプロのブックライター兼インタビュアーです。
+私は「${th}」というテーマで、Kindle本の1つの章を書きたい初心者です。
+読者は「${rd}」で、読み終えたら「${gl}」という状態になってほしいです。
+
+これから私に、やさしい質問を【1つずつ】してください。私は話し言葉で答えます。
+次の順番で聞いてください：
+1) 誰に向けて書きたいか
+2) その人が今いちばん困っていること
+3) 私自身の体験・エピソード（いつ・どこで・何があったか）
+4) 数字や具体例（あれば）
+5) 失敗・遠回りした話
+6) 読者が今日できる最初の一歩
+
+私の答えがそろったら、それを元に、約${tg}字の「本の章」に書き直してください。
+条件：
+・話し言葉のクセは消し、読みやすい書き言葉にする
+・内容に合った【小見出し】を3〜5個つける
+・冒頭に読者を引き込むフック、章末に「次が読みたくなる一言」
+・スマホで読みやすい短めの文
+・事実や数字を作り話にしない。わからない点は私に質問する
+それでは、1つ目の質問からお願いします。`;
+  const b=`あなたは、何冊もベストセラーを生み出してきたKindle出版の専門家・編集者です。
+以下は、私がChatGPTやGeminiで作った「${th}」の章の文章です。
+読者は「${rd}」、ゴールは「${gl}」。
+
+この文章を、売れるKindle本としてさらに良くするために、順番に次をしてください：
+1) まず良い点を簡単に教えてください。
+2) 読者の感情・人間心理（共感／不安／欲求／好奇心など）がもっと動くように、具体的な改善点を挙げてください。
+3) 冒頭のフック・読み進めたくなる流れ・章末で「次が読みたくなる一言」を強化してください。
+4) その上で、改善した「完成版の本文（約${tg}字）」を書いてください。
+条件：
+・話し言葉のクセは消し、読みやすい書き言葉に
+・小見出しは3〜5個に整える
+・事実や数字は作り話にしない
+・もう直す必要がなければ「これで十分です」と言ってください
+--- 私の文章（ここから下に貼る）---
+`;
+  return {a,b};
+}
+function updateTmplPrompts(){const p=buildTmplPrompts();const A=document.getElementById('tmplA'),B=document.getElementById('tmplB');if(A)A.value=p.a;if(B)B.value=p.b;}
+function renderTemplate(){
+  const p=buildTmplPrompts();
+  document.getElementById('tmplCard').innerHTML=`
+   <div class="card">
+    <h2>💬 ChatGPTで下書きを作る</h2>
+    <p class="muted">「話してまとめる」のは本物のAI（ChatGPT）が得意。下のテンプレをコピー→ChatGPTで対話→出てきた文章を<b>この画面の下の貼付欄に戻す</b>→そのまま🤖AIで本格仕上げまで完結します。</p>
+    <div class="card" style="background:#fafbff">
+      <b class="small">▼ ここを自分用に書き換えると、下のテンプレが自動で変わります（カスタマイズ）</b>
+      <label class="f">本のテーマ</label>
+      <input type="text" value="${esc(S.theme)}" oninput="S.theme=this.value;save();updateTmplPrompts()" placeholder="あなたの本のテーマ">
+      <label class="f">読者（誰に向けて）</label>
+      <input type="text" value="${esc(S.reader)}" oninput="S.reader=this.value;save();updateTmplPrompts()" placeholder="あなたの読者像">
+      <label class="f">ゴール（読み終えてどうなってほしい）</label>
+      <input type="text" value="${esc(S.goal)}" oninput="S.goal=this.value;save();updateTmplPrompts()" placeholder="読者に起きてほしい変化">
+    </div>
+    <div class="hint">使い方：① 上を自分用に直す → ② テンプレを「コピー」 → ③ ChatGPTに貼って対話 → ④ できた文章を<b>下の貼付欄に戻す</b> → ⑤「🤖 AIで本格仕上げ」</div>
+
+    <label class="f"><b>ステップ①</b>　A. ゼロから作りたい人（ChatGPTが質問してくれる）</label>
+    <textarea id="tmplA" style="min-height:210px">${esc(p.a)}</textarea>
+    <div class="row" style="margin-top:6px"><button class="btn" onclick="copyTA('tmplA')">📋 このテンプレをコピー</button></div>
+
+    <label class="f" style="margin-top:18px"><b>ステップ①</b>　B. すでにChatGPT/Geminiで書いた文章を、もっと良くしたい人<br><span class="muted small">（Kindle専門家がアドバイス＋人間心理を足して仕上げ／OKか判断）</span></label>
+    <textarea id="tmplB" style="min-height:150px">${esc(p.b)}</textarea>
+    <div class="row" style="margin-top:6px"><button class="btn" onclick="copyTA('tmplB')">📋 このテンプレをコピー</button></div>
+
+    <div style="margin-top:24px;padding-top:18px;border-top:2px dashed #cdd9ff">
+      <label class="f"><b>📥 ステップ②：ChatGPTからの返事をここに貼る</b> <span class="muted small">（A・Bどちらを使った場合もここでOK）</span></label>
+      <textarea id="tmplPaste" class="pastezone" style="min-height:200px" placeholder="ここにChatGPTで仕上がった本文をまるごと貼り付け" oninput="S.tmplPaste=this.value;save();tmplCount()">${esc(S.tmplPaste||'')}</textarea>
+      <div class="counter" id="tmplCnt"></div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn" onclick="copyPolishPrompt()">📋 ステップ③：ChatGPTで仕上げる（無料・コピペ）</button>
+        <button class="btn gray" id="goTmplAi" onclick="aiTemplateRewrite()">🤖 自動で仕上げる（要AIキー）</button>
+        <button class="btn ghost" onclick="sendTmplToConvert(false)">そのまま「貼るだけ電子書籍化」へ送る</button>
+      </div>
+      <div class="hint" style="margin-top:8px"><b>📋 無料で使う場合：</b>このボタンで「プロ編集者プロンプト＋あなたの貼付文章」を一発コピー → ChatGPTに貼って実行 → 出てきた仕上げ文章を下の<b>「✨ ステップ④の結果欄」</b>に貼り戻す。AIキー無しでも本格リライトが可能です。</div>
+      <div id="tmplAiMsg"></div>
+    </div>
+
+    <div id="tmplResultBox" style="display:${(S.tmplResult||'').trim()?'block':'none'};margin-top:18px;padding-top:18px;border-top:2px dashed #b6e6c4">
+      <label class="f"><b>✨ ステップ④：仕上がった文章</b> <span class="muted small">（ChatGPTで仕上げた結果をここに貼る／AI自動仕上げの場合は自動で入ります／直接編集も可）</span></label>
+      <textarea id="tmplResult" style="min-height:240px;border-color:#b6e6c4;background:#fafffb" placeholder="ここにChatGPTで仕上げた文章を貼り付け" oninput="S.tmplResult=this.value;save();tmplCount()">${esc(S.tmplResult||'')}</textarea>
+      <div class="row" style="margin-top:10px">
+        <button class="btn ok" onclick="sendTmplToConvert(true)">📋 「貼るだけ電子書籍化」へ送る（仕上げ版で）</button>
+        <button class="btn" onclick="sendTmplToCompile()">📚 「5人の章を1冊に」へ →</button>
+      </div>
+    </div>
+
+    <div class="navrow" style="margin-top:18px"><button class="btn gray" onclick="goHome()">← 最初へ</button><span></span></div>
+   </div>`;
+  setTimeout(tmplCount,0);
+}
+function tmplCount(){
+  const paste=(S.tmplPaste||'').replace(/\s/g,'').length;
+  const result=(S.tmplResult||'').replace(/\s/g,'').length;
+  const t=chapterTarget();
+  const el=document.getElementById('tmplCnt');
+  if(el)el.innerHTML=`貼付：${paste.toLocaleString()}字　${result?`／ AI仕上げ後：${result.toLocaleString()}字`:''}　目安 約${t.toLocaleString()}字${bar(Math.max(paste,result),t)}`;
+}
+async function aiTemplateRewrite(){
+  const src=(S.tmplPaste||'').trim();
+  const msgBox=document.getElementById('tmplAiMsg');
+  if(!src){if(msgBox)msgBox.innerHTML=`<div class="hint">⚠️ まず上の貼付欄にChatGPTからの返事を貼ってください。</div>`;return;}
+  if(!(S.apiKey||'').trim()){
+    if(msgBox)msgBox.innerHTML=`<div class="hint">🔑 本物のAIで仕上げるには、最初の画面の「AIキー」にAnthropicのキーを入れてください。<br>キー無しでも「そのまま「貼るだけ電子書籍化」へ送る」で次に進めます。</div>`;
+    return;
+  }
+  const btn=document.getElementById('goTmplAi'),orig=btn?btn.textContent:'';
+  if(btn){btn.textContent='🤖 AIが書き起こし中…（20〜40秒）';btn.disabled=true;}
+  if(msgBox)msgBox.innerHTML='';
+  try{
+    const ctx=`本のテーマ：${S.theme||'(未設定)'}\n読者：${S.reader||'(未設定)'}\n読者に届けたいゴール：${S.goal||'(未設定)'}\n目標文字数：約${chapterTarget()}字`;
+    const user=`${ctx}\n\n--- ChatGPTが書いた素材（これを本にする）---\n${src}\n\n上の素材を、上記テーマ・読者に向けた「本の本文」にリライトしてください。`;
+    const out=await callClaude(REWRITE_SYS,user,8000);
+    S.tmplResult=out; save();
+    const box=document.getElementById('tmplResultBox'); if(box) box.style.display='block';
+    const ta=document.getElementById('tmplResult'); if(ta) ta.value=out;
+    tmplCount();
+    if(box) box.scrollIntoView({behavior:'smooth',block:'start'});
+  }catch(e){
+    if(msgBox)msgBox.innerHTML=`<div class="hint">⚠️ エラー：${esc(String(e.message||e))}<br>キーが正しいか・ネット接続をご確認ください。</div>`;
+  }finally{ if(btn){btn.textContent=orig;btn.disabled=false;} }
+}
+function copyPolishPrompt(){
+  const src=(S.tmplPaste||'').trim();
+  const msgBox=document.getElementById('tmplAiMsg');
+  if(!src){
+    if(msgBox)msgBox.innerHTML=`<div class="hint">⚠️ まず上の貼付欄にChatGPTからの返事を貼ってください。</div>`;
+    return;
+  }
+  const ctx=`本のテーマ：${S.theme||'(未設定)'}\n読者：${S.reader||'(未設定)'}\n読者に届けたいゴール：${S.goal||'(未設定)'}\n目標文字数：約${chapterTarget()}字`;
+  const full=`${REWRITE_SYS}\n\n${ctx}\n\n--- 素材（ChatGPTで作った下書き）---\n${src}\n\n上の素材を、上記テーマ・読者に向けた「本の本文」にリライトしてください。出力は本文のみで、前置きや解説は書かないでください。`;
+  try{navigator.clipboard.writeText(full);}catch(e){}
+  // 結果欄を開いて、戻ってきたら貼れるようにしておく
+  const box=document.getElementById('tmplResultBox'); if(box){box.style.display='block'; setTimeout(()=>box.scrollIntoView({behavior:'smooth',block:'start'}),50);}
+  if(msgBox)msgBox.innerHTML=`<div class="hint" style="background:#eaf5ff;border-color:#7aa9ff">✅ プロ編集者プロンプトをコピーしました。<br>① ChatGPT（または同じ会話の続き）を開いて貼り付け → 実行<br>② 出てきた仕上げ文章をコピー → 下の<b>「✨ ステップ④」</b>欄に貼り戻す</div>`;
+}
+function sendTmplToConvert(useResult){
+  const text = useResult ? (S.tmplResult||'') : (S.tmplPaste||'');
+  if(!text.trim()){alert('まず文章を貼ってください'); return;}
+  S.body=text; save();
+  startConvert();
+}
+function sendTmplToCompile(){
+  const text=(S.tmplResult||S.tmplPaste||'').trim();
+  if(!text){alert('まず文章を貼ってください'); return;}
+  S.body=text; S.edited=S.tmplResult||text; save();
+  startCompile();
+}
+
+/* ---------- 音声入力（話しながら） ---------- */
+let _rec=null,_recId=null;
+function startVoice(id){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){alert('このブラウザは音声入力に未対応です。Google Chrome だと使えます（PC・Androidスマホ）。');return;}
+  const el=document.getElementById(id); if(!el)return;
+  const btn=document.getElementById('mic_'+id);
+  if(_rec){_rec.stop();_rec=null;if(btn)btn.textContent='🎤 話して入力';return;}
+  _rec=new SR();_rec.lang='ja-JP';_rec.interimResults=false;_rec.continuous=true;_recId=id;
+  _rec.onresult=function(e){
+    let add='';
+    for(let i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)add+=e.results[i][0].transcript;}
+    if(add){el.value=(el.value?el.value+'\n':'')+add;el.dispatchEvent(new Event('input'));}
+  };
+  _rec.onerror=function(){if(btn)btn.textContent='🎤 話して入力';_rec=null;};
+  _rec.onend=function(){if(btn)btn.textContent='🎤 話して入力';_rec=null;};
+  try{_rec.start();if(btn)btn.textContent='● 録音中（押すと止める）';}catch(e){}
+}
+
+/* ---------- 画像の貼り付け（ページのどこで貼ってもアクティブな章に入る） ---------- */
+let _activeChap=0;
+function markActive(i){document.querySelectorAll('.pastezone').forEach(z=>z.classList.remove('active'));const z=document.getElementById('pz'+i);if(z)z.classList.add('active');}
+/* ボタンで確実に：クリップボードから画像を読み取る（スクショに最適） */
+async function pasteFromClipboard(i){
+  try{
+    if(!navigator.clipboard||!navigator.clipboard.read){alert('このブラウザはボタン貼り付けに未対応です。「ファイルから選ぶ」を使ってください。');return;}
+    const items=await navigator.clipboard.read();
+    let added=0;
+    for(const it of items){
+      const type=(it.types||[]).find(t=>t.indexOf('image/')===0);
+      if(!type)continue;
+      const blob=await it.getType(type);
+      const data=await new Promise(res=>{const r=new FileReader();r.onload=()=>res(String(r.result));r.readAsDataURL(blob);});
+      const c=S.book.chapters[i];if(!c.images)c.images=[];c.images.push({data,mime:type,caption:''});added++;
+    }
+    if(added){save();renderCompile();}
+    else alert('クリップボードに画像がありません。\nWin+Shift+S でスクショを撮ってから、もう一度このボタンを押してください。');
+  }catch(err){
+    alert('貼り付けに失敗しました：'+((err&&err.message)||err)+'\n（ブラウザが許可を求めたら「許可」を押してください）');
+  }
+}
+/* ドラッグ＆ドロップ用 */
+function dropImage(e,i){
+  e.preventDefault();
+  const fs=(e.dataTransfer&&e.dataTransfer.files)||[];
+  const imgs=Array.prototype.slice.call(fs).filter(f=>f.type&&f.type.indexOf('image')===0);
+  if(!imgs.length){const z=document.getElementById('pz'+i);if(z)z.textContent='⚠️ 画像ファイルではありません';return;}
+  let done=0;imgs.forEach(f=>{const r=new FileReader();r.onload=()=>{const c=S.book.chapters[i];if(!c.images)c.images=[];
+    c.images.push({data:String(r.result),mime:(f.type||'image/png'),caption:''});done++;if(done===imgs.length){save();renderCompile();}};r.readAsDataURL(f);});
+}
+/* 編集できる枠での Ctrl+V 用 */
+function pasteZone(e,i){
+  const cd=e.clipboardData;if(!cd)return;
+  const blobs=[];
+  for(const it of (cd.items||[])){ if(it.type&&it.type.indexOf('image')===0){const f=it.getAsFile();if(f)blobs.push(f);} }
+  for(const f of (cd.files||[])){ if(f&&f.type&&f.type.indexOf('image')===0)blobs.push(f); }
+  if(!blobs.length) return; // 画像でなければ普通の貼り付けに任せる
+  e.preventDefault();
+  let done=0;blobs.forEach(f=>{const r=new FileReader();r.onload=()=>{const c=S.book.chapters[i];if(!c.images)c.images=[];
+    c.images.push({data:String(r.result),mime:(f.type||'image/png'),caption:''});done++;if(done===blobs.length){save();renderCompile();}};r.readAsDataURL(f);});
+}
+
+/* ---------- init ---------- */
+load();
+</script>
+</body>
+</html>
