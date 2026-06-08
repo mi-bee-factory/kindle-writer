@@ -721,6 +721,8 @@ function pasteImage(e,i){
     c.images.push({data:String(r.result),mime:(f.type||'image/png'),caption:''});save();renderCompile();};r.readAsDataURL(f);});
 }
 function delImage(i,k){S.book.chapters[i].images.splice(k,1);save();renderCompile();}
+function setCover(input){const f=input.files&&input.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{S.book.cover={data:String(r.result),mime:(f.type||'image/jpeg')};save();renderCompile();};r.readAsDataURL(f);}
+function delCover(){S.book.cover=null;save();renderCompile();}
 
 /* ---------- 本物のEPUB生成（外部ライブラリなし・ZIPを自前生成） ---------- */
 const _crc=(()=>{let t=[];for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
@@ -748,7 +750,16 @@ function buildEpub(){
     {name:'META-INF/container.xml',bytes:sB('<?xml version="1.0"?>\n<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>')}];
   const manifest=['<item id="css" href="style.css" media-type="text/css"/>','<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>'];
   const spine=[],navli=[];let imgN=0;
-  files.push({name:'OEBPS/style.css',bytes:sB('body{font-family:serif;line-height:1.85;margin:1em;}h1{font-size:1.5em;margin:1.2em 0;}h2{font-size:1.2em;margin:1.3em 0 .4em;}p{text-indent:1em;margin:.5em 0;}.sp{height:1em;}img{max-width:100%;}figure{margin:1.2em 0;text-align:center;}figcaption{font-size:.85em;color:#555;text-indent:0;}')});
+  files.push({name:'OEBPS/style.css',bytes:sB('body{margin:1em;text-align:justify;}h1{font-size:1.5em;margin:1.2em 0;}h2{font-size:1.2em;margin:1.3em 0 .4em;}p{text-indent:1em;margin:.6em 0;}h1+p,h2+p{text-indent:0;}img{max-width:100%;height:auto;}figure{margin:1.2em 0;text-align:center;}figcaption{font-size:.85em;color:#555;text-indent:0;}')});
+  let coverSpine='',coverMeta='';
+  if(S.book.cover&&S.book.cover.data){
+    const cm=S.book.cover.mime||'image/jpeg',cext=(cm==='image/png')?'png':'jpg';
+    files.push({name:'OEBPS/images/cover.'+cext,bytes:b64B((S.book.cover.data.split(',')[1]||''))});
+    manifest.push(`<item id="cover-img" href="images/cover.${cext}" media-type="${cm}" properties="cover-image"/>`);
+    files.push({name:'OEBPS/cover.xhtml',bytes:sB(`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>表紙</title><style>html,body{margin:0;padding:0;}img{max-width:100%;height:auto;display:block;margin:0 auto;}</style></head><body><figure style="margin:0"><img src="images/cover.${cext}" alt="表紙"/></figure></body></html>`)});
+    manifest.push('<item id="coverpage" href="cover.xhtml" media-type="application/xhtml+xml"/>');
+    coverSpine='<itemref idref="coverpage"/>';coverMeta='<meta name="cover" content="cover-img"/>';
+  }
   ch.forEach((c,i)=>{
     const id='ch'+(i+1),imgs=c.images||[];
     imgs.forEach((im,k)=>{imgN++;const ext=(im.mime==='image/png')?'png':'jpg';const fn='img'+imgN+'.'+ext;
@@ -757,21 +768,22 @@ function buildEpub(){
       im._tag=`<figure><img src="images/${fn}" alt="図${k+1}"/>${im.caption?`<figcaption>${escXml(im.caption)}</figcaption>`:''}</figure>`;});
     const placed=new Set();
     let body=(c.body||'').replace(/，/g,'、').replace(/．/g,'。').split(/\n/).map(l=>{l=l.trim();
-      if(!l)return '<div class="sp"></div>';
+      if(!l)return '';
       const m=l.match(/^\[図(\d+)\]$/);if(m){const k=parseInt(m[1])-1;const im=imgs[k];if(im){placed.add(k);return im._tag;}return '';}
       if(l.startsWith('■'))return `<h2>${escXml(l.replace(/^■\s*/,''))}</h2>`;
-      return `<p>${escXml(l)}</p>`;}).join('\n');
+      return `<p>${escXml(l)}</p>`;}).filter(x=>x).join('\n');
     imgs.forEach((im,k)=>{if(!placed.has(k))body+='\n'+im._tag;});
     const xhtml=`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>${escXml(c.title||'')}</title><link rel="stylesheet" type="text/css" href="style.css"/></head><body><h1>第${i+1}章　${escXml(c.title||'')}</h1>${c.author?`<p>著：${escXml(c.author)}</p>`:''}\n${body}</body></html>`;
     files.push({name:'OEBPS/'+id+'.xhtml',bytes:sB(xhtml)});
     manifest.push(`<item id="${id}" href="${id}.xhtml" media-type="application/xhtml+xml"/>`);
     spine.push(`<itemref idref="${id}"/>`);
     navli.push(`<li><a href="${id}.xhtml">第${i+1}章　${escXml(c.title||'（無題）')}</a></li>`);});
-  files.push({name:'OEBPS/nav.xhtml',bytes:sB(`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="ja"><head><meta charset="utf-8"/><title>目次</title></head><body><nav epub:type="toc" id="toc"><h1>目次</h1><ol>${navli.join('')}</ol></nav></body></html>`)});
+  const landmarks=`<nav epub:type="landmarks" id="landmarks" hidden="hidden"><h2>ガイド</h2><ol><li><a epub:type="toc" href="nav.xhtml">目次</a></li>${ch.length?`<li><a epub:type="bodymatter" href="ch1.xhtml">本文の先頭</a></li>`:''}</ol></nav>`;
+  files.push({name:'OEBPS/nav.xhtml',bytes:sB(`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="ja"><head><meta charset="utf-8"/><title>目次</title></head><body><nav epub:type="toc" id="toc"><h1>目次</h1><ol>${navli.join('')}</ol></nav>${landmarks}</body></html>`)});
   const authors=[...new Set(ch.map(c=>(c.author||'').trim()).filter(Boolean))];
   const creatorTags=authors.map(a=>`<dc:creator>${escXml(a)}</dc:creator>`).join('');
   if(!S.book.uuid){S.book.uuid=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return (c==='x'?r:(r&3|8)).toString(16);});save();}
-  files.push({name:'OEBPS/content.opf',bytes:sB(`<?xml version="1.0" encoding="utf-8"?>\n<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="bookid">urn:uuid:${S.book.uuid}</dc:identifier><dc:title>${escXml(title)}</dc:title><dc:language>ja</dc:language>${creatorTags}<meta property="dcterms:modified">2026-01-01T00:00:00Z</meta></metadata><manifest>${manifest.join('')}</manifest><spine>${spine.join('')}</spine></package>`)});
+  files.push({name:'OEBPS/content.opf',bytes:sB(`<?xml version="1.0" encoding="utf-8"?>\n<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="bookid">urn:uuid:${S.book.uuid}</dc:identifier><dc:title>${escXml(title)}</dc:title><dc:language>ja</dc:language>${creatorTags}${coverMeta}<meta property="dcterms:modified">2026-01-01T00:00:00Z</meta></metadata><manifest>${manifest.join('')}</manifest><spine>${coverSpine}${spine.join('')}</spine></package>`)});
   return zipStore(files);
 }
 function exportEpub(){
@@ -794,6 +806,11 @@ function renderCompile(){
     <input type="text" value="${esc(S.book.title)}" oninput="S.book.title=this.value;save()" placeholder="例：はじめての小さな副業">
     <label class="f">サブタイトル</label>
     <input type="text" value="${esc(S.book.subtitle)}" oninput="S.book.subtitle=this.value;save()" placeholder="例：30代女性が無理なく月3万円">
+    <label class="f">表紙(カバー)画像（任意・KDP推奨）</label>
+    <div class="row" style="align-items:center;gap:10px">
+      <label class="btn ok" style="cursor:pointer;display:inline-block">🖼 表紙を選ぶ<input type="file" accept="image/*" style="display:none" onchange="setCover(this)"></label>
+      ${S.book.cover&&S.book.cover.data?`<img src="${S.book.cover.data}" style="height:60px;border:1px solid #ccc;border-radius:4px"><button class="btn gray" onclick="delCover()">表紙を外す</button>`:'<span class="muted small">縦長・推奨1600×2560px（約1.6:1）／JPEGかPNG</span>'}
+    </div>
     <h3 style="margin:18px 0 6px;font-size:15px">章（${ch.length}）</h3>
     ${ch.map((c,i)=>`
       <div class="card" style="background:#fafbff" onmousedown="_activeChap=${i};markActive(${i})">
