@@ -79,6 +79,7 @@
   .chatbar textarea{flex:1;margin:0;min-height:42px;max-height:120px}
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 </head>
 <body>
@@ -97,7 +98,7 @@
         <div class="row" style="gap:8px;flex-wrap:wrap">
           <button class="btn ok" onclick="startRoadmap()">🗺 出版の全体像</button>
           <button class="btn ok" onclick="startChecklist()">✅ 今どこ？次なに？</button>
-          <button class="btn ok" onclick="startChat()">💬 チャット</button>
+          <button class="btn ok" onclick="startChat()">💬 チーム・チャット</button>
           <button class="btn" onclick="startGuide()">📖 進め方ガイド →</button>
         </div>
       </div>
@@ -602,7 +603,7 @@ const CHECKLIST=[
    {id:'c6c',label:'「○○部門 1位」のスクショを保存した'}]}
 ];
 function startChecklist(){screen('checklist');renderChecklist();window.scrollTo(0,0);}
-function ckToggle(id,v){if(!S.checklist)S.checklist={};S.checklist[id]=v;save();renderChecklist();}
+function ckToggle(id,v){if(!S.checklist)S.checklist={};S.checklist[id]=v;save();renderChecklist();try{tbSync();}catch(e){}}
 function goStep(go){if(go==='home')goHome();else if(go==='tmpl')startTemplate();else if(go==='compile')startCompile();else if(go==='kdp'){startGuide();renderKdp();}else if(go==='guide')startGuide();else if(go==='roadmap')startRoadmap();}
 function renderChecklist(){
   const ck=S.checklist||{};
@@ -1626,6 +1627,186 @@ function pasteZone(e,i){
   let done=0;blobs.forEach(f=>{const r=new FileReader();r.onload=()=>{const c=S.book.chapters[i];if(!c.images)c.images=[];
     c.images.push({data:String(r.result),mime:(f.type||'image/png'),caption:''});done++;if(done===blobs.length){save();renderCompile();}};r.readAsDataURL(f);});
 }
+
+/* ========== チーム（メール+パスワード ログイン・権限・進捗ダッシュボード・チャット） ========== */
+/* 既存の自己申告チャットを置き換え：startChat をこの本格版で上書き（後勝ち） */
+let _T={team:'',me:null,uid:null,members:{},progress:{},msgs:[],bound:false,dataBound:false,authInit:false,subs:[],pendingName:''};
+function tbReady(){ return typeof firebase!=='undefined'&&firebase&&firebase.auth&&firebase.database; }
+function tbVisible(){ const el=document.getElementById('chat'); return el&&!el.classList.contains('hide'); }
+function tbBase(){ return 'teams/'+chatKey(_T.team); }
+function tbInit(){
+  if(!tbReady())return false;
+  if(!firebase.apps.length){ try{firebase.initializeApp(FIREBASE_CONFIG);}catch(e){} }
+  if(!_T.authInit){ _T.authInit=true; firebase.auth().onAuthStateChanged(function(u){ _T.uid=u?u.uid:null; if(!u)tbUnbind(); if(tbVisible())renderTeam(); }); }
+  return true;
+}
+function startChat(){ screen('chat'); try{_T.team=_T.team||localStorage.getItem('kwTeam')||'';}catch(e){} tbInit(); renderTeam(); window.scrollTo(0,0); }
+function tbUnbind(){ try{_T.subs.forEach(function(r){r.off();});}catch(e){} _T.subs=[];_T.bound=false;_T.dataBound=false;_T.me=null;_T.members={};_T.progress={};_T.msgs=[]; }
+function tbCard(html){ document.getElementById('chatCard').innerHTML=html; }
+function tbNav(extra){ return `<div class="navrow" style="margin-top:12px"><button class="btn gray" onclick="goHome()">← 最初へ</button>${extra||'<span></span>'}</div>`; }
+function renderTeam(){
+  if(!tbReady()){ tbCard(`<div class="card"><h2>💬 チーム</h2><p class="muted">インターネットに接続できないか、Firebaseの読み込みがブロックされています。オンラインで開き直してください。</p>${tbNav()}</div>`); return; }
+  tbInit();
+  if(!_T.team){ renderTeamCode(); return; }
+  const u=firebase.auth().currentUser;
+  if(!u){ renderTeamAuth(); return; }
+  if(!_T.bound){ tbBind(); tbCard(`<div class="card"><h2>💬 チーム</h2><p class="muted">読み込み中…</p>${tbNav()}</div>`); return; }
+  renderTeamMain();
+}
+function renderTeamCode(){
+  tbCard(`
+   <div class="card">
+    <h2>💬 チーム（参加）</h2>
+    <p class="muted">同じ<b>チームの合言葉</b>を入れた人どうしでつながります。最初に入れた人が<b>管理者</b>になり、あとから入る人は<b>承認待ち</b>になります。</p>
+    <label class="f">チームの合言葉</label>
+    <input type="text" id="tbTeam" value="${esc(_T.team||'')}" placeholder="例：sakura-book（半角英数おすすめ）">
+    <div class="row" style="margin-top:12px"><button class="btn ok" onclick="tbSetTeam()">次へ</button></div>
+    ${tbNav()}
+   </div>`);
+}
+function tbSetTeam(){ const v=((document.getElementById('tbTeam')||{}).value||'').trim(); if(!v){alert('チームの合言葉を入れてください。');return;} _T.team=v; try{localStorage.setItem('kwTeam',v);}catch(e){} renderTeam(); }
+function renderTeamAuth(){
+  tbCard(`
+   <div class="card">
+    <h2>💬 チーム：ログイン</h2>
+    <p class="muted">チーム「<b>${esc(_T.team)}</b>」に参加します。メールとパスワードでログイン、はじめての方は「新規登録」。</p>
+    <label class="f">お名前（表示名）<span class="muted small">※新規登録のとき使います</span></label>
+    <input type="text" id="tbName" value="${esc(_T.pendingName||'')}" placeholder="例：田中">
+    <label class="f" style="margin-top:8px">メールアドレス</label>
+    <input type="email" id="tbEmail" placeholder="you@example.com" autocomplete="username">
+    <label class="f" style="margin-top:8px">パスワード（6文字以上）</label>
+    <input type="password" id="tbPass" placeholder="パスワード" autocomplete="current-password">
+    <div class="row" style="margin-top:12px">
+      <button class="btn ok" onclick="tbLogin()">ログイン</button>
+      <button class="btn" onclick="tbSignup()">新規登録</button>
+    </div>
+    <div style="margin-top:8px"><button class="btn gray" onclick="tbChangeTeam()">← チームを変える</button></div>
+    ${tbNav()}
+   </div>`);
+}
+function tbChangeTeam(){ _T.team=''; try{localStorage.removeItem('kwTeam');}catch(e){} renderTeam(); }
+function tbLogin(){
+  const email=((document.getElementById('tbEmail')||{}).value||'').trim();
+  const pass=((document.getElementById('tbPass')||{}).value||'');
+  if(!email||!pass){alert('メールとパスワードを入れてください。');return;}
+  firebase.auth().signInWithEmailAndPassword(email,pass).catch(function(e){ alert('ログインできませんでした：'+tbAuthMsg(e)); });
+}
+function tbSignup(){
+  const name=((document.getElementById('tbName')||{}).value||'').trim();
+  const email=((document.getElementById('tbEmail')||{}).value||'').trim();
+  const pass=((document.getElementById('tbPass')||{}).value||'');
+  if(!name){alert('お名前を入れてください。');return;}
+  if(!email||pass.length<6){alert('メールと、6文字以上のパスワードを入れてください。');return;}
+  _T.pendingName=name;
+  firebase.auth().createUserWithEmailAndPassword(email,pass).catch(function(e){ alert('登録できませんでした：'+tbAuthMsg(e)); });
+}
+function tbAuthMsg(e){ const c=(e&&e.code)||''; if(c.indexOf('email-already-in-use')>=0)return 'このメールは登録済みです。ログインしてください。'; if(c.indexOf('wrong-password')>=0||c.indexOf('invalid-credential')>=0)return 'パスワードが違います。'; if(c.indexOf('user-not-found')>=0)return 'このメールは未登録です。新規登録してください。'; if(c.indexOf('weak-password')>=0)return 'パスワードは6文字以上にしてください。'; if(c.indexOf('invalid-email')>=0)return 'メールアドレスの形式が正しくありません。'; if(c.indexOf('operation-not-allowed')>=0)return 'Firebaseで「メール/パスワード」のログインが有効化されていません（管理者に連絡）。'; return (e&&e.message)||'エラー'; }
+function tbLogout(){ try{firebase.auth().signOut();}catch(e){} tbUnbind(); renderTeam(); }
+function tbBind(){
+  if(_T.bound)return; const u=firebase.auth().currentUser; if(!u)return; _T.bound=true;
+  const meRef=firebase.database().ref(tbBase()+'/members/'+u.uid);
+  meRef.on('value',function(s){
+    _T.me=s.val();
+    if(_T.me===null){ tbJoin(); return; }
+    tbBindData();
+    if(_T.me.status==='active'||_T.me.role==='admin') tbPushProgress();
+    if(tbVisible())renderTeamMain();
+  },function(err){ tbCard(`<div class="card"><h2>💬 チーム</h2><p class="muted">読み込みに失敗しました（${esc((err&&err.message)||'')}）。セキュリティルールがまだ設定されていない可能性があります。</p>${tbNav(`<button class="btn gray" onclick="tbLogout()">ログアウト</button>`)}</div>`); });
+  _T.subs.push(meRef);
+}
+function tbJoin(){
+  const u=firebase.auth().currentUser; if(!u)return;
+  const name=(_T.pendingName||'').trim()||u.email;
+  const base=tbBase(); const meRef=firebase.database().ref(base+'/members/'+u.uid);
+  const owner={name:name,email:u.email,role:'admin',status:'active',joinedAt:firebase.database.ServerValue.TIMESTAMP};
+  const member={name:name,email:u.email,role:'member',status:'pending',joinedAt:firebase.database.ServerValue.TIMESTAMP};
+  meRef.set(owner).catch(function(){ meRef.set(member).catch(function(e){ alert('参加に失敗しました：'+((e&&e.message)||e)); }); });
+}
+function tbBindData(){
+  if(_T.dataBound||!_T.me)return; _T.dataBound=true; const base=tbBase();
+  const canChat=tbIsActive(_T.me)||(_T.me.role==='admin');
+  if(canChat){
+    const mref=firebase.database().ref(base+'/messages').limitToLast(300);
+    mref.on('child_added',function(s){ const m=s.val()||{};m._k=s.key;_T.msgs.push(m); tbRenderLog(); });
+    _T.subs.push(mref);
+  }
+  if(_T.me.role==='admin'){
+    const memRef=firebase.database().ref(base+'/members');
+    memRef.on('value',function(s){ _T.members=s.val()||{}; if(tbVisible())renderTeamMain(); });
+    _T.subs.push(memRef);
+    const pRef=firebase.database().ref(base+'/progress');
+    pRef.on('value',function(s){ _T.progress=s.val()||{}; if(tbVisible())renderTeamMain(); });
+    _T.subs.push(pRef);
+  }
+}
+function tbIsActive(m){ if(!m||m.status!=='active')return false; if(m.expiresAt&&typeof m.expiresAt==='number'&&Date.now()>m.expiresAt)return false; return true; }
+function tbPushProgress(){
+  const u=firebase.auth().currentUser; if(!u||!_T.me)return;
+  const r=buildReport();
+  firebase.database().ref(tbBase()+'/progress/'+u.uid).update({name:_T.me.name||r.name,pct:r.pct,step:String(r.step),phase:r.phase,done:r.done,total:r.total,help:r.help||'',updatedAt:firebase.database.ServerValue.TIMESTAMP}).catch(function(){});
+}
+function tbSync(){ try{ if(_T&&_T.me&&firebase.auth().currentUser&&(_T.me.status==='active'||_T.me.role==='admin'))tbPushProgress(); }catch(e){} }
+function renderTeamMain(){
+  const m=_T.me; if(!m){ renderTeam(); return; }
+  const who=`<span class="muted small">${esc(m.name||'')}（${m.role==='admin'?'👑管理者':'🙋メンバー'}）</span>`;
+  if(m.status==='pending'){ tbCard(`<div class="card"><h2>💬 チーム</h2>${tbBanner(who)}<div class="card" style="background:#fff7ed;border:1px solid #fed7aa"><b>⏳ 管理者の承認待ちです</b><div class="small muted" style="margin-top:4px">管理者が承認すると、チャットと進捗の共有が使えます。少しお待ちください。</div></div>${tbNav(`<button class="btn gray" onclick="tbLogout()">ログアウト</button>`)}</div>`); return; }
+  if(m.status==='removed'){ tbCard(`<div class="card"><h2>💬 チーム</h2>${tbBanner(who)}<div class="card" style="background:#fff0f0;border:1px solid #ffc9c9"><b>このチームにはアクセスできません</b><div class="small muted" style="margin-top:4px">管理者によって参加が解除されています。</div></div>${tbNav(`<button class="btn gray" onclick="tbLogout()">ログアウト</button>`)}</div>`); return; }
+  if(!tbIsActive(m)&&m.role!=='admin'){ tbCard(`<div class="card"><h2>💬 チーム</h2>${tbBanner(who)}<div class="card" style="background:#fff0f0;border:1px solid #ffc9c9"><b>アクセス期限が切れています</b><div class="small muted" style="margin-top:4px">期限：${m.expiresAt?esc(new Date(m.expiresAt).toLocaleString('ja-JP')):''}。続けたい場合は管理者にご連絡ください。</div></div>${tbNav(`<button class="btn gray" onclick="tbLogout()">ログアウト</button>`)}</div>`); return; }
+  if(m.role==='admin') renderAdminTeam(who); else renderMemberTeam(who);
+}
+function tbBanner(who){ return `<div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:6px"><span class="muted small">チーム：${esc(_T.team)}</span>${who}</div>`; }
+function tbChatBox(){ return `<div class="chatwrap"><div class="chatlog" id="chLog"></div><div class="chatbar"><textarea id="chInput" placeholder="メッセージを入力（Ctrl+Enterで送信）" onkeydown="tbKeydown(event)"></textarea><button class="btn ok" onclick="tbSend()">送信</button></div></div>`; }
+function renderMemberTeam(who){
+  const r=buildReport();
+  tbCard(`
+   <div class="card">
+    <h2>💬 チーム</h2>${tbBanner(who)}
+    <div class="card" style="background:#f8fafc"><b class="small">あなたの進捗</b><div class="small" style="margin-top:4px">${r.pct}%（${r.done}/${r.total}）／ 現在地：STEP ${esc(String(r.step))}・${esc(r.phase)}</div><div class="muted small" style="margin-top:3px">進捗は自動で管理者に共有されます（チェックは「✅今どこ？次なに？」で）。</div></div>
+    <p class="muted small" style="margin:8px 0">困ったこと・質問があれば、ここに書いて送ってください。管理者がその場で答えます。</p>
+    ${tbChatBox()}
+    ${tbNav(`<button class="btn gray" onclick="tbLogout()">ログアウト</button>`)}
+   </div>`);
+  tbRenderLog();
+}
+function renderAdminTeam(who){
+  const mem=_T.members||{}; const keys=Object.keys(mem);
+  const pend=keys.filter(function(k){return mem[k].status==='pending';});
+  const actives=keys.filter(function(k){return mem[k].status==='active';});
+  const removed=keys.filter(function(k){return mem[k].status==='removed';});
+  const pendHtml=pend.length?pend.map(function(k){const x=mem[k];return `<div class="row" style="justify-content:space-between;align-items:center;margin:4px 0"><span class="small">🙋 ${esc(x.name||'')} <span class="muted">${esc(x.email||'')}</span></span><span><button class="btn ok" style="padding:2px 8px" onclick="tbApprove('${k}')">承認</button> <button class="btn gray" style="padding:2px 8px" onclick="tbRemove('${k}')">却下</button></span></div>`;}).join(''):'<div class="muted small">承認待ちはいません。</div>';
+  const actHtml=actives.map(function(k){const x=mem[k];const me=(k===_T.uid);const exp=x.expiresAt?('・期限 '+new Date(x.expiresAt).toLocaleDateString('ja-JP')):'';const expired=x.expiresAt&&Date.now()>x.expiresAt;
+    return `<div class="card" style="background:#fafbff;padding:8px;margin:5px 0"><div class="small">${x.role==='admin'?'👑':'🙋'} ${esc(x.name||'')}${me?' <span class="muted">(あなた)</span>':''} <span class="muted">${esc(x.email||'')}</span>${expired?' <span style="color:#e03131">期限切れ</span>':`<span class="muted">${exp}</span>`}</div><div class="row" style="gap:4px;flex-wrap:wrap;margin-top:4px">${x.role==='admin'?(me?'':`<button class="btn gray" style="padding:2px 8px" onclick="tbDemote('${k}')">管理者を外す</button>`):`<button class="btn" style="padding:2px 8px" onclick="tbPromote('${k}')">👑 管理者にする</button>`}<button class="btn gray" style="padding:2px 8px" onclick="tbExpiry('${k}')">⏱ 期限設定</button>${me?'':`<button class="btn gray" style="padding:2px 8px" onclick="tbRemove('${k}')">排除</button>`}</div></div>`;}).join('');
+  const remHtml=removed.length?('<details style="margin-top:6px"><summary class="small muted">排除済み（'+removed.length+'）</summary>'+removed.map(function(k){const x=mem[k];return `<div class="row" style="justify-content:space-between;align-items:center;margin:3px 0"><span class="small muted">${esc(x.name||'')} ${esc(x.email||'')}</span><span><button class="btn ok" style="padding:2px 8px" onclick="tbReadmit('${k}')">復帰</button> <button class="btn gray" style="padding:2px 8px" onclick="tbDelete('${k}')">完全削除</button></span></div>`;}).join('')+'</details>'):'';
+  const prog=_T.progress||{};
+  const dash=actives.map(function(k){const x=mem[k];const p=prog[k]||{};const pct=p.pct||0;const pbar=`<span style="display:inline-block;vertical-align:middle;background:#eef0f4;border-radius:99px;height:10px;width:120px;overflow:hidden"><span style="display:block;width:${pct}%;height:100%;background:${pct>=100?'var(--ok)':'var(--brand)'}"></span></span>`;
+    return `<div class="card" style="background:#fafbff;padding:8px;margin:5px 0"><div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px"><b class="small">${x.role==='admin'?'👑':'🙋'} ${esc(x.name||'')}</b><span class="small">${pbar} ${pct}%</span></div><div class="small muted" style="margin-top:2px">${p.step?('現在地：STEP '+esc(String(p.step))+'・'+esc(p.phase||'')):'まだ進捗の共有なし'}${p.updatedAt?('／更新 '+new Date(p.updatedAt).toLocaleString('ja-JP')):''}</div>${(p.help||'').trim()?`<div class="small" style="background:#fff0f0;border:1px solid #ffc9c9;border-radius:8px;padding:6px;margin-top:4px"><b>🆘 困りごと：</b>${esc(p.help)}</div>`:''}</div>`;}).join('')||'<div class="muted small">まだ進捗の共有がありません。</div>';
+  tbCard(`
+   <div class="card">
+    <h2>👑 管理者ダッシュボード</h2>${tbBanner(who)}
+    ${pend.length?`<div class="card" style="background:#fff7ed;border:1px solid #fed7aa"><b class="small">⏳ 承認待ち（${pend.length}）</b>${pendHtml}</div>`:''}
+    <h3 style="margin:14px 0 6px;font-size:15px">みんなの進捗</h3>
+    ${dash}
+    <h3 style="margin:16px 0 6px;font-size:15px">メンバー管理（${actives.length}名）</h3>
+    <p class="muted small">承認＝入れる／排除＝外す／⏱期限＝その日まで有効。管理者は複数人に渡せます。</p>
+    ${actHtml}
+    ${remHtml}
+    <h3 style="margin:16px 0 6px;font-size:15px">💬 チャット</h3>
+    ${tbChatBox()}
+    ${tbNav(`<button class="btn gray" onclick="tbLogout()">ログアウト</button>`)}
+   </div>`);
+  tbRenderLog();
+}
+function tbMW(k,obj){ firebase.database().ref(tbBase()+'/members/'+k).update(obj).catch(function(e){ alert('更新に失敗：'+((e&&e.message)||e)); }); }
+function tbApprove(k){ tbMW(k,{status:'active'}); }
+function tbRemove(k){ if(confirm('このメンバーを外しますか？（チャット・進捗が見られなくなります）'))tbMW(k,{status:'removed'}); }
+function tbReadmit(k){ tbMW(k,{status:'active'}); }
+function tbDelete(k){ if(confirm('記録ごと完全に削除しますか？'))firebase.database().ref(tbBase()+'/members/'+k).remove(); }
+function tbPromote(k){ if(confirm('このメンバーに管理者権限を渡しますか？'))tbMW(k,{role:'admin',status:'active'}); }
+function tbDemote(k){ if(confirm('このメンバーの管理者権限を外しますか？'))tbMW(k,{role:'member'}); }
+function tbExpiry(k){ const s=prompt('何日後まで有効にしますか？\n数字を入れてください（例：30）。\n「0」または空欄で無期限に戻します。',''); if(s===null)return; const n=parseInt(s,10); if(!String(s).trim()||n===0||isNaN(n)){ firebase.database().ref(tbBase()+'/members/'+k+'/expiresAt').remove(); } else { tbMW(k,{expiresAt:Date.now()+n*86400000}); } }
+function tbSend(){ const el=document.getElementById('chInput'); if(!el)return; const body=el.value.trim(); if(!body)return; const u=firebase.auth().currentUser; if(!u||!_T.me)return; firebase.database().ref(tbBase()+'/messages').push({uid:u.uid,name:_T.me.name,role:_T.me.role,body:body,ts:firebase.database.ServerValue.TIMESTAMP}); el.value='';el.focus(); }
+function tbKeydown(e){ if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();tbSend();} }
+function tbRenderLog(){ const log=document.getElementById('chLog'); if(!log)return; log.innerHTML=_T.msgs.map(function(m){ const me=(m.uid&&m.uid===_T.uid); const cls=me?'me':(m.role==='admin'?'them adminmsg':'them'); const t=(typeof m.ts==='number')?new Date(m.ts):null; const ts=t?(' '+t.getHours()+':'+('0'+t.getMinutes()).slice(-2)):''; return `<div class="msg ${cls}"><div class="who">${m.role==='admin'?'👑 ':''}${esc(m.name||'')}${ts}</div>${esc(m.body||'')}</div>`; }).join(''); log.scrollTop=log.scrollHeight; }
 
 /* ---------- init ---------- */
 load();
