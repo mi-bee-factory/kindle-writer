@@ -457,7 +457,7 @@ function checkPasscode(){
   }
 }
 
-const MIC_BTN_HTML='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><rect x="9" y="2" width="6" height="12" rx="3" stroke="currentColor" stroke-width="2"/><path d="M5 10a7 7 0 0 0 14 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="12" y1="17" x2="12" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>話して入力';
+
 /* ---------- データ ---------- */
 const S = {
   step:1, mode:'new',
@@ -771,7 +771,6 @@ function renderStep(){
       <p class="muted">きれいに書こうとしないで、話すように一気に。あとでAIが整えます。${S.mode==='paste'?'<b>※貼り付けはここに。</b>':''}</p>
       <textarea id="body" placeholder="ここに本文を書く / 貼り付ける" oninput="S.body=this.value;save();count()">${esc(S.body)}</textarea>
       <div class="counter" id="cnt"></div>
-      <div class="row" style="margin-top:8px"><button class="btn gray" id="mic_body" onclick="startVoice('body')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><rect x="9" y="2" width="6" height="12" rx="3" stroke="currentColor" stroke-width="2"/><path d="M5 10a7 7 0 0 0 14 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="12" y1="17" x2="12" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>話して入力</button><span class="muted small">しゃべって書いてもOK（Chrome推奨）</span></div>
       ${nav(true,true,true,'AIに添削してもらう →')}`;
     setTimeout(count,0);
   }
@@ -2083,10 +2082,6 @@ function renderTalk(){
     <h2>${q.q}</h2>
     <p class="muted">${q.ex}</p>
     <textarea id="${id}" placeholder="${q.ph}" oninput="S.talk['${q.k}']=this.value;save()">${esc(S.talk[q.k]||'')}</textarea>
-    <div class="row" style="margin-top:8px">
-      <button class="btn gray" id="mic_${id}" onclick="startVoice('${id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><rect x="9" y="2" width="6" height="12" rx="3" stroke="currentColor" stroke-width="2"/><path d="M5 10a7 7 0 0 0 14 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="12" y1="17" x2="12" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>話して入力</button>
-      <span class="muted small">マイクでしゃべると文字になります（Chrome推奨）</span>
-    </div>
     <div class="navrow">
       <button class="btn gray" onclick="talkPrev()">← ${i===0?'最初へ':'戻る'}</button>
       ${i<TALK_Q.length-1
@@ -2106,8 +2101,7 @@ function renderDeep(){
     ${DEEP_Q.map(q=>{const id='deep_'+q.k;return `
       <label class="f">${q.q}</label>
       <p class="muted small">${q.ex}</p>
-      <textarea id="${id}" oninput="S.deep['${q.k}']=this.value;save()">${esc((S.deep||{})[q.k]||'')}</textarea>
-      <div class="row" style="margin:6px 0 2px"><button class="btn gray" id="mic_${id}" onclick="startVoice('${id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><rect x="9" y="2" width="6" height="12" rx="3" stroke="currentColor" stroke-width="2"/><path d="M5 10a7 7 0 0 0 14 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="12" y1="17" x2="12" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>話して入力</button></div>`;}).join('')}
+      <textarea id="${id}" oninput="S.deep['${q.k}']=this.value;save()">${esc((S.deep||{})[q.k]||'')}</textarea>`;}).join('')}
     <div class="navrow">
       <button class="btn gray" onclick="S.talkStep=TALK_Q.length-1;renderTalk()">← 質問にもどる</button>
       <button class="btn ok" onclick="summarizeTalk()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px;flex-shrink:0"><path d="M15 4l5 5L8 21H3v-5L15 4z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M19 2l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>章の形にまとめる</button>
@@ -2238,8 +2232,6 @@ function renderConvert(){
       <span><code style="background:#f2f2f2;padding:1px 5px">*テキスト*</code> → <i>斜体</i></span>
       <span><code style="background:#f2f2f2;padding:1px 5px">---</code> → 空白区切り</span>
     </div>
-    <button class="btn gray" id="mic_cbody" onclick="startVoice('cbody')" style="margin-top:6px;font-size:13px;padding:6px 14px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><rect x="9" y="2" width="6" height="12" rx="3" stroke="currentColor" stroke-width="2"/><path d="M5 10a7 7 0 0 0 14 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="12" y1="17" x2="12" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>話して入力</button>
-
     <label class="f" style="margin-top:20px"><b>ステップ②：リライト方法を選ぶ</b></label>
     <div style="display:flex;flex-direction:column;gap:8px;margin:10px 0">
       <button class="btn ok" onclick="copyConvertPolishPrompt()" style="padding:12px 16px;font-size:14px;text-align:left">ChatGPT・他のAIで添削する（無料）<br><span style="font-size:12px;opacity:.85;font-weight:400">プロンプトをコピー → ChatGPTに貼って実行 → 仕上がった文章を③に貼り戻す</span></button>
@@ -2961,24 +2953,7 @@ function sendTmplToCompile(){
   startCompile();
 }
 
-/* ---------- 音声入力（話しながら） ---------- */
-let _rec=null,_recId=null;
-function startVoice(id){
-  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR){alert('このブラウザは音声入力に未対応です。Google Chrome だと使えます（PC・Androidスマホ）。');return;}
-  const el=document.getElementById(id); if(!el)return;
-  const btn=document.getElementById('mic_'+id);
-  if(_rec){_rec.stop();_rec=null;if(btn)btn.innerHTML=MIC_BTN_HTML;return;}
-  _rec=new SR();_rec.lang='ja-JP';_rec.interimResults=false;_rec.continuous=true;_recId=id;
-  _rec.onresult=function(e){
-    let add='';
-    for(let i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)add+=e.results[i][0].transcript;}
-    if(add){el.value=(el.value?el.value+'\n':'')+add;el.dispatchEvent(new Event('input'));}
-  };
-  _rec.onerror=function(){if(btn)btn.innerHTML=MIC_BTN_HTML;_rec=null;};
-  _rec.onend=function(){if(btn)btn.innerHTML=MIC_BTN_HTML;_rec=null;};
-  try{_rec.start();if(btn)btn.textContent='● 録音中（押すと止める）';}catch(e){}
-}
+
 
 /* ---------- 画像の貼り付け（ページのどこで貼ってもアクティブな章に入る） ---------- */
 let _activeChap=0;
@@ -3040,7 +3015,6 @@ function renderPlan(){
     <h3 style="margin:12px 0 4px">${q.q}</h3>
     <p class="muted">${q.ex}</p>
     <textarea id="planAns" style="min-height:${q.big?160:100}px" placeholder="${q.ph}" oninput="if(!S.planAnswers)S.planAnswers={};S.planAnswers['${q.k}']=this.value;save()">${esc((S.planAnswers||{})[q.k]||'')}</textarea>
-    <div class="row" style="margin-top:8px"><button class="btn gray" id="mic_planAns" onclick="startVoice('planAns')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><rect x="9" y="2" width="6" height="12" rx="3" stroke="currentColor" stroke-width="2"/><path d="M5 10a7 7 0 0 0 14 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="12" y1="17" x2="12" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>話して入力</button></div>
     <div class="navrow">
       <button class="btn gray" onclick="${i===0?'goHome()':'S.planStep--;save();renderPlan()'}">← ${i===0?'最初へ':'戻る'}</button>
       ${i<PLAN_Q.length-1
