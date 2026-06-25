@@ -1798,18 +1798,10 @@ function renderCoInviteAdmin(){
   const el=document.getElementById('coInviteSection');if(!el)return;
   if(!S.book)S.book={chapters:[],title:''};
   const n=(S.coauthor&&S.people>=2)?S.people:1;
-  const hasBody=S.book.chapters.some(c=>(c.body||'').trim());
-  if(!S.book.chapters.length){
-    S.book.chapters=Array.from({length:n},()=>({author:'',title:'',body:''}));
-    save();
-  } else {
-    // 不足分を追加
-    while(S.book.chapters.length<n)S.book.chapters.push({author:'',title:'',body:''});
-    // 超過分：内容のない末尾スロットを削除してnに合わせる
-    while(S.book.chapters.length>n&&!(S.book.chapters[S.book.chapters.length-1].body||'').trim())S.book.chapters.pop();
-    if(S.book.chapters.length!==n)save();
-  }
-  const ch=S.book.chapters;
+  // 不足分を追加
+  while(S.book.chapters.length<n)S.book.chapters.push({author:'',title:'',body:''});
+  // 表示は常にS.people分のみ（超過分はストレージに残すが表示しない）
+  const ch=S.book.chapters.slice(0,n);
   const received=ch.filter(c=>(c.body||'').trim()).length;
   const last=ch[ch.length-1];
   const canDelete=ch.length>1&&!(last.body||'').trim();
