@@ -223,7 +223,7 @@
 <!-- ===== パスコード画面（Supabase移行時はここを差し替える） ===== -->
 <div id="passcodeOverlay">
   <div class="pc-box">
-    <div style="font-size:28px;margin-bottom:12px">📖</div>
+    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" style="margin-bottom:12px"><rect x="3" y="3" width="18" height="18" rx="2" stroke="#ffcc00" stroke-width="2"/><path d="M7 8h10M7 12h10M7 16h6" stroke="#403129" stroke-width="1.8" stroke-linecap="round"/></svg>
     <h2>Kindle出版サポート</h2>
     <p>テスト版です。パスコードを入力してください。</p>
     <input type="password" id="passcodeInput" placeholder="パスコード"
@@ -1228,7 +1228,7 @@ function renderChecklist(){
     <h2>出版手続きチェックリスト</h2>
     <p class="muted">KDP登録・表紙・出版手続きなど、手続き系タスクの進み具合を管理します。チェックを入れると記録されます（このブラウザに保存）。</p>
     <div style="background:var(--ok-soft);border-left:3px solid var(--ok);padding:10px 14px;font-size:13px;color:var(--ok);margin:8px 0">
-      📝 <b>執筆・原稿の進捗</b>はホームの「YOUR BOOK」カードで自動追跡しています。このチェックリストとは別管理です。
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-1px;margin-right:4px"><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><b>執筆・原稿の進捗</b>はホームの「YOUR BOOK」カードで自動追跡しています。このチェックリストとは別管理です。
     </div>
     <div style="margin:8px 0">${pbar}</div>
     ${head}
@@ -2344,7 +2344,7 @@ function renderConvResult(isAI){
     </div>
     ${(S.currentChap===null||S.currentChap===undefined)?`
     <div style="margin-top:20px;padding:16px 18px;border-top:2px solid var(--line-soft);background:#FAFAF8">
-      <div style="font-size:12px;font-weight:700;color:var(--sub);letter-spacing:.08em;margin-bottom:12px">📖 この文章を本に保存する</div>
+      <div style="font-size:12px;font-weight:700;color:var(--sub);letter-spacing:.08em;margin-bottom:12px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" style="vertical-align:-1px;margin-right:4px"><path d="M4 19.5A2.5 2.5 0 016.5 17H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>この文章を本に保存する</div>
       <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">章タイトル</label>
       <input type="text" id="convSaveTitle" placeholder="第${(S.book&&S.book.chapters?S.book.chapters.length:0)+1}章" style="margin-bottom:12px;width:100%;box-sizing:border-box">
       <button class="btn ok" onclick="saveConvertResultToChapter()" style="width:100%;font-size:14px;padding:12px">
