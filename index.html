@@ -274,8 +274,9 @@
       <button onclick="changePassword()" style="background:var(--brand);color:#403129;border:none;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;width:100%">パスワードを変更</button>
       <div id="settingsPwMsg" style="font-size:12px;margin-top:6px;display:none"></div>
     </div>
-    <!-- メールアドレス表示 -->
+    <!-- ロール・メール表示 -->
     <div>
+      <div id="settingsRoleDisp" style="font-size:13px;color:var(--sub);margin-bottom:10px"></div>
       <label style="font-size:12px;font-weight:700;color:var(--sub);display:block;margin-bottom:4px">ログイン中のメールアドレス</label>
       <div id="settingsEmail" style="font-size:13px;color:var(--ink);background:var(--bg-alt);padding:8px 12px"></div>
     </div>
@@ -601,6 +602,8 @@ function openUserSettings(){
   const currentName=document.getElementById('headerUserName')?.textContent||_sbUser?.user_metadata?.name||S.author||'';
   if(nameEl)nameEl.value=currentName;
   if(emailEl)emailEl.textContent=_sbUser?.email||'';
+  const roleDisp=document.getElementById('settingsRoleDisp');
+  if(roleDisp){const rc=(_ROLE_CONFIG&&_sbRole)?(_ROLE_CONFIG[_sbRole]||_ROLE_CONFIG.member):_ROLE_CONFIG?.member;if(rc)roleDisp.innerHTML=`あなたの役割：<span style="background:${rc.bg};color:${rc.color};border:1px solid ${rc.border};font-size:12px;font-weight:700;padding:2px 10px">${rc.label}</span>`;}
   const pw1=document.getElementById('settingsNewPw');const pw2=document.getElementById('settingsNewPw2');
   if(pw1)pw1.value='';if(pw2)pw2.value='';
   const nm=document.getElementById('settingsNameMsg');const pm=document.getElementById('settingsPwMsg');
@@ -839,11 +842,14 @@ function showProjectModal(){
   }).join('');
   const modal=document.createElement('div');modal.id=mid;
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  const roleLabel=(_ROLE_CONFIG&&_sbRole)?(_ROLE_CONFIG[_sbRole]||_ROLE_CONFIG.member).label:'';
   modal.innerHTML=`<div style="background:#fff;max-width:460px;width:100%;padding:28px;box-shadow:0 24px 64px rgba(0,0,0,.4);max-height:90vh;overflow-y:auto">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
       <h3 style="margin:0;font-size:17px">プロジェクトを切り替える</h3>
       <button onclick="document.getElementById('${mid}').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--sub);padding:0;line-height:1">×</button>
     </div>
+    ${roleLabel?`<div style="font-size:12px;background:var(--bg-alt);padding:6px 12px;margin-bottom:16px;color:var(--sub)">ログイン中：<b style="color:var(--ink)">${esc(document.getElementById('headerUserName')?.textContent||'')}</b>　役割：<b style="color:#3a6929">${roleLabel}</b></div>`:''}
+    <div style="font-size:11px;color:var(--sub);margin-bottom:8px">※ プロジェクト名はクリックして直接編集できます</div>
     ${rows}
     <div style="margin-top:16px;border-top:1px solid var(--line-soft);padding-top:16px">
       <div style="font-size:12px;color:var(--sub);margin-bottom:8px">新しいプロジェクトを作成</div>
@@ -862,9 +868,12 @@ function renderProjectSwitcher(){
   const el=document.getElementById('projectSwitcher');if(!el)return;
   const m=_pmMeta();
   const cur=m.projects.find(p=>p.id===m.current)||m.projects[0];
-  el.innerHTML=`<div style="display:flex;align-items:center;gap:10px;padding:8px 16px;background:var(--bg-alt);border:1px solid var(--line-soft);margin-bottom:12px">
+  const rc=(_ROLE_CONFIG&&_sbRole)?(_ROLE_CONFIG[_sbRole]||_ROLE_CONFIG.member):null;
+  const roleBadge=rc?`<span style="background:${rc.bg};color:${rc.color};border:1px solid ${rc.border};font-size:10px;font-weight:700;padding:1px 7px;white-space:nowrap;flex-shrink:0">${rc.label}</span>`:'';
+  el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;padding:8px 16px;background:var(--bg-alt);border:1px solid var(--line-soft);margin-bottom:12px">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" stroke="var(--sub)" stroke-width="2" stroke-linejoin="round"/><polyline points="9 22 9 12 15 12 15 22" stroke="var(--sub)" stroke-width="2" stroke-linejoin="round"/></svg>
     <span style="font-size:13px;font-weight:700;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(cur?cur.name:'マイプロジェクト')}</span>
+    ${roleBadge}
     ${m.projects.length>1?`<span style="font-size:11px;color:var(--sub)">${m.projects.length}件</span>`:''}
     <button onclick="showProjectModal()" style="background:none;border:1px solid var(--line-soft);color:var(--sub);font-size:12px;padding:3px 10px;cursor:pointer;white-space:nowrap;flex-shrink:0">切り替え / 追加</button>
   </div>`;
