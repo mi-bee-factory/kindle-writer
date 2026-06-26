@@ -595,7 +595,9 @@ function openUserSettings(){
   m.style.display='flex';
   const nameEl=document.getElementById('settingsName');
   const emailEl=document.getElementById('settingsEmail');
-  if(nameEl)nameEl.value=document.getElementById('headerUserName')?.textContent||'';
+  // ヘッダー表示名 → 登録メタデータ名 → S.author の順に優先
+  const currentName=document.getElementById('headerUserName')?.textContent||_sbUser?.user_metadata?.name||S.author||'';
+  if(nameEl)nameEl.value=currentName;
   if(emailEl)emailEl.textContent=_sbUser?.email||'';
   const pw1=document.getElementById('settingsNewPw');const pw2=document.getElementById('settingsNewPw2');
   if(pw1)pw1.value='';if(pw2)pw2.value='';
