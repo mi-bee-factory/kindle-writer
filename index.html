@@ -512,15 +512,20 @@ const _sb=window.supabase.createClient(_SB_URL,_SB_KEY);
 let _sbUser=null,_sbRole='member',_sbTimer=null,_freshLogin=false;
 
 async function authInit(){
-  const {data:{session}}=await _sb.auth.getSession();
-  if(session){_sbUser=session.user;_authOnLogin();}
+  let handled=false;
+  // リスナーを先に登録（SIGNED_IN を確実に拾うため）
   _sb.auth.onAuthStateChange((ev,sess)=>{
-    if(ev==='PASSWORD_RECOVERY'){
-      _authShowResetForm();return;
+    if(ev==='PASSWORD_RECOVERY'){_authShowResetForm();return;}
+    if(ev==='SIGNED_OUT'){
+      _sbUser=null;handled=false;
+      document.getElementById('authOverlay').classList.remove('hidden');
+      return;
     }
-    if((ev==='SIGNED_IN'||ev==='INITIAL_SESSION'||ev==='TOKEN_REFRESHED')&&sess){_sbUser=sess.user;_authOnLogin();}
-    else if(ev==='SIGNED_OUT'){_sbUser=null;document.getElementById('authOverlay').classList.remove('hidden');}
+    if(sess&&sess.user){_sbUser=sess.user;handled=true;_authOnLogin();}
   });
+  // フォールバック：リスナーが INITIAL_SESSION を取り逃した場合に備える
+  const {data:{session}}=await _sb.auth.getSession();
+  if(session&&!handled){_sbUser=session.user;_authOnLogin();}
 }
 function _authOnLogin(){
   document.getElementById('authOverlay').classList.add('hidden');
