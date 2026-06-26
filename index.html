@@ -11,7 +11,7 @@
     --bg:#ebebea; --bg-alt:#e0dedb; --bg-pale:#fff9d6; --card:#ffffff;
     --ink:#222222; --sub:#4a4a5c; --muted:#8e8e9a;
     --line:#686878; --line-soft:#ddd7cb;
-    --ok:#3a8a5c; --ok-soft:#d0eddc; --warn:#FFF7ED; --warn-ink:#9A3412;
+    --ok:#5d9020; --ok-soft:#e8f4c4; --warn:#FFF7ED; --warn-ink:#9A3412;
     --blue:#1d4080; --blue-soft:#d4e4f7; --blue-line:#7aa7d9;
     --r-sm:0; --r-md:0; --r-pill:0;
     --shadow:rgba(0,0,0,.04) 0px 20px 13px 0px;
@@ -2253,85 +2253,83 @@ function renderCoInviteAdmin(){
   const chapRows=ch.map((c,i)=>{
     const hasBody=!!(c.body||'').trim();
     const cleanTitle=(c.title||'').replace(/^\*+$/,'').trim();
-    return `<div style="padding:10px 12px;border:1px solid var(--line-soft);margin-bottom:6px;background:${hasBody?'#f0fff4':'#fff'}">
+    return `<div style="padding:10px 0 10px ${hasBody?'10px':'0'};border-bottom:1px solid var(--line-soft);${hasBody?'border-left:3px solid var(--ok);padding-left:12px;':''}">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
         <span style="background:var(--brand);color:#403129;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${i+1}</span>
         <input type="text" value="${esc(cleanTitle)}" placeholder="章タイトル（例：はじめに）"
-          style="flex:1;border:1px solid var(--line-soft);padding:4px 8px;font-size:13px"
+          style="flex:1;border:none;border-bottom:1px solid var(--line-soft);padding:4px 6px;font-size:13px;background:transparent"
           oninput="S.book.chapters[${i}].title=this.value;save()">
         <input type="text" value="${esc(c.author||'')}" placeholder="担当者名"
-          style="width:90px;border:1px solid var(--line-soft);padding:4px 8px;font-size:13px"
+          style="width:90px;border:none;border-bottom:1px solid var(--line-soft);padding:4px 6px;font-size:13px;background:transparent"
           oninput="S.book.chapters[${i}].author=this.value;save()">
-        ${hasBody?`<span style="color:var(--ok);font-size:12px;font-weight:700;white-space:nowrap;flex-shrink:0">✓ 受取済</span><span style="font-size:11px;color:var(--sub);white-space:nowrap">${(c.body||'').length.toLocaleString()}文字</span>${(c.images&&c.images.length)?`<span style="font-size:11px;background:#fffbeb;border:1px solid #f59e0b;color:#92400e;padding:1px 6px;white-space:nowrap;flex-shrink:0">画像${c.images.length}件</span>`:''}
+        ${hasBody?`<span style="color:var(--ok);font-size:12px;font-weight:700;white-space:nowrap;flex-shrink:0">✓ 受取済</span><span style="font-size:11px;color:var(--sub);white-space:nowrap">${(c.body||'').length.toLocaleString()}文字</span>${(c.images&&c.images.length)?`<span style="font-size:11px;background:#fffbeb;color:#92400e;padding:1px 6px;white-space:nowrap;flex-shrink:0">画像${c.images.length}件</span>`:''}
           <button onclick="previewCoChapter(${i})" style="font-size:11px;background:var(--ok);color:#fff;border:none;padding:3px 10px;cursor:pointer;font-weight:700;flex-shrink:0">内容を確認</button>`:''}
       </div>
-      <button id="invBtn_${i}" onclick="copyInviteUrl(${i})" style="background:var(--brand-soft);border:1px solid var(--brand);color:#403129;padding:4px 12px;font-size:12px;cursor:pointer;font-weight:700;display:inline-flex;align-items:center;gap:5px">
+      <button id="invBtn_${i}" onclick="copyInviteUrl(${i})" style="background:var(--brand-soft);border:none;color:#403129;padding:4px 14px;font-size:12px;cursor:pointer;font-weight:700;display:inline-flex;align-items:center;gap:5px">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         招待URLをコピー
       </button>
     </div>`;
   }).join('');
   el.innerHTML=`
-    <div style="border:1px solid var(--line-soft);margin-top:20px">
-      <div style="background:var(--bg-alt);padding:12px 16px;font-weight:700;font-size:13px;border-bottom:1px solid var(--line-soft)">共著メンバーへの招待と章の受け取り</div>
-      <div style="padding:16px">
-        <div style="margin-bottom:12px">
-          <label style="font-size:12px;color:var(--sub);display:block;margin-bottom:4px;font-weight:600">書籍タイトル（URLに含まれます）</label>
-          <input type="text" value="${esc(S.book.title||'')}" placeholder="本のタイトル"
-            style="width:100%;border:1px solid var(--line-soft);padding:6px 10px;font-size:13px;box-sizing:border-box"
-            oninput="S.book.title=this.value;save()">
-        </div>
-        <div style="font-size:12px;color:#555;font-weight:600;margin-bottom:8px">章ごとにタイトルと担当者名を入れて「招待URLをコピー」→ LINEなどで送る</div>
-        ${chapRows}
-        <div style="display:flex;gap:8px;margin-bottom:20px">
-          <button onclick="addChapterSlot()" style="font-size:12px;padding:5px 12px;display:inline-flex;align-items:center;gap:4px;background:#bddf9a;color:#403129;border:none;font-weight:600;cursor:pointer">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>共著者を1名追加
-          </button>
-          ${canDelete?`<button class="btn gray" onclick="removeLastChapterSlot()" style="font-size:12px;padding:5px 12px">− 最後の枠を削除</button>`:''}
-        </div>
-        <div style="border-top:1px solid var(--line-soft);padding-top:16px">
-          <div style="font-weight:700;font-size:13px;margin-bottom:10px">メンバーから章を受け取る</div>
-          <div style="background:#f0fbe8;border:1px solid #bddf9a;padding:12px 14px;margin-bottom:14px;border-radius:2px">
-            <div style="font-size:12px;font-weight:700;color:#3a6929;margin-bottom:6px">クラウドで自動受け取り</div>
-            <p style="font-size:12px;color:#555;margin:0 0 10px;line-height:1.6">メンバーが「クラウドに保存」すると、このボタンで最新の原稿をまとめて取り込めます。</p>
-            <button id="sbFetchBtn" class="btn ok" onclick="fetchChaptersFromSupabase()" style="font-size:13px;padding:8px 20px">メンバーの最新原稿を取り込む</button>
-          </div>
-        </div>
-        ${received>0?`<div style="margin-top:14px;padding:12px 16px;background:#f0fff4;border:1px solid var(--ok)">
-          <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--ok)">受取済：${received} / ${ch.length}章</div>
-          <button class="btn ok" onclick="startCompile()" style="display:inline-flex;align-items:center;gap:6px">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M4 19.5A2.5 2.5 0 016.5 17H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
-            全章を確認してEPUBに書き出す →
-          </button>
-        </div>`:''}
+    <div style="margin-top:24px">
+      <div style="font-size:14px;font-weight:700;color:var(--ink);padding-bottom:10px;border-bottom:2px solid var(--brand);margin-bottom:18px">共著メンバーへの招待と章の受け取り</div>
+      <div style="margin-bottom:14px">
+        <label style="font-size:11px;color:var(--sub);display:block;margin-bottom:4px;font-weight:700;letter-spacing:.04em;text-transform:uppercase">書籍タイトル（URLに含まれます）</label>
+        <input type="text" value="${esc(S.book.title||'')}" placeholder="本のタイトル"
+          style="width:100%;border:none;border-bottom:1px solid var(--line-soft);padding:6px 0;font-size:14px;box-sizing:border-box;background:transparent"
+          oninput="S.book.title=this.value;save()">
       </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">章ごとにタイトルと担当者名を入れて「招待URLをコピー」→ LINEなどで送る</div>
+      ${chapRows}
+      <div style="display:flex;gap:8px;margin:14px 0 20px">
+        <button onclick="addChapterSlot()" style="font-size:12px;padding:5px 14px;display:inline-flex;align-items:center;gap:4px;background:var(--ok-soft);color:var(--ok);border:none;font-weight:700;cursor:pointer">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>共著者を1名追加
+        </button>
+        ${canDelete?`<button class="btn gray" onclick="removeLastChapterSlot()" style="font-size:12px;padding:5px 12px">− 最後の枠を削除</button>`:''}
+      </div>
+      <div style="border-top:1px solid var(--line-soft);padding-top:16px">
+        <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:10px">メンバーから章を受け取る</div>
+        <div style="background:var(--ok-soft);padding:14px 16px;margin-bottom:14px">
+          <div style="font-size:12px;font-weight:700;color:var(--ok);margin-bottom:6px">クラウドで自動受け取り</div>
+          <p style="font-size:12px;color:var(--sub);margin:0 0 10px;line-height:1.6">メンバーが「クラウドに保存」すると、このボタンで最新の原稿をまとめて取り込めます。</p>
+          <button id="sbFetchBtn" class="btn ok" onclick="fetchChaptersFromSupabase()" style="font-size:13px;padding:8px 20px">メンバーの最新原稿を取り込む</button>
+        </div>
+      </div>
+      ${received>0?`<div style="margin-top:4px;padding:14px 16px;background:var(--ok-soft)">
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--ok)">受取済：${received} / ${ch.length}章</div>
+        <button class="btn ok" onclick="startCompile()" style="display:inline-flex;align-items:center;gap:6px">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M4 19.5A2.5 2.5 0 016.5 17H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+          全章を確認してEPUBに書き出す →
+        </button>
+      </div>`:''}
     </div>
-    <div style="border:1px solid var(--line-soft);margin-top:16px">
-      <div style="background:var(--bg-alt);padding:12px 16px;font-weight:700;font-size:13px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between">
-        <span>管理者が書く特別章（はじめに・おわりに など）</span>
-        <span style="font-size:11px;color:var(--sub);font-weight:400">共著者に割り当てない章を管理者が直接執筆</span>
+    <div style="margin-top:28px">
+      <div style="font-size:14px;font-weight:700;color:var(--ink);padding-bottom:10px;border-bottom:2px solid var(--brand);margin-bottom:18px;display:flex;align-items:baseline;gap:10px">
+        <span>プロデューサーが書く特別章</span>
+        <span style="font-size:11px;color:var(--muted);font-weight:400">はじめに・おわりに など</span>
       </div>
-      <div style="padding:16px">
+      <div>
         ${_renderSpecialChapters()}
         <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">
           ${[['hajimeni','はじめに'],['prologue','プロローグ'],['atogaki','あとがき'],['owarini','おわりに'],['custom','その他']]
-            .map(([t,l])=>`<button onclick="addSpecialChapter('${t}')" style="font-size:12px;padding:4px 12px;background:var(--brand-soft);border:1px solid var(--brand);color:#403129;cursor:pointer;font-weight:700">＋ ${l}</button>`)
+            .map(([t,l])=>`<button onclick="addSpecialChapter('${t}')" style="font-size:12px;padding:4px 14px;background:var(--brand-soft);border:none;color:#403129;cursor:pointer;font-weight:700">＋ ${l}</button>`)
             .join('')}
         </div>
       </div>
     </div>
-    <div style="border:1px solid #bddf9a;background:#f0fbe8;padding:12px 16px;margin-top:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-      <span style="font-size:12px;font-weight:700;color:#3a6929;flex:1">プロジェクトデータのクラウド同期</span>
-      <button onclick="_sbSaveProjectData().then(()=>{const t=document.createElement('div');t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:8px 20px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none';t.textContent='✓ クラウドに保存しました';document.body.appendChild(t);setTimeout(()=>t.remove(),2000);})" style="font-size:12px;background:#bddf9a;color:#3a6929;border:1px solid #8fbe6a;padding:5px 14px;cursor:pointer;font-weight:700">↑ クラウドに保存</button>
-      <button onclick="_sbLoadProjectData().then(ok=>{const t=document.createElement('div');t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:8px 20px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none';t.textContent=ok?'✓ クラウドから読み込みました':'データがありません';document.body.appendChild(t);setTimeout(()=>t.remove(),2000);})" style="font-size:12px;background:#fff;color:#3a6929;border:1px solid #8fbe6a;padding:5px 14px;cursor:pointer;font-weight:700">↓ クラウドから取得</button>
+    <div style="background:var(--ok-soft);padding:12px 16px;margin-top:24px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:12px;font-weight:700;color:var(--ok);flex:1">プロジェクトデータのクラウド同期</span>
+      <button onclick="_sbSaveProjectData().then(()=>{const t=document.createElement('div');t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:8px 20px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none';t.textContent='✓ クラウドに保存しました';document.body.appendChild(t);setTimeout(()=>t.remove(),2000);})" style="font-size:12px;background:var(--ok);color:#fff;border:none;padding:5px 14px;cursor:pointer;font-weight:700">↑ クラウドに保存</button>
+      <button onclick="_sbLoadProjectData().then(ok=>{const t=document.createElement('div');t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:8px 20px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none';t.textContent=ok?'✓ クラウドから読み込みました':'データがありません';document.body.appendChild(t);setTimeout(()=>t.remove(),2000);})" style="font-size:12px;background:#fff;color:var(--ok);border:none;padding:5px 14px;cursor:pointer;font-weight:700">↓ クラウドから取得</button>
     </div>
-    <div style="border:1px solid var(--line-soft);margin-top:16px">
-      <div style="background:var(--bg-alt);padding:12px 16px;font-weight:700;font-size:13px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between">
+    <div style="margin-top:28px">
+      <div style="font-size:14px;font-weight:700;color:var(--ink);padding-bottom:10px;border-bottom:2px solid var(--brand);margin-bottom:18px;display:flex;align-items:center;justify-content:space-between">
         <span>参加ユーザー一覧</span>
-        <button onclick="loadUserList()" style="font-size:12px;background:none;border:1px solid var(--line-soft);padding:3px 12px;cursor:pointer;color:var(--sub);font-weight:600">一覧を更新</button>
+        <button onclick="loadUserList()" style="font-size:12px;background:none;border:none;padding:0;cursor:pointer;color:var(--ok);font-weight:700">↻ 更新</button>
       </div>
-      <div id="userListSection" style="padding:14px 16px">
-        <p style="font-size:13px;color:var(--sub);margin:0">「一覧を更新」を押すと登録済みユーザーが表示されます。</p>
+      <div id="userListSection">
+        <p style="font-size:13px;color:var(--sub);margin:0">「更新」を押すと登録済みユーザーが表示されます。</p>
       </div>
     </div>
   `;
