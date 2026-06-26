@@ -2067,6 +2067,29 @@ function _applyChapterData(d){
   alert(`✓ 「${cleanT}」（${d.author||'著者名なし'}）を取り込みました。`);
   renderCoInviteAdmin();
 }
+async function loadUserList(){
+  const el=document.getElementById('userListSection');if(!el)return;
+  el.innerHTML='<p style="font-size:13px;color:var(--sub);margin:0">読み込み中...</p>';
+  const {data,error}=await _sb.from('profiles').select('*').order('created_at',{ascending:true});
+  if(error||!data){el.innerHTML='<p style="font-size:13px;color:#e03131;margin:0">取得できませんでした。</p>';return;}
+  const myId=_sbUser?.id;
+  el.innerHTML=data.map(u=>{
+    const isMe=u.id===myId;
+    const roleLabel=u.role==='admin'?'<span style="background:#bddf9a;color:#3a6929;font-size:11px;font-weight:700;padding:2px 8px">管理者</span>':'<span style="background:#e8e5e0;color:var(--sub);font-size:11px;font-weight:700;padding:2px 8px">メンバー</span>';
+    const meTag=isMe?'<span style="font-size:11px;color:var(--brand-dim);font-weight:700;margin-left:4px">（あなた）</span>':'';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line-soft)">
+      <div style="flex:1;font-size:13px;font-weight:${isMe?'700':'400'};color:var(--ink)">${esc(u.name||'（名前未設定）')}${meTag}</div>
+      <div>${roleLabel}</div>
+      ${u.role!=='admin'&&!isMe?`<button onclick="promoteToAdmin('${u.id}')" style="font-size:11px;background:none;border:1px solid var(--line-soft);padding:2px 8px;cursor:pointer;color:var(--sub)">管理者にする</button>`:''}
+    </div>`;
+  }).join('')||'<p style="font-size:13px;color:var(--sub);margin:0">ユーザーが見つかりません。</p>';
+}
+async function promoteToAdmin(userId){
+  if(!confirm('このユーザーを管理者にしますか？'))return;
+  const {error}=await _sb.from('profiles').update({role:'admin'}).eq('id',userId);
+  if(error){alert('変更できませんでした。Supabase側のRLS設定が必要な場合があります。');}
+  else{loadUserList();}
+}
 function addChapterSlot(){
   if(!S.book)S.book={chapters:[],title:''};
   S.book.chapters.push({author:'',title:'',body:''});
@@ -2132,12 +2155,12 @@ function renderCoInviteAdmin(){
         <div style="border-top:1px solid var(--line-soft);padding-top:16px">
           <div style="font-weight:700;font-size:13px;margin-bottom:10px">メンバーから章を受け取る</div>
           <div style="background:#f0fbe8;border:1px solid #bddf9a;padding:12px 14px;margin-bottom:14px;border-radius:2px">
-            <div style="font-size:12px;font-weight:700;color:#3a6929;margin-bottom:6px">自動受け取り（Supabase連携）</div>
-            <p style="font-size:12px;color:#555;margin:0 0 10px;line-height:1.6">メンバーが章を保存すると自動でクラウドに届きます。ボタンを押して最新状態を取り込んでください。</p>
-            <button id="sbFetchBtn" class="btn ok" onclick="fetchChaptersFromSupabase()" style="font-size:13px;padding:8px 20px">Supabaseから最新を取得</button>
+            <div style="font-size:12px;font-weight:700;color:#3a6929;margin-bottom:6px">クラウドで自動受け取り</div>
+            <p style="font-size:12px;color:#555;margin:0 0 10px;line-height:1.6">メンバーが「クラウドに保存」すると、このボタンで最新の原稿をまとめて取り込めます。</p>
+            <button id="sbFetchBtn" class="btn ok" onclick="fetchChaptersFromSupabase()" style="font-size:13px;padding:8px 20px">メンバーの最新原稿を取り込む</button>
           </div>
           <details style="margin-bottom:6px">
-            <summary style="font-size:12px;color:var(--sub);cursor:pointer">KWCHAPコードで手動受け取りする場合はこちら</summary>
+            <summary style="font-size:12px;color:var(--sub);cursor:pointer">メンバーからコードを受け取った場合はこちら</summary>
             <div style="margin-top:10px">
             <p style="font-size:12px;color:var(--sub);margin-bottom:10px;line-height:1.6">メンバーが送ってきた <b>KWCHAP1…</b> コードを貼り付けて「読み込む」を押してください。</p>
             <textarea id="chapCodePaste" placeholder="KWCHAP1. から始まるコードをここに貼り付け" style="width:100%;min-height:72px;font-size:12px;padding:8px 10px;box-sizing:border-box;border:1px solid var(--line-soft);background:#fafaf8;resize:vertical"></textarea>
@@ -2176,7 +2199,17 @@ function renderCoInviteAdmin(){
         </div>
       </div>
     </div>
+    <div style="border:1px solid var(--line-soft);margin-top:16px">
+      <div style="background:var(--bg-alt);padding:12px 16px;font-weight:700;font-size:13px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between">
+        <span>参加ユーザー一覧</span>
+        <button onclick="loadUserList()" style="font-size:12px;background:none;border:1px solid var(--line-soft);padding:3px 12px;cursor:pointer;color:var(--sub);font-weight:600">一覧を更新</button>
+      </div>
+      <div id="userListSection" style="padding:14px 16px">
+        <p style="font-size:13px;color:var(--sub);margin:0">「一覧を更新」を押すと登録済みユーザーが表示されます。</p>
+      </div>
+    </div>
   `;
+  loadUserList();
 }
 const _SPECIAL_LABELS={hajimeni:'はじめに',prologue:'プロローグ',atogaki:'あとがき',owarini:'おわりに',custom:'その他'};
 function _renderSpecialChapters(){
