@@ -2067,27 +2067,49 @@ function _applyChapterData(d){
   alert(`✓ 「${cleanT}」（${d.author||'著者名なし'}）を取り込みました。`);
   renderCoInviteAdmin();
 }
+const _ROLE_CONFIG={
+  owner:{label:'オーナー',bg:'#fff3b0',color:'#7a5c00',border:'#e8c800'},
+  admin:{label:'管理者',bg:'#bddf9a',color:'#3a6929',border:'#8fbe6a'},
+  member:{label:'作業者',bg:'#e8e5e0',color:'#4a4a5c',border:'#ccc8c0'}
+};
 async function loadUserList(){
   const el=document.getElementById('userListSection');if(!el)return;
   el.innerHTML='<p style="font-size:13px;color:var(--sub);margin:0">読み込み中...</p>';
   const {data,error}=await _sb.from('profiles').select('*').order('created_at',{ascending:true});
   if(error||!data){el.innerHTML='<p style="font-size:13px;color:#e03131;margin:0">取得できませんでした。</p>';return;}
   const myId=_sbUser?.id;
-  el.innerHTML=data.map(u=>{
-    const isMe=u.id===myId;
-    const roleLabel=u.role==='admin'?'<span style="background:#bddf9a;color:#3a6929;font-size:11px;font-weight:700;padding:2px 8px">管理者</span>':'<span style="background:#e8e5e0;color:var(--sub);font-size:11px;font-weight:700;padding:2px 8px">メンバー</span>';
-    const meTag=isMe?'<span style="font-size:11px;color:var(--brand-dim);font-weight:700;margin-left:4px">（あなた）</span>':'';
-    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line-soft)">
-      <div style="flex:1;font-size:13px;font-weight:${isMe?'700':'400'};color:var(--ink)">${esc(u.name||'（名前未設定）')}${meTag}</div>
-      <div>${roleLabel}</div>
-      ${u.role!=='admin'&&!isMe?`<button onclick="promoteToAdmin('${u.id}')" style="font-size:11px;background:none;border:1px solid var(--line-soft);padding:2px 8px;cursor:pointer;color:var(--sub)">管理者にする</button>`:''}
-    </div>`;
-  }).join('')||'<p style="font-size:13px;color:var(--sub);margin:0">ユーザーが見つかりません。</p>';
+  const myRole=data.find(u=>u.id===myId)?.role||'member';
+  const isOwner=myRole==='owner';
+  el.innerHTML=`
+    <div style="font-size:11px;color:var(--sub);margin-bottom:10px;padding:6px 10px;background:var(--bg-alt)">
+      あなたの権限：<b>${(_ROLE_CONFIG[myRole]||_ROLE_CONFIG.member).label}</b>
+      ${isOwner?'　※ 役割の変更が可能です':''}
+    </div>
+    ${data.map(u=>{
+      const isMe=u.id===myId;
+      const r=u.role||'member';
+      const rc=_ROLE_CONFIG[r]||_ROLE_CONFIG.member;
+      const badge=`<span style="background:${rc.bg};color:${rc.color};border:1px solid ${rc.border};font-size:11px;font-weight:700;padding:2px 8px;white-space:nowrap">${rc.label}</span>`;
+      const meTag=isMe?'<span style="font-size:11px;color:var(--brand-dim);font-weight:700;margin-left:4px">（あなた）</span>':'';
+      const changeBtn=isOwner&&!isMe?`<select onchange="changeUserRole('${u.id}',this.value)" style="font-size:11px;border:1px solid var(--line-soft);padding:2px 6px;cursor:pointer;background:#fff">
+        <option value="">変更...</option>
+        <option value="owner">オーナー</option>
+        <option value="admin">管理者</option>
+        <option value="member">作業者</option>
+      </select>`:'';
+      return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line-soft)">
+        <div style="flex:1;font-size:13px;font-weight:${isMe?'700':'400'};color:var(--ink)">${esc(u.name||'（名前未設定）')}${meTag}</div>
+        <div>${badge}</div>${changeBtn?`<div>${changeBtn}</div>`:''}
+      </div>`;
+    }).join('')}
+    <div style="font-size:11px;color:var(--muted);margin-top:10px">登録ユーザー計 ${data.length}名</div>`;
 }
-async function promoteToAdmin(userId){
-  if(!confirm('このユーザーを管理者にしますか？'))return;
-  const {error}=await _sb.from('profiles').update({role:'admin'}).eq('id',userId);
-  if(error){alert('変更できませんでした。Supabase側のRLS設定が必要な場合があります。');}
+async function changeUserRole(userId,role){
+  if(!role)return;
+  const rc=_ROLE_CONFIG[role]||_ROLE_CONFIG.member;
+  if(!confirm(`「${rc.label}」に変更しますか？`))return;
+  const {error}=await _sb.from('profiles').update({role}).eq('id',userId);
+  if(error){alert('変更できませんでした。\nSupabase Dashboard のSQL Editorで直接変更してください。');}
   else{loadUserList();}
 }
 function addChapterSlot(){
