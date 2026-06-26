@@ -238,6 +238,7 @@
       <button id="loginBtn" class="auth-btn" onclick="authSignIn()">ログイン →</button>
       <div class="auth-error" id="authError"></div>
       <div class="auth-toggle">アカウントがない方は <a onclick="authShowSignUp()">新規登録</a></div>
+      <div class="auth-toggle" style="margin-top:6px">パスワードを忘れた方は <a onclick="authForgotPassword()">こちら</a></div>
     </div>
     <!-- 新規登録 -->
     <div id="signupForm" style="display:none">
@@ -253,11 +254,41 @@
 </div>
 <!-- ===== /認証画面 ===== -->
 
+<!-- ===== ユーザー設定モーダル ===== -->
+<div id="userSettingsModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99998;display:none;align-items:center;justify-content:center">
+  <div style="background:#fff;padding:32px 28px;max-width:400px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,.18);position:relative">
+    <button onclick="closeUserSettings()" style="position:absolute;top:14px;right:14px;background:none;border:none;font-size:20px;cursor:pointer;color:var(--sub);line-height:1">×</button>
+    <h3 style="margin:0 0 20px;font-size:16px">アカウント設定</h3>
+    <!-- 名前変更 -->
+    <div style="margin-bottom:22px;padding-bottom:22px;border-bottom:1px solid var(--line-soft)">
+      <label style="font-size:12px;font-weight:700;color:var(--sub);display:block;margin-bottom:6px">表示名</label>
+      <input type="text" id="settingsName" placeholder="お名前" style="width:100%;padding:9px 12px;border:1px solid var(--line-soft);font-size:14px;box-sizing:border-box;margin-bottom:8px">
+      <button onclick="saveUserName()" style="background:var(--brand);color:#403129;border:none;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;width:100%">名前を保存</button>
+      <div id="settingsNameMsg" style="font-size:12px;margin-top:6px;display:none"></div>
+    </div>
+    <!-- パスワード変更 -->
+    <div style="margin-bottom:22px;padding-bottom:22px;border-bottom:1px solid var(--line-soft)">
+      <label style="font-size:12px;font-weight:700;color:var(--sub);display:block;margin-bottom:6px">パスワードを変更</label>
+      <input type="password" id="settingsNewPw" placeholder="新しいパスワード（6文字以上）" style="width:100%;padding:9px 12px;border:1px solid var(--line-soft);font-size:14px;box-sizing:border-box;margin-bottom:6px">
+      <input type="password" id="settingsNewPw2" placeholder="新しいパスワード（確認）" style="width:100%;padding:9px 12px;border:1px solid var(--line-soft);font-size:14px;box-sizing:border-box;margin-bottom:8px">
+      <button onclick="changePassword()" style="background:var(--brand);color:#403129;border:none;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;width:100%">パスワードを変更</button>
+      <div id="settingsPwMsg" style="font-size:12px;margin-top:6px;display:none"></div>
+    </div>
+    <!-- メールアドレス表示 -->
+    <div>
+      <label style="font-size:12px;font-weight:700;color:var(--sub);display:block;margin-bottom:4px">ログイン中のメールアドレス</label>
+      <div id="settingsEmail" style="font-size:13px;color:var(--ink);background:var(--bg-alt);padding:8px 12px"></div>
+    </div>
+  </div>
+</div>
+<!-- ===== /ユーザー設定モーダル ===== -->
+
 <header id="appHeader">
   <h1>Kindle出版サポート</h1>
   <span class="tag">β版</span>
   <div style="margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px">
     <span id="headerUserName" style="color:var(--sub);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+    <button onclick="openUserSettings()" title="アカウント設定" style="background:none;border:1px solid var(--line-soft);padding:4px 10px;font-size:12px;cursor:pointer;color:var(--sub);font-weight:600;display:flex;align-items:center;gap:4px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke="currentColor" stroke-width="2"/></svg>設定</button>
     <button onclick="authSignOut()" style="background:none;border:1px solid var(--line-soft);padding:4px 12px;font-size:12px;cursor:pointer;color:var(--sub);font-weight:600">ログアウト</button>
   </div>
 </header>
@@ -512,6 +543,54 @@ async function authSignUp(){
   else if(data.user&&!data.session){await _sb.auth.signInWithPassword({email,password:pw});}
 }
 async function authSignOut(){await _sb.auth.signOut();location.reload();}
+async function authForgotPassword(){
+  const email=document.getElementById('authEmail').value.trim()||prompt('パスワードリセット用のメールアドレスを入力してください');
+  if(!email)return;
+  const {error}=await _sb.auth.resetPasswordForEmail(email,{redirectTo:location.href});
+  if(error){alert('エラー：'+error.message);}
+  else{alert('パスワードリセット用のメールを送りました。\nメールを確認してリンクをクリックしてください。');}
+}
+function openUserSettings(){
+  const m=document.getElementById('userSettingsModal');if(!m)return;
+  m.style.display='flex';
+  const nameEl=document.getElementById('settingsName');
+  const emailEl=document.getElementById('settingsEmail');
+  if(nameEl)nameEl.value=document.getElementById('headerUserName')?.textContent||'';
+  if(emailEl)emailEl.textContent=_sbUser?.email||'';
+  const pw1=document.getElementById('settingsNewPw');const pw2=document.getElementById('settingsNewPw2');
+  if(pw1)pw1.value='';if(pw2)pw2.value='';
+  const nm=document.getElementById('settingsNameMsg');const pm=document.getElementById('settingsPwMsg');
+  if(nm){nm.style.display='none';}if(pm){pm.style.display='none';}
+}
+function closeUserSettings(){const m=document.getElementById('userSettingsModal');if(m)m.style.display='none';}
+async function saveUserName(){
+  const nameEl=document.getElementById('settingsName');
+  const name=(nameEl?nameEl.value.trim():'');
+  const msg=document.getElementById('settingsNameMsg');
+  if(!name){if(msg){msg.textContent='名前を入力してください';msg.style.color='#e03131';msg.style.display='block';}return;}
+  if(!_sbUser){return;}
+  const {error}=await _sb.from('profiles').update({name}).eq('id',_sbUser.id);
+  if(msg){
+    msg.style.display='block';
+    if(error){msg.textContent='保存失敗：'+error.message;msg.style.color='#e03131';}
+    else{msg.textContent='✓ 保存しました';msg.style.color='var(--ok)';
+      const nm=document.getElementById('headerUserName');if(nm)nm.textContent=name;
+      S.author=name;save();}
+  }
+}
+async function changePassword(){
+  const pw1=document.getElementById('settingsNewPw');const pw2=document.getElementById('settingsNewPw2');
+  const msg=document.getElementById('settingsPwMsg');
+  const p1=pw1?pw1.value:'';const p2=pw2?pw2.value:'';
+  if(!p1||p1.length<6){if(msg){msg.textContent='6文字以上のパスワードを入力してください';msg.style.color='#e03131';msg.style.display='block';}return;}
+  if(p1!==p2){if(msg){msg.textContent='パスワードが一致しません';msg.style.color='#e03131';msg.style.display='block';}return;}
+  const {error}=await _sb.auth.updateUser({password:p1});
+  if(msg){
+    msg.style.display='block';
+    if(error){msg.textContent='変更失敗：'+error.message;msg.style.color='#e03131';}
+    else{msg.textContent='✓ パスワードを変更しました';msg.style.color='var(--ok)';if(pw1)pw1.value='';if(pw2)pw2.value='';}
+  }
+}
 
 function _sbScheduleSync(){
   if(S.coauthorChap===null||S.coauthorChap===undefined)return;
@@ -1452,10 +1531,15 @@ function _showInviteWelcome(d){
         <input id="mwName" type="text" placeholder="例：山田太郎" value="${esc(S.memberName||S.author||'')}"
           style="width:100%;border:1px solid var(--line-soft);padding:8px 10px;font-size:14px;box-sizing:border-box">
       </div>
+      <div style="background:#fff;padding:16px 20px;margin-bottom:12px;margin-top:0">
+        <label style="font-size:12px;font-weight:700;color:var(--sub);display:block;margin-bottom:6px">章タイトル（変更できます）</label>
+        <input id="mwChapTitle" type="text" placeholder="例：はじめに" value="${esc(d.chapTitle)}"
+          style="width:100%;border:1px solid var(--line-soft);padding:8px 10px;font-size:14px;box-sizing:border-box">
+      </div>
       <div style="font-size:12px;font-weight:700;color:var(--sub);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">どのように書きますか？</div>
       <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px">
         <div id="mwModeCardA" onclick="_mwSetMode('A')" style="background:#fff;padding:14px 18px;cursor:pointer;display:flex;align-items:center;gap:14px;transition:outline .1s,background .1s">
-          <span style="flex-shrink:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:var(--ok-soft);border-radius:6px;color:var(--ok)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2l1.8 5.5H19l-4.7 3.4 1.8 5.5L12 13l-4.1 3.4 1.8-5.5L5 7.5h5.2z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M19 15l.9 2.7 2.6.9-2.6.9L19 22l-.9-2.5-2.6-.9 2.6-.9z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></span>
+          <span style="flex-shrink:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:var(--brand-soft);border-radius:6px;color:var(--brand-dim)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2l1.8 5.5H19l-4.7 3.4 1.8 5.5L12 13l-4.1 3.4 1.8-5.5L5 7.5h5.2z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M19 15l.9 2.7 2.6.9-2.6.9L19 22l-.9-2.5-2.6-.9 2.6-.9z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></span>
           <div style="flex:1;min-width:0">
             <div style="font-size:14px;font-weight:700;color:var(--ink)">ChatGPT等のAIに書いてもらう</div>
             <div style="font-size:12px;color:var(--sub);margin-top:2px">テンプレをコピー→AIで対話→結果を貼り戻す</div>
@@ -1569,7 +1653,7 @@ function _mwSetMode(mode){
     const panel=document.getElementById('mwPanel'+k);
     if(panel)panel.style.display=k===mode?'block':'none';
     const card=document.getElementById('mwModeCard'+k);
-    if(card){card.style.outline=k===mode?'2px solid var(--ok)':'none';card.style.background=k===mode?'var(--ok-soft)':'#fff';}
+    if(card){card.style.outline=k===mode?'2px solid var(--brand)':'none';card.style.background=k===mode?'var(--bg-pale)':'#fff';}
   });
   const sub=document.getElementById('mwSubmitArea');if(sub)sub.style.display='block';
   if(mode==='B'&&!(window._mwHeads||[]).length){window._mwHeads=[''];_mwRenderHeadings();}
@@ -1713,8 +1797,12 @@ function _mwSubmit(chapIdx){
   S.memberName=name;S.author=name;
   if(!S.book)S.book={chapters:[],title:''};
   while(S.book.chapters.length<=chapIdx)S.book.chapters.push({author:'',title:'',body:''});
-  S.book.chapters[chapIdx].body=body;S.book.chapters[chapIdx].author=name;save();
-  const chapTitle=((S.book.chapters[chapIdx].title||'').replace(/^\*+$/,'').trim())||`第${chapIdx+1}章`;
+  const chapTitleEl=document.getElementById('mwChapTitle');
+  const chapTitleInput=(chapTitleEl&&chapTitleEl.value.trim())||'';
+  S.book.chapters[chapIdx].body=body;S.book.chapters[chapIdx].author=name;
+  if(chapTitleInput)S.book.chapters[chapIdx].title=chapTitleInput;
+  save();
+  const chapTitle=((chapTitleInput||S.book.chapters[chapIdx].title||'').replace(/^\*+$/,'').trim())||`第${chapIdx+1}章`;
   const images=(window._mwImages||[]).filter(img=>img.name||img.url);
   const d={v:1,chapIdx,title:chapTitle,body,author:name,bookTitle:S.book.title||'',images,ts:new Date().toLocaleString('ja-JP')};
   const code=_chapEnc(d);
