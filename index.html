@@ -544,11 +544,17 @@ async function _authLoadProfile(){
     if(pending){
       try{const d=JSON.parse(pending);sessionStorage.removeItem('_pendingInvite');_applyInviteData(d);return;}catch(e){}
     }
+    // 再訪ライター：localStorageに招待データが残っていれば章画面へ直接戻す
+    if(S.memberMode&&S._inviteData&&S._inviteData.v===1){
+      _showInviteWelcome(S._inviteData);return;
+    }
     if((_sbRole==='owner'||_sbRole==='admin')&&!S.memberMode){
       S.coauthor=true;save();
       renderModeUI&&renderModeUI();
       renderProjectSwitcher&&renderProjectSwitcher();
-      _sbLoadProjectData();
+      await _sbLoadProjectData();
+      // プロデューサーはログイン後に管理ダッシュボードへ自動遷移
+      if(_sbRole==='admin'){setTimeout(()=>startAdmin&&startAdmin(),300);}
     }
   }
 }
