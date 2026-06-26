@@ -233,8 +233,8 @@
     <!-- ログイン -->
     <div id="loginForm">
       <p>メールアドレスとパスワードでログイン</p>
-      <input type="email" id="authEmail" placeholder="メールアドレス" onkeydown="if(event.key==='Enter')authSignIn()">
-      <input type="password" id="authPassword" placeholder="パスワード" onkeydown="if(event.key==='Enter')authSignIn()">
+      <input type="email" id="authEmail" placeholder="メールアドレス" autocomplete="email" onkeydown="if(event.key==='Enter')authSignIn()">
+      <input type="password" id="authPassword" placeholder="パスワード" autocomplete="current-password" onkeydown="if(event.key==='Enter')authSignIn()">
       <button id="loginBtn" class="auth-btn" onclick="authSignIn()">ログイン →</button>
       <div class="auth-error" id="authError"></div>
       <div class="auth-toggle">アカウントがない方は <a onclick="authShowSignUp()">新規登録</a></div>
