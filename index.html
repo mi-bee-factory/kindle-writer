@@ -458,6 +458,63 @@ function checkPasscode(){
   }
 }
 
+/* ---------- Supabase ---------- */
+const _SB_URL='https://qdqzrwymgyfgplbwdfss.supabase.co';
+const _SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFkcXpyd3ltZ3lmZ3BsYndkZnNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0NDA0MTMsImV4cCI6MjA5ODAxNjQxM30.VUIycG1Vjq0OMwKANJXUqMbbfYqPMWoxt3k89navU5c';
+function _sbMk(){let k=localStorage.getItem('kw_mk');if(!k){k=(crypto.randomUUID?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36)));localStorage.setItem('kw_mk',k);}return k;}
+async function _sbReq(method,path,body){
+  try{
+    const h={'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY,'Content-Type':'application/json'};
+    if(method==='POST')h['Prefer']='resolution=merge-duplicates';
+    const res=await fetch(_SB_URL+'/rest/v1/'+path,{method,headers:h,body:body?JSON.stringify(body):undefined});
+    if(!res.ok){console.warn('Supabase:',res.status,await res.text());return null;}
+    return method==='DELETE'?null:res.json();
+  }catch(e){console.warn('Supabase error:',e);return null;}
+}
+let _sbTimer=null;
+function _sbScheduleSync(){
+  if(S.coauthorChap===null||S.coauthorChap===undefined)return;
+  if(_sbTimer)clearTimeout(_sbTimer);
+  _sbTimer=setTimeout(_sbSaveChapter,8000);
+}
+async function _sbSaveChapter(){
+  const body=S.edited||S.body||'';if(!body.trim())return;
+  const idx=S.coauthorChap;if(idx===null||idx===undefined)return;
+  const r=await _sbReq('POST','member_chapters',{
+    book_id:PASSCODE,author_key:_sbMk(),chapter_index:idx,
+    author_name:S.memberName||S.author||'',
+    chapter_title:S.chapTitle||`第${idx+1}章`,
+    body:S.body||'',edited:S.edited||'',
+    updated_at:new Date().toISOString()
+  });
+  if(r!==null){
+    const t=document.createElement('div');
+    t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:8px 18px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none;opacity:1;transition:opacity .4s';
+    t.textContent='✓ クラウドに保存しました';document.body.appendChild(t);
+    setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),400);},2000);
+  }
+}
+async function fetchChaptersFromSupabase(){
+  const btn=document.getElementById('sbFetchBtn');
+  if(btn){btn.textContent='取得中...';btn.disabled=true;}
+  const data=await _sbReq('GET','member_chapters?book_id=eq.'+encodeURIComponent(PASSCODE)+'&select=*');
+  if(btn){btn.textContent='Supabaseから最新を取得';btn.disabled=false;}
+  if(!data||!data.length){alert('まだSupabaseにデータがありません。\nメンバーに「クラウドに保存」してもらってください。');return;}
+  if(!S.book)S.book={chapters:[],title:'',subtitle:'',desc:'',keywords:'',cats:'',manuscript:''};
+  let n=0;
+  data.forEach(row=>{
+    const i=row.chapter_index||0;
+    while(S.book.chapters.length<=i)S.book.chapters.push({author:'',title:'',body:''});
+    const prev=S.book.chapters[i]||{};
+    S.book.chapters[i]={...prev,author:row.author_name||prev.author||'',title:row.chapter_title||prev.title||`第${i+1}章`,body:row.edited||row.body||prev.body||''};
+    n++;
+  });
+  save();renderCoInviteAdmin();
+  const t=document.createElement('div');
+  t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:10px 22px;font-size:14px;font-weight:700;z-index:10010;pointer-events:none;opacity:1;transition:opacity .4s';
+  t.textContent=`✓ ${n}件の章を取得しました`;document.body.appendChild(t);
+  setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),400);},2500);
+}
 
 /* ---------- データ ---------- */
 const S = {
@@ -652,6 +709,7 @@ function save(){
   S.author=val('author'); S.chapTitle=val('chapTitle');
   const id=pmCurrentId();
   try{localStorage.setItem(_pmKey(id), JSON.stringify(S));}catch(e){/* 容量超過時も落ちないように */}
+  _sbScheduleSync();
 }
 function load(){
   _pmMigrate();
@@ -1689,6 +1747,7 @@ function generateChapterCode(){
     title=S.chapTitle||`第${idx+1}章`;
   }
   if(!body.trim()){alert('本文が空です。まず章の内容を入力してください。');return;}
+  _sbSaveChapter(); // クラウドにも即時保存
   const chapTitle=(S.book&&S.book.chapters&&S.book.chapters[idx]&&S.book.chapters[idx].title)||title;
   const d={v:1,chapIdx:idx,title:chapTitle,body,author:S.memberName||S.author||'',bookTitle:(S.book&&S.book.title)||'',ts:new Date().toLocaleString('ja-JP')};
   const code=_chapEnc(d);
@@ -1895,10 +1954,20 @@ function renderCoInviteAdmin(){
           ${canDelete?`<button class="btn gray" onclick="removeLastChapterSlot()" style="font-size:12px;padding:5px 12px">− 最後の枠を削除</button>`:''}
         </div>
         <div style="border-top:1px solid var(--line-soft);padding-top:16px">
-          <div style="font-weight:700;font-size:13px;margin-bottom:6px">メンバーから章を受け取る</div>
-          <p style="font-size:12px;color:var(--sub);margin-bottom:10px;line-height:1.6">メンバーが送ってきた <b>KWCHAP1…</b> コードを貼り付けて「読み込む」を押してください。</p>
-          <textarea id="chapCodePaste" placeholder="KWCHAP1. から始まるコードをここに貼り付け" style="width:100%;min-height:72px;font-size:12px;padding:8px 10px;box-sizing:border-box;border:1px solid var(--line-soft);background:#fafaf8;resize:vertical"></textarea>
-          <button class="btn ok" onclick="applyChapterCode()" style="margin-top:8px;font-size:13px;padding:8px 20px">読み込む →</button>
+          <div style="font-weight:700;font-size:13px;margin-bottom:10px">メンバーから章を受け取る</div>
+          <div style="background:#f0f9ff;border:1px solid #bae6fd;padding:12px 14px;margin-bottom:14px;border-radius:2px">
+            <div style="font-size:12px;font-weight:700;color:#0369a1;margin-bottom:6px">自動受け取り（Supabase連携）</div>
+            <p style="font-size:12px;color:#555;margin:0 0 10px;line-height:1.6">メンバーが章を保存すると自動でクラウドに届きます。ボタンを押して最新状態を取り込んでください。</p>
+            <button id="sbFetchBtn" class="btn ok" onclick="fetchChaptersFromSupabase()" style="font-size:13px;padding:8px 20px">Supabaseから最新を取得</button>
+          </div>
+          <details style="margin-bottom:6px">
+            <summary style="font-size:12px;color:var(--sub);cursor:pointer">KWCHAPコードで手動受け取りする場合はこちら</summary>
+            <div style="margin-top:10px">
+            <p style="font-size:12px;color:var(--sub);margin-bottom:10px;line-height:1.6">メンバーが送ってきた <b>KWCHAP1…</b> コードを貼り付けて「読み込む」を押してください。</p>
+            <textarea id="chapCodePaste" placeholder="KWCHAP1. から始まるコードをここに貼り付け" style="width:100%;min-height:72px;font-size:12px;padding:8px 10px;box-sizing:border-box;border:1px solid var(--line-soft);background:#fafaf8;resize:vertical"></textarea>
+            <button class="btn ok" onclick="applyChapterCode()" style="margin-top:8px;font-size:13px;padding:8px 20px">読み込む →</button>
+            </div>
+          </details>
           <details style="margin-top:14px">
             <summary style="font-size:12px;color:var(--sub);cursor:pointer">.kwchap ファイルで受け取る場合はこちら</summary>
             <label style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;background:#f0ece4;color:#403129;padding:6px 14px;font-size:13px;font-weight:700;margin-top:8px">
