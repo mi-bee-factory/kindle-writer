@@ -275,10 +275,23 @@
       <div id="settingsPwMsg" style="font-size:12px;margin-top:6px;display:none"></div>
     </div>
     <!-- ロール・メール表示 -->
-    <div>
+    <div style="margin-bottom:22px;padding-bottom:22px;border-bottom:1px solid var(--line-soft)">
       <div id="settingsRoleDisp" style="font-size:13px;color:var(--sub);margin-bottom:10px"></div>
       <label style="font-size:12px;font-weight:700;color:var(--sub);display:block;margin-bottom:4px">ログイン中のメールアドレス</label>
       <div id="settingsEmail" style="font-size:13px;color:var(--ink);background:var(--bg-alt);padding:8px 12px"></div>
+    </div>
+    <!-- 管理者招待（オーナーのみ） -->
+    <div id="settingsAdminInvite" style="display:none">
+      <div style="font-size:12px;font-weight:700;color:var(--sub);margin-bottom:8px;display:flex;align-items:center;gap:6px">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="2"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        管理者を招待する
+      </div>
+      <p style="font-size:12px;color:#555;line-height:1.6;margin:0 0 10px">URLを管理者に送り、メールアドレスで新規登録してもらいます。登録後、管理者ダッシュボードのユーザー一覧で「管理者」ロールに変更してください。</p>
+      <div style="display:flex;align-items:center;gap:6px;background:var(--bg-alt);border:1px solid var(--line-soft);padding:7px 10px;margin-bottom:8px">
+        <span id="settingsInviteUrl" style="font-size:11px;color:var(--sub);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace"></span>
+        <button onclick="copyAdminInviteUrl()" style="background:var(--brand);color:#403129;border:none;font-size:11px;padding:4px 10px;cursor:pointer;font-weight:700;white-space:nowrap;flex-shrink:0">コピー</button>
+      </div>
+      <div style="font-size:11px;color:var(--sub);line-height:1.6">① 管理者がURLから登録 → ② ユーザー一覧でロールを「管理者」に変更</div>
     </div>
   </div>
 </div>
@@ -344,10 +357,10 @@
         <span style="font-size:12px;font-weight:600;color:var(--brand-dim)">確認する →</span>
       </div>
     </div>
-    <div class="card">
-      <div class="eyebrow">使い方</div>
-      <h2>あなたはどちらですか？</h2>
-      <div class="home-choices" style="margin-bottom:4px">
+    <div class="card" id="modeCard">
+      <div class="eyebrow" id="modeCardEyebrow">使い方</div>
+      <h2 id="modeCardTitle">あなたはどちらですか？</h2>
+      <div class="home-choices" id="modeChoices" style="margin-bottom:4px">
         <div class="choice" id="modeSolo" onclick="setMode(false)">
           <svg width="52" height="52" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
             <rect x="7" y="6" width="14" height="18" rx="2" stroke="#ffcc00" stroke-width="2"/>
@@ -616,8 +629,20 @@ function openUserSettings(){
   if(pw1)pw1.value='';if(pw2)pw2.value='';
   const nm=document.getElementById('settingsNameMsg');const pm=document.getElementById('settingsPwMsg');
   if(nm){nm.style.display='none';}if(pm){pm.style.display='none';}
+  const invSec=document.getElementById('settingsAdminInvite');
+  const invUrl=document.getElementById('settingsInviteUrl');
+  if(invSec)invSec.style.display=_sbRole==='owner'?'block':'none';
+  if(invUrl)invUrl.textContent=location.origin+location.pathname;
 }
 function closeUserSettings(){const m=document.getElementById('userSettingsModal');if(m)m.style.display='none';}
+function copyAdminInviteUrl(){
+  navigator.clipboard.writeText(location.origin+location.pathname).then(()=>{
+    const t=document.createElement('div');
+    t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#403129;color:#fff;padding:8px 20px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none';
+    t.textContent='✓ 管理者招待URLをコピーしました';
+    document.body.appendChild(t);setTimeout(()=>t.remove(),2000);
+  });
+}
 async function saveUserName(){
   const nameEl=document.getElementById('settingsName');
   const name=(nameEl?nameEl.value.trim():'');
@@ -755,8 +780,21 @@ function setModeAdmin(){S.coauthor=true;if((S.people||1)<2)S.people=5;save();ren
 function setCount(n){S.people=Math.max(1,n);save();renderModeUI();updTarget();}
 function renderModeUI(){
   const co=!!S.coauthor;
+  const isAdmin=_sbRole==='admin';
   const hwc=document.getElementById('homeWritingCard');if(hwc)hwc.style.display=co?'none':'';
   const cc=document.getElementById('compileChoiceCard');if(cc)cc.style.display=co?'':'none';
+  // 管理者はモード選択不要（常に管理者モード）
+  const modeChoices=document.getElementById('modeChoices');
+  if(modeChoices)modeChoices.style.display=isAdmin?'none':'';
+  const modeCardEyebrow=document.getElementById('modeCardEyebrow');
+  const modeCardTitle=document.getElementById('modeCardTitle');
+  if(isAdmin){
+    if(modeCardEyebrow)modeCardEyebrow.textContent='管理者モード';
+    if(modeCardTitle)modeCardTitle.textContent='プロジェクトを管理する';
+  }else{
+    if(modeCardEyebrow)modeCardEyebrow.textContent='使い方';
+    if(modeCardTitle)modeCardTitle.textContent='あなたはどちらですか？';
+  }
   const ms=document.getElementById('modeSolo'),mc=document.getElementById('modeCo');
   if(ms&&mc){ms.classList.toggle('sel',!co);mc.classList.toggle('sel',co);}
   const intro=document.getElementById('introText');
@@ -2226,31 +2264,7 @@ function renderCoInviteAdmin(){
       </button>
     </div>`;
   }).join('');
-  const adminInviteSection=(_sbRole==='owner')?`
-    <div style="border:1px solid #e8c800;background:#fffef0;margin-top:20px">
-      <div style="background:#fff3b0;padding:12px 16px;font-weight:700;font-size:13px;border-bottom:1px solid #e8c800;display:flex;align-items:center;gap:8px">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" stroke="#7a5c00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9" cy="7" r="4" stroke="#7a5c00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" stroke="#7a5c00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        管理者を招待する
-      </div>
-      <div style="padding:16px">
-        <p style="font-size:13px;color:#555;margin:0 0 12px;line-height:1.7">
-          管理者に以下のURLを送ってください。管理者がこのURLから<b>メールアドレスで新規登録</b>すると、このページのユーザー一覧に表示されます。<br>
-          一覧から名前を確認して「管理者」ロールを付与してください。
-        </p>
-        <div style="display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #e8c800;padding:8px 12px;margin-bottom:12px">
-          <span style="font-size:12px;color:#7a5c00;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace">${location.origin+location.pathname}</span>
-          <button onclick="(()=>{navigator.clipboard.writeText('${location.origin+location.pathname}').then(()=>{const t=document.createElement('div');t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#7a5c00;color:#fff;padding:8px 20px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none';t.textContent='✓ URLをコピーしました';document.body.appendChild(t);setTimeout(()=>t.remove(),2000);});})()" style="background:#fff3b0;color:#7a5c00;border:1px solid #e8c800;font-size:12px;padding:5px 14px;cursor:pointer;font-weight:700;white-space:nowrap;flex-shrink:0">URLをコピー</button>
-        </div>
-        <div style="font-size:12px;color:#888;line-height:1.6;border-top:1px solid #e8c800;padding-top:10px">
-          <b>管理者登録後の流れ：</b><br>
-          ① 管理者がURLを開き、名前・メール・パスワードで登録<br>
-          ② このページ下部「ユーザー一覧」に登録者が表示される<br>
-          ③ 「管理者」に変更ボタンを押してロールを付与<br>
-          ④ 管理者が次回ログインするとプロジェクトデータを自動取得
-        </div>
-      </div>
-    </div>`:'';
-  el.innerHTML=adminInviteSection+`
+  el.innerHTML=`
     <div style="border:1px solid var(--line-soft);margin-top:20px">
       <div style="background:var(--bg-alt);padding:12px 16px;font-weight:700;font-size:13px;border-bottom:1px solid var(--line-soft)">共著メンバーへの招待と章の受け取り</div>
       <div style="padding:16px">
