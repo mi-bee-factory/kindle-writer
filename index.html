@@ -525,6 +525,12 @@ async function _authLoadProfile(){
     }
     if(displayName&&!S.author){S.author=displayName;const el=document.getElementById('author');if(el)el.value=displayName;}
     const nm=document.getElementById('headerUserName');if(nm)nm.textContent=displayName||_sbUser.email;
+    // オーナー・管理者は自動で管理者モードに（作業者として招待されていない場合）
+    if((_sbRole==='owner'||_sbRole==='admin')&&!S.memberMode){
+      S.coauthor=true;save();
+      renderModeUI&&renderModeUI();
+      renderProjectSwitcher&&renderProjectSwitcher();
+    }
   }
 }
 function authShowSignUp(){document.getElementById('loginForm').style.display='none';document.getElementById('signupForm').style.display='';}
