@@ -321,7 +321,7 @@
         <button class="btn brand" style="font-size:14px;align-self:flex-start" onclick="startGuide()">出版の流れを確認する →</button>
       </div>
       <div class="hero-photo">
-        <img id="heroImg" src="owner-image.png" alt="" loading="eager">
+        <img id="heroImg" src="owner-image.png?v=2" alt="" loading="eager">
       </div>
     </div>
     <div id="projectSwitcher"></div>
@@ -790,9 +790,9 @@ function renderModeUI(){
   // ヒーロー画像をロールで切り替え
   const heroImg=document.getElementById('heroImg');
   if(heroImg){
-    if(isAdmin) heroImg.src='kanri-image.png';
-    else if(S.memberMode) heroImg.src='writer-image.png';
-    else heroImg.src='owner-image.png';
+    if(isAdmin) heroImg.src='kanri-image.png?v=2';
+    else if(S.memberMode) heroImg.src='writer-image.png?v=2';
+    else heroImg.src='owner-image.png?v=2';
   }
   // 管理者はモード選択不要（常に管理者モード）
   const modeChoices=document.getElementById('modeChoices');
