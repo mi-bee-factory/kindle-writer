@@ -284,9 +284,11 @@
 <!-- ===== /ユーザー設定モーダル ===== -->
 
 <header id="appHeader">
-  <h1>Kindle出版サポート</h1>
-  <span class="tag">β版</span>
-  <div style="margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px">
+  <div id="hdrNav" style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
+    <h1>Kindle出版サポート</h1>
+    <span class="tag">β版</span>
+  </div>
+  <div id="hdrUser" style="display:flex;align-items:center;gap:10px;font-size:13px;flex-shrink:0">
     <span id="headerUserName" style="color:var(--sub);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
     <button onclick="openUserSettings()" title="アカウント設定" style="background:none;border:1px solid var(--line-soft);padding:4px 10px;font-size:12px;cursor:pointer;color:var(--sub);font-weight:600;display:flex;align-items:center;gap:4px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke="currentColor" stroke-width="2"/></svg>設定</button>
     <button onclick="authSignOut()" style="background:none;border:1px solid var(--line-soft);padding:4px 12px;font-size:12px;cursor:pointer;color:var(--sub);font-weight:600">ログアウト</button>
@@ -908,7 +910,7 @@ function startNew(){S.mode='new';S.step=1;show();}
 function startPaste(){S.mode='paste';S.step=5;show();}
 
 const PAGE_NAMES={roadmap:'STEP 0 · 出版の全体像',guide:'出版の流れ',checklist:'進捗チェックリスト',talk:'ChatGPTで下書き',tmpl:'テンプレート',convert:'Word変換',compile:'1冊にまとめる',upload:'アップロード',admin:'管理・設定',plan:'本の構成を考える',wizard:'章を書く',chapters:'章の確認・編集'};
-function updateHeader(name){const h=document.getElementById('appHeader');if(!h)return;if(name==='home'){h.innerHTML='<h1>Kindle出版サポート</h1><span class="tag">β版</span>';}else{const label=PAGE_NAMES[name]||'';const backFn=name==='chapters'?'goHome()':'goHome()';h.innerHTML=`<button class="hdr-back" onclick="${backFn}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>ホームに戻る</button><span class="hdr-sep">|</span><span class="hdr-page">${label}</span>`;}}
+function updateHeader(name){const nav=document.getElementById('hdrNav');if(!nav)return;if(name==='home'){nav.innerHTML='<h1>Kindle出版サポート</h1><span class="tag">β版</span>';}else{const label=PAGE_NAMES[name]||'';nav.innerHTML=`<button class="hdr-back" onclick="goHome()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>ホームに戻る</button><span class="hdr-sep">|</span><span class="hdr-page">${label}</span>`;}}
 function screen(name,noHistory){
   if(name!=='home'){S.lastScreen=name;S.lastScreenTime=Date.now();S.lastScreenLabel=PAGE_NAMES[name]||name;save();}
   ['home','talk','tmpl','convert','compile','wizard','guide','checklist','admin','roadmap','plan','upload','chapters'].forEach(s=>document.getElementById(s).classList.toggle('hide',s!==name));
