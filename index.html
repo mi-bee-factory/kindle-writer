@@ -499,6 +499,9 @@ async function authInit(){
   const {data:{session}}=await _sb.auth.getSession();
   if(session){_sbUser=session.user;_authOnLogin();}
   _sb.auth.onAuthStateChange((ev,sess)=>{
+    if(ev==='PASSWORD_RECOVERY'){
+      _authShowResetForm();return;
+    }
     if(sess){_sbUser=sess.user;_authOnLogin();}
     else{_sbUser=null;document.getElementById('authOverlay').classList.remove('hidden');}
   });
@@ -543,6 +546,37 @@ async function authSignUp(){
   else if(data.user&&!data.session){await _sb.auth.signInWithPassword({email,password:pw});}
 }
 async function authSignOut(){await _sb.auth.signOut();location.reload();}
+function _authShowResetForm(){
+  const overlay=document.getElementById('authOverlay');
+  if(overlay)overlay.classList.remove('hidden');
+  const lf=document.getElementById('loginForm'),sf=document.getElementById('signupForm');
+  if(lf)lf.style.display='none';if(sf)sf.style.display='none';
+  const ex=document.getElementById('resetNewPwForm');if(ex)ex.remove();
+  const div=document.createElement('div');div.id='resetNewPwForm';
+  div.innerHTML=`
+    <p style="margin:0 0 14px;font-size:14px;color:var(--sub)">新しいパスワードを設定してください</p>
+    <input type="password" id="resetPw1" placeholder="新しいパスワード（6文字以上）" style="width:100%;padding:11px 12px;font-size:14px;border:1px solid var(--line-soft);margin-bottom:10px;box-sizing:border-box">
+    <input type="password" id="resetPw2" placeholder="新しいパスワード（確認）" style="width:100%;padding:11px 12px;font-size:14px;border:1px solid var(--line-soft);margin-bottom:10px;box-sizing:border-box">
+    <button onclick="authSetNewPassword()" style="width:100%;padding:12px;background:var(--brand);color:#403129;font-size:14px;font-weight:700;border:none;cursor:pointer">パスワードを設定する →</button>
+    <div id="resetPwErr" style="color:#e03131;font-size:13px;margin-top:8px;display:none"></div>`;
+  const box=overlay&&overlay.querySelector('.auth-box');
+  if(box)box.appendChild(div);
+}
+async function authSetNewPassword(){
+  const p1=document.getElementById('resetPw1')?.value||'';
+  const p2=document.getElementById('resetPw2')?.value||'';
+  const err=document.getElementById('resetPwErr');
+  if(p1.length<6){if(err){err.textContent='6文字以上のパスワードを入力してください';err.style.display='block';}return;}
+  if(p1!==p2){if(err){err.textContent='パスワードが一致しません';err.style.display='block';}return;}
+  const {error}=await _sb.auth.updateUser({password:p1});
+  if(error){if(err){err.textContent='エラー：'+error.message;err.style.display='block';}}
+  else{
+    alert('パスワードを設定しました。ログインしてください。');
+    const f=document.getElementById('resetNewPwForm');if(f)f.remove();
+    const lf=document.getElementById('loginForm');if(lf)lf.style.display='';
+    await _sb.auth.signOut();
+  }
+}
 async function authForgotPassword(){
   const email=document.getElementById('authEmail').value.trim()||prompt('パスワードリセット用のメールアドレスを入力してください');
   if(!email)return;
