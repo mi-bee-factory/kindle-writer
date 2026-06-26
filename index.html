@@ -848,7 +848,7 @@ function showProjectModal(){
       <h3 style="margin:0;font-size:17px">プロジェクトを切り替える</h3>
       <button onclick="document.getElementById('${mid}').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--sub);padding:0;line-height:1">×</button>
     </div>
-    ${roleLabel?`<div style="font-size:12px;background:var(--bg-alt);padding:6px 12px;margin-bottom:16px;color:var(--sub)">ログイン中：<b style="color:var(--ink)">${esc(document.getElementById('headerUserName')?.textContent||'')}</b>　役割：<b style="color:#3a6929">${roleLabel}</b></div>`:''}
+    ${roleLabel?`<div style="font-size:12px;background:var(--bg-alt);padding:6px 12px;margin-bottom:16px;color:var(--sub)">アカウント：<b style="color:var(--ink)">${esc(document.getElementById('headerUserName')?.textContent||'')}</b>　権限：<b style="color:#3a6929">${roleLabel}</b></div>`:''}
     <div style="font-size:11px;color:var(--sub);margin-bottom:8px">※ プロジェクト名はクリックして直接編集できます</div>
     ${rows}
     <div style="margin-top:16px;border-top:1px solid var(--line-soft);padding-top:16px">
