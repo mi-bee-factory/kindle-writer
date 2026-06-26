@@ -918,6 +918,19 @@ function pmSwitch(id){
 function pmRename(id,name){
   const m=_pmMeta();const p=m.projects.find(p=>p.id===id);if(p)p.name=name;_pmSaveMeta(m);renderProjectSwitcher();
 }
+function pmRenameBook(id,title){
+  try{
+    const key=_pmKey(id);const stored=localStorage.getItem(key);
+    const data=stored?JSON.parse(stored):{};
+    if(!data.book)data.book={};data.book.title=title;
+    localStorage.setItem(key,JSON.stringify(data));
+    if(id===pmCurrentId()){if(!S.book)S.book={};S.book.title=title;}
+  }catch(e){}
+  renderProjectSwitcher();
+}
+function _pmBookTitle(id){
+  try{const d=localStorage.getItem(_pmKey(id));if(d){const j=JSON.parse(d);return(j.book&&j.book.title)||'';}}catch(e){}return'';
+}
 function pmDelete(id){
   const m=_pmMeta();
   if(m.projects.length<=1){alert('プロジェクトが1つしかないため削除できません。');return;}
@@ -933,9 +946,11 @@ function showProjectModal(){
   const m=_pmMeta();
   const rows=m.projects.map(p=>{
     const isCur=p.id===m.current;
+    const bookTitle=_pmBookTitle(p.id);
+    const displayName=bookTitle||p.name;
     return `<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--line-soft);margin-bottom:6px;background:${isCur?'var(--brand-soft)':'#fff'}">
       <div style="flex:1;min-width:0">
-        <input type="text" value="${esc(p.name)}" style="width:100%;border:none;background:transparent;font-size:14px;font-weight:${isCur?'700':'400'};padding:2px 4px;outline:1px solid transparent" onfocus="this.style.outline='1px solid var(--brand)'" onblur="this.style.outline='1px solid transparent';pmRename(${p.id},this.value)"
+        <input type="text" value="${esc(displayName)}" style="width:100%;border:none;background:transparent;font-size:14px;font-weight:${isCur?'700':'400'};padding:2px 4px;outline:1px solid transparent" onfocus="this.style.outline='1px solid var(--brand)'" onblur="this.style.outline='1px solid transparent';pmRenameBook(${p.id},this.value)"
           onkeydown="if(event.key==='Enter')this.blur()">
         <div style="font-size:11px;color:var(--sub)">${p.created||''}</div>
       </div>
@@ -976,7 +991,7 @@ function renderProjectSwitcher(){
   const roleBadge=rc?`<span style="background:${rc.bg};color:${rc.color};border:1px solid ${rc.border};font-size:10px;font-weight:700;padding:1px 7px;white-space:nowrap;flex-shrink:0">${rc.label}</span>`:'';
   el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;padding:8px 16px;background:var(--bg-alt);border:1px solid var(--line-soft);margin-bottom:12px">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" stroke="var(--sub)" stroke-width="2" stroke-linejoin="round"/><polyline points="9 22 9 12 15 12 15 22" stroke="var(--sub)" stroke-width="2" stroke-linejoin="round"/></svg>
-    <span style="font-size:13px;font-weight:700;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(cur?cur.name:'マイプロジェクト')}</span>
+    <span style="font-size:13px;font-weight:700;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc((S.book&&S.book.title)||(cur?cur.name:'マイプロジェクト'))}</span>
     ${roleBadge}
     ${m.projects.length>1?`<span style="font-size:11px;color:var(--sub)">${m.projects.length}件</span>`:''}
     <button onclick="showProjectModal()" style="background:none;border:1px solid var(--line-soft);color:var(--sub);font-size:12px;padding:3px 10px;cursor:pointer;white-space:nowrap;flex-shrink:0">切り替え / 追加</button>
