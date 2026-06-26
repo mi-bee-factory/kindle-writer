@@ -539,11 +539,15 @@ async function _authLoadProfile(){
     if(displayName&&!S.author){S.author=displayName;const el=document.getElementById('author');if(el)el.value=displayName;}
     const nm=document.getElementById('headerUserName');if(nm)nm.textContent=displayName||_sbUser.email;
     // オーナー・管理者は自動で管理者モードに（作業者として招待されていない場合）
+    // ログイン後に保留中の招待URLを処理（ライター）
+    const pending=sessionStorage.getItem('_pendingInvite');
+    if(pending){
+      try{const d=JSON.parse(pending);sessionStorage.removeItem('_pendingInvite');_applyInviteData(d);return;}catch(e){}
+    }
     if((_sbRole==='owner'||_sbRole==='admin')&&!S.memberMode){
       S.coauthor=true;save();
       renderModeUI&&renderModeUI();
       renderProjectSwitcher&&renderProjectSwitcher();
-      // クラウドからプロジェクトデータを読み込む
       _sbLoadProjectData();
     }
   }
@@ -1630,26 +1634,35 @@ function renderAdmin(){
 function _invEnc(d){return btoa(unescape(encodeURIComponent(JSON.stringify(d))));}
 function _invDec(s){try{return JSON.parse(decodeURIComponent(escape(atob(s))));}catch(e){return null;}}
 
-function processInviteParam(){
-  const p=new URLSearchParams(location.search);
-  const raw=p.get('invite');
-  if(!raw){
-    // リロード時：招待データが保存されていれば自動復元
-    if(S.memberMode&&S._inviteData&&S._inviteData.v===1){
-      _showInviteWelcome(S._inviteData);
-    }
-    return;
-  }
-  const code=raw.startsWith('KWINV1')?raw.slice(6):raw;
-  const d=_invDec(code);if(!d||d.v!==1)return;
+function _applyInviteData(d){
   S.coauthor=true;S.coauthorChap=d.chapIdx;S.memberMode=true;
   if(!S.book)S.book={chapters:[],title:'',subtitle:''};
   S.book.title=d.bookTitle;
   while(S.book.chapters.length<=d.chapIdx)S.book.chapters.push({author:'',title:'',body:''});
   S.book.chapters[d.chapIdx].title=d.chapTitle;
   S._inviteData=d;save();
-  history.replaceState({},'',location.pathname);
   _showInviteWelcome(d);
+}
+function processInviteParam(){
+  const p=new URLSearchParams(location.search);
+  const raw=p.get('invite');
+  if(!raw){
+    if(S.memberMode&&S._inviteData&&S._inviteData.v===1&&_sbUser){
+      _showInviteWelcome(S._inviteData);
+    }
+    return;
+  }
+  const code=raw.startsWith('KWINV1')?raw.slice(6):raw;
+  const d=_invDec(code);if(!d||d.v!==1)return;
+  history.replaceState({},'',location.pathname);
+  if(!_sbUser){
+    // 未ログイン：招待データを保持してログイン画面へ
+    sessionStorage.setItem('_pendingInvite',JSON.stringify(d));
+    const err=document.getElementById('authError');
+    if(err){err.textContent='招待を受け取りました。ログインまたは新規登録してください。';err.style.display='block';err.style.color='var(--ok)';}
+    return;
+  }
+  _applyInviteData(d);
 }
 function _showInviteWelcome(d){
   window._mwMode=null;window._mwHeads=[];
@@ -1790,11 +1803,8 @@ function _showInviteWelcome(d){
           仕上がりをプレビューで確認する
         </button>
         <button class="btn ok" style="width:100%;padding:16px;font-size:16px;font-weight:700" onclick="_mwSubmit(${d.chapIdx})">
-          完成しました → 提出コードを生成する
+          完成して管理者に届ける
         </button>
-        <p style="font-size:12px;color:var(--sub);text-align:center;margin-top:12px;line-height:1.7">
-          ボタンを押すとコードが表示されます。管理者にLINEなどでそのまま送ってください。
-        </p>
       </div>
     </div>
   `;
@@ -1941,7 +1951,7 @@ function _mwPreview(chapIdx){
   </div>`;
   document.body.appendChild(modal);
 }
-function _mwSubmit(chapIdx){
+async function _mwSubmit(chapIdx){
   const nameEl=document.getElementById('mwName');
   const name=nameEl?nameEl.value.trim():'';
   if(!name){alert('お名前を入力してください');if(nameEl)nameEl.focus();return;}
@@ -1956,27 +1966,20 @@ function _mwSubmit(chapIdx){
   S.book.chapters[chapIdx].body=body;S.book.chapters[chapIdx].author=name;
   if(chapTitleInput)S.book.chapters[chapIdx].title=chapTitleInput;
   save();
+  await _sbSaveChapter();
   const chapTitle=((chapTitleInput||S.book.chapters[chapIdx].title||'').replace(/^\*+$/,'').trim())||`第${chapIdx+1}章`;
-  const images=(window._mwImages||[]).filter(img=>img.name||img.url);
-  const d={v:1,chapIdx,title:chapTitle,body,author:name,bookTitle:S.book.title||'',images,ts:new Date().toLocaleString('ja-JP')};
-  const code=_chapEnc(d);
   const mid2='chapSubmitModal';const ex2=document.getElementById(mid2);if(ex2)ex2.remove();
   const modal=document.createElement('div');modal.id=mid2;
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
-  modal.innerHTML=`<div style="background:#fff;max-width:480px;width:100%;padding:28px;box-shadow:0 24px 64px rgba(0,0,0,.4)">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="var(--ok)" stroke-width="2"/><path d="M8 12l3 3 5-5" stroke="var(--ok)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <h3 style="margin:0;font-size:17px">「${esc(chapTitle)}」完成！</h3>
+  modal.innerHTML=`<div style="background:#fff;max-width:420px;width:100%;padding:32px;box-shadow:0 24px 64px rgba(0,0,0,.4);text-align:center">
+    <div style="width:56px;height:56px;background:var(--ok);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </div>
-    <div style="background:var(--brand-soft);padding:14px 16px;margin-bottom:16px">
-      <div style="font-size:12px;font-weight:700;color:#403129;margin-bottom:8px">このコードをコピーして管理者にLINEで送ってください</div>
-      <input id="mwCodeOut" type="text" readonly value="${code}" style="width:100%;border:1px solid var(--line-soft);padding:7px 10px;font-size:11px;box-sizing:border-box;background:#fff">
-      <button class="btn ok" id="mwCopyBtn" style="width:100%;margin-top:8px;font-size:14px" onclick="(function(){const el=document.getElementById('mwCodeOut');el.select();navigator.clipboard.writeText(el.value).catch(()=>{el.select();document.execCommand('copy');});document.getElementById('mwCopyBtn').textContent='コピーしました！';})()">コードをコピーする</button>
-    </div>
-    <button class="btn gray" style="width:100%;font-size:14px" onclick="document.getElementById('${mid2}').remove()">閉じる（書き続ける場合）</button>
+    <h3 style="margin:0 0 8px;font-size:18px">管理者に届けました！</h3>
+    <p style="font-size:13px;color:var(--sub);margin:0 0 20px;line-height:1.7">「${esc(chapTitle)}」をクラウドに保存しました。<br>管理者がまとめて取り込みます。<br>後日修正したい場合はこの画面から上書き保存できます。</p>
+    <button class="btn ok" style="width:100%;font-size:14px" onclick="document.getElementById('${mid2}').remove()">閉じる</button>
   </div>`;
   document.body.appendChild(modal);
-  setTimeout(()=>{const el=document.getElementById('mwCodeOut');if(el){el.focus();el.select();}},50);
 }
 function _submitMemberChapter(chapIdx){_mwSubmit(chapIdx);}
 function generateInviteUrl(chapIdx){
@@ -2018,9 +2021,10 @@ function applyChapterCode(){
   _applyChapterData(d);
   if(el)el.value='';
 }
-function generateChapterCode(){
+async function submitChapterToCloud(){
   const idx=S.coauthorChap;
   if(idx===null||idx===undefined){alert('担当章が設定されていません。招待URLから開き直してください。');return;}
+  if(!_sbUser){alert('ログインが必要です。一度ログアウトして再度招待URLを開いてください。');return;}
   const uploadCh=S.uploadChapters||[];
   let body='',title='';
   if(uploadCh.length>0){
@@ -2031,31 +2035,20 @@ function generateChapterCode(){
     title=S.chapTitle||`第${idx+1}章`;
   }
   if(!body.trim()){alert('本文が空です。まず章の内容を入力してください。');return;}
-  _sbSaveChapter(); // クラウドにも即時保存
   const chapTitle=(S.book&&S.book.chapters&&S.book.chapters[idx]&&S.book.chapters[idx].title)||title;
-  const d={v:1,chapIdx:idx,title:chapTitle,body,author:S.memberName||S.author||'',bookTitle:(S.book&&S.book.title)||'',ts:new Date().toLocaleString('ja-JP')};
-  const code=_chapEnc(d);
+  await _sbSaveChapter();
   const mid='chapSubmitModal';const ex=document.getElementById(mid);if(ex)ex.remove();
   const modal=document.createElement('div');modal.id=mid;
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
-  modal.innerHTML=`<div style="background:#fff;max-width:480px;width:100%;padding:28px;box-shadow:0 24px 64px rgba(0,0,0,.4)">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="var(--ok)" stroke-width="2"/><path d="M8 12l3 3 5-5" stroke="var(--ok)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <h3 style="margin:0;font-size:17px">「${esc(chapTitle)}」が完成しました</h3>
+  modal.innerHTML=`<div style="background:#fff;max-width:420px;width:100%;padding:32px;box-shadow:0 24px 64px rgba(0,0,0,.4);text-align:center">
+    <div style="width:56px;height:56px;background:var(--ok);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </div>
-    <div style="background:var(--brand-soft);padding:14px 16px;margin-bottom:16px">
-      <div style="font-size:12px;font-weight:700;color:#403129;margin-bottom:8px">① このコードをコピーして管理者にLINEで送る</div>
-      <input id="chapCodeOut" type="text" readonly value="${code}" style="width:100%;border:1px solid var(--line-soft);padding:7px 10px;font-size:11px;box-sizing:border-box;background:#fff;word-break:break-all">
-      <button class="btn ok" id="chapCopyBtn" style="width:100%;margin-top:8px;font-size:14px" onclick="(function(){const el=document.getElementById('chapCodeOut');el.select();navigator.clipboard.writeText(el.value).catch(()=>{el.select();document.execCommand('copy');});document.getElementById('chapCopyBtn').textContent='コピーしました！';})()">コードをコピーする</button>
-    </div>
-    <details style="margin-bottom:14px">
-      <summary style="font-size:12px;color:var(--sub);cursor:pointer">ファイルで送る場合はこちら（任意）</summary>
-      <button style="margin-top:8px;background:#f0ece4;border:none;padding:8px 16px;font-size:13px;cursor:pointer" onclick="(function(){const json=JSON.stringify(${JSON.stringify(d).replace(/</g,'\\u003c')});const blob=new Blob([json],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='chapter_${idx+1}.kwchap';a.click();URL.revokeObjectURL(url);})()">📁 .kwchap ファイルをダウンロード</button>
-    </details>
-    <button class="btn gray" style="width:100%;font-size:14px" onclick="document.getElementById('${mid}').remove()">閉じる</button>
+    <h3 style="margin:0 0 8px;font-size:18px">管理者に届けました！</h3>
+    <p style="font-size:13px;color:var(--sub);margin:0 0 20px;line-height:1.7">「${esc(chapTitle)}」をクラウドに保存しました。<br>管理者がまとめて取り込みます。<br>後日修正したい場合はこの画面から上書き保存できます。</p>
+    <button class="btn ok" style="width:100%;font-size:14px" onclick="document.getElementById('${mid}').remove()">閉じる</button>
   </div>`;
   document.body.appendChild(modal);
-  setTimeout(()=>{const el=document.getElementById('chapCodeOut');if(el){el.focus();el.select();}},50);
 }
 function previewCoChapter(i){
   const c=S.book&&S.book.chapters&&S.book.chapters[i];
@@ -2289,22 +2282,6 @@ function renderCoInviteAdmin(){
             <p style="font-size:12px;color:#555;margin:0 0 10px;line-height:1.6">メンバーが「クラウドに保存」すると、このボタンで最新の原稿をまとめて取り込めます。</p>
             <button id="sbFetchBtn" class="btn ok" onclick="fetchChaptersFromSupabase()" style="font-size:13px;padding:8px 20px">メンバーの最新原稿を取り込む</button>
           </div>
-          <details style="margin-bottom:6px">
-            <summary style="font-size:12px;color:var(--sub);cursor:pointer">メンバーからコードを受け取った場合はこちら</summary>
-            <div style="margin-top:10px">
-            <p style="font-size:12px;color:var(--sub);margin-bottom:10px;line-height:1.6">メンバーが送ってきた <b>KWCHAP1…</b> コードを貼り付けて「読み込む」を押してください。</p>
-            <textarea id="chapCodePaste" placeholder="KWCHAP1. から始まるコードをここに貼り付け" style="width:100%;min-height:72px;font-size:12px;padding:8px 10px;box-sizing:border-box;border:1px solid var(--line-soft);background:#fafaf8;resize:vertical"></textarea>
-            <button class="btn ok" onclick="applyChapterCode()" style="margin-top:8px;font-size:13px;padding:8px 20px">読み込む →</button>
-            </div>
-          </details>
-          <details style="margin-top:14px">
-            <summary style="font-size:12px;color:var(--sub);cursor:pointer">.kwchap ファイルで受け取る場合はこちら</summary>
-            <label style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;background:#f0ece4;color:#403129;padding:6px 14px;font-size:13px;font-weight:700;margin-top:8px">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              ファイルを選択（.kwchap）
-              <input type="file" accept=".kwchap,application/json" style="display:none" onchange="adminReceiveChapterFile(this)">
-            </label>
-          </details>
         </div>
         ${received>0?`<div style="margin-top:14px;padding:12px 16px;background:#f0fff4;border:1px solid var(--ok)">
           <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--ok)">受取済：${received} / ${ch.length}章</div>
@@ -4047,7 +4024,7 @@ function renderUploadChaptersPreview(){
   ${(S.coauthor&&S.coauthorChap!=null)?'':`${renderFrontMatterSettings()}`}
   <div style="margin-top:12px">
     ${(S.coauthor&&S.coauthorChap!=null)
-      ?`<button onclick="generateChapterCode()" style="width:100%;padding:14px;font-size:15px;display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--ok);color:#fff;border:none;cursor:pointer;font-weight:700"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M22 2L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 2L15 22l-4-9-9-4 20-7z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>章を提出する（管理者にファイルを送る）</button>`
+      ?`<button onclick="submitChapterToCloud()" style="width:100%;padding:14px;font-size:15px;display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--ok);color:#fff;border:none;cursor:pointer;font-weight:700"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M22 2L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 2L15 22l-4-9-9-4 20-7z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>完成して管理者に届ける</button>`
       :`<button class="btn ok" onclick="buildUploadEpub()" style="width:100%;padding:14px;font-size:15px;display:inline-flex;align-items:center;justify-content:center;gap:8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M4 19.5A2.5 2.5 0 016.5 17H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>EPUBで書き出す（Kindle用）</button>`}
   </div>`;
 }
