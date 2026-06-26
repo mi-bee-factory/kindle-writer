@@ -518,8 +518,8 @@ async function authInit(){
     if(ev==='PASSWORD_RECOVERY'){
       _authShowResetForm();return;
     }
-    if(ev==='SIGNED_IN'&&sess){_sbUser=sess.user;_authOnLogin();}
-    else{_sbUser=null;document.getElementById('authOverlay').classList.remove('hidden');}
+    if((ev==='SIGNED_IN'||ev==='INITIAL_SESSION'||ev==='TOKEN_REFRESHED')&&sess){_sbUser=sess.user;_authOnLogin();}
+    else if(ev==='SIGNED_OUT'){_sbUser=null;document.getElementById('authOverlay').classList.remove('hidden');}
   });
 }
 function _authOnLogin(){
@@ -967,7 +967,7 @@ function showProjectModal(){
       <h3 style="margin:0;font-size:17px">プロジェクトを切り替える</h3>
       <button onclick="document.getElementById('${mid}').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--sub);padding:0;line-height:1">×</button>
     </div>
-    ${roleLabel?`<div style="font-size:12px;background:var(--bg-alt);padding:6px 12px;margin-bottom:16px;color:var(--sub)">アカウント：<b style="color:var(--ink)">${esc(document.getElementById('headerUserName')?.textContent||'')}</b>　権限：<b style="color:#3a6929">${roleLabel}</b></div>`:''}
+    ${roleLabel?`<div style="font-size:12px;background:var(--bg-alt);padding:6px 12px;margin-bottom:16px;color:var(--sub)">アカウント：<b style="color:var(--ink)">${esc(document.getElementById('headerUserName')?.textContent||'')}</b>　権限：<b style="color:var(--ok)">${roleLabel}</b></div>`:''}
     <div style="font-size:11px;color:var(--sub);margin-bottom:8px">※ プロジェクト名はクリックして直接編集できます</div>
     ${rows}
     <div style="margin-top:16px;border-top:1px solid var(--line-soft);padding-top:16px">
@@ -1200,7 +1200,7 @@ function renderHomeBookCard(){
   const pct=Math.round(done/total*100);
   const action=(S.coauthor&&!S.memberMode)?'startAdmin()':'startChapters()';
   const actionLabel=(S.coauthor&&!S.memberMode)?'管理者ダッシュボードへ →':'章を確認・編集する →';
-  el.innerHTML=`<div style="background:#bddf9a;padding:20px 24px;cursor:pointer" onclick="${action}">
+  el.innerHTML=`<div style="background:var(--ok-soft);padding:20px 24px;cursor:pointer" onclick="${action}">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
       <span style="font-size:11px;color:#403129;font-weight:700;letter-spacing:.5px;opacity:.7">原稿の進捗</span>
       <span style="font-size:11px;font-weight:700;background:rgba(64,49,41,.12);color:#403129;padding:2px 8px;letter-spacing:.03em">自動追跡</span>
@@ -1565,8 +1565,8 @@ function renderChecklist(){
   const next=all.find(x=>!ck[x.id]);
   const pbar=`<div style="display:flex;align-items:center;gap:12px;margin:8px 0"><div style="flex:1;background:#F5F3EF;height:10px;overflow:hidden"><div style="width:${pct}%;height:100%;background:${pct>=100?'var(--ok)':'var(--brand)'};transition:.4s"></div></div><span style="font-size:14px;font-weight:700;color:var(--brand-dim);min-width:42px;text-align:right">${pct}%</span></div><div class="small muted" style="margin-top:2px">${done} / ${total} 完了${pct>=100?' ✓':''}</div>`;
   const head=next
-    ? `<div style="background:var(--brand-soft);border:1.5px solid var(--brand);padding:18px 20px;margin:12px 0"><div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--brand-dim);margin-bottom:6px">STEP ${next.step} · ${next.phase}</div><div style="font-size:17px;font-weight:700;margin-bottom:12px;color:var(--ink)">次の手順：${next.label}</div>${next.go?`<button class="btn" style="font-size:13px" onclick="goStep('${next.go}')">この手順を進める →</button>`:''}</div>`
-    : `<div style="background:var(--ok-soft);border:1px solid var(--ok);padding:16px 20px;margin:12px 0"><div style="font-weight:700;color:var(--ok);font-size:16px">✓ 出版の全工程が完了しました！おつかれさまでした。</div></div>`;
+    ? `<div style="background:var(--brand-soft);padding:18px 20px;margin:12px 0;border-left:3px solid var(--brand)"><div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--brand-dim);margin-bottom:6px">STEP ${next.step} · ${next.phase}</div><div style="font-size:17px;font-weight:700;margin-bottom:12px;color:var(--ink)">次の手順：${next.label}</div>${next.go?`<button class="btn" style="font-size:13px" onclick="goStep('${next.go}')">この手順を進める →</button>`:''}</div>`
+    : `<div style="background:var(--ok-soft);padding:16px 20px;margin:12px 0"><div style="font-weight:700;color:var(--ok);font-size:16px">✓ 出版の全工程が完了しました！おつかれさまでした。</div></div>`;
   const phases=effectiveChecklist.map(p=>{
     const items=p.items.map(it=>{const c=!!ck[it.id],isNext=next&&next.id===it.id;
       const urlBtn=it.url?`<a href="${it.url}" target="_blank" rel="noopener" style="flex-shrink:0;font-size:12px;text-decoration:none;background:var(--brand);color:var(--brand-dim);border:none;padding:5px 12px;white-space:nowrap;align-self:center;font-weight:600;transition:.18s ease" onmouseover="this.style.filter='brightness(1.08)';this.style.transform='translateY(-1px)'" onmouseout="this.style.filter='';this.style.transform=''">${it.urlLabel||'開く'}</a>`:'';
@@ -1579,7 +1579,7 @@ function renderChecklist(){
    <div class="card">
     <h2>出版手続きチェックリスト</h2>
     <p class="muted">KDP登録・表紙・出版手続きなど、手続き系タスクの進み具合を管理します。チェックを入れると記録されます（このブラウザに保存）。</p>
-    <div style="background:var(--ok-soft);border-left:3px solid var(--ok);padding:10px 14px;font-size:13px;color:var(--ok);margin:8px 0">
+    <div style="background:var(--ok-soft);padding:10px 14px;font-size:13px;color:var(--ok);margin:8px 0">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-1px;margin-right:4px"><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><b>執筆・原稿の進捗</b>はホームの「YOUR BOOK」カードで自動追跡しています。このチェックリストとは別管理です。
     </div>
     <div style="margin:8px 0">${pbar}</div>
@@ -2189,7 +2189,7 @@ function _applyChapterData(d){
 }
 const _ROLE_CONFIG={
   owner:{label:'オーナー',bg:'#fff3b0',color:'#7a5c00',border:'#e8c800'},
-  admin:{label:'プロデューサー',bg:'#bddf9a',color:'#3a6929',border:'#8fbe6a'},
+  admin:{label:'プロデューサー',bg:'#e8f4c4',color:'#5d9020',border:'#a8d060'},
   member:{label:'ライター',bg:'#fff0d6',color:'#a65c00',border:'#f0a030'}
 };
 async function loadUserList(){
