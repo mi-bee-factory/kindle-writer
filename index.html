@@ -509,7 +509,7 @@ const _SB_URL='https://qdqzrwymgyfgplbwdfss.supabase.co';
 const _SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFkcXpyd3ltZ3lmZ3BsYndkZnNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0NDA0MTMsImV4cCI6MjA5ODAxNjQxM30.VUIycG1Vjq0OMwKANJXUqMbbfYqPMWoxt3k89navU5c';
 const BOOK_ID='kindle-writer-v1';
 const _sb=window.supabase.createClient(_SB_URL,_SB_KEY);
-let _sbUser=null,_sbRole='member',_sbTimer=null;
+let _sbUser=null,_sbRole='member',_sbTimer=null,_freshLogin=false;
 
 async function authInit(){
   const {data:{session}}=await _sb.auth.getSession();
@@ -518,7 +518,7 @@ async function authInit(){
     if(ev==='PASSWORD_RECOVERY'){
       _authShowResetForm();return;
     }
-    if(sess){_sbUser=sess.user;_authOnLogin();}
+    if(ev==='SIGNED_IN'&&sess){_sbUser=sess.user;_authOnLogin();}
     else{_sbUser=null;document.getElementById('authOverlay').classList.remove('hidden');}
   });
 }
@@ -553,8 +553,9 @@ async function _authLoadProfile(){
       renderModeUI&&renderModeUI();
       renderProjectSwitcher&&renderProjectSwitcher();
       await _sbLoadProjectData();
-      // プロデューサーはログイン後に管理ダッシュボードへ自動遷移
-      if(_sbRole==='admin'){setTimeout(()=>startAdmin&&startAdmin(),300);}
+      // プロデューサーは初回ログイン時のみ管理ダッシュボードへ自動遷移
+      if(_sbRole==='admin'&&_freshLogin){_freshLogin=false;setTimeout(()=>startAdmin&&startAdmin(),300);}
+      else{_freshLogin=false;}
     }
   }
 }
@@ -570,6 +571,7 @@ async function authSignIn(){
   const {error}=await _sb.auth.signInWithPassword({email,password:pw});
   if(btn){btn.textContent='ログイン →';btn.disabled=false;}
   if(error){err.textContent='ログイン失敗：メールまたはパスワードが違います';err.style.display='block';}
+  else{_freshLogin=true;}
 }
 async function authSignUp(){
   const name=document.getElementById('authName').value.trim();
@@ -583,7 +585,8 @@ async function authSignUp(){
   const {data,error}=await _sb.auth.signUp({email,password:pw,options:{data:{name}}});
   if(btn){btn.textContent='登録する →';btn.disabled=false;}
   if(error){err.textContent='登録失敗：'+error.message;err.style.display='block';}
-  else if(data.user&&!data.session){await _sb.auth.signInWithPassword({email,password:pw});}
+  else if(data.user&&!data.session){_freshLogin=true;await _sb.auth.signInWithPassword({email,password:pw});}
+  else if(data.session){_freshLogin=true;}
 }
 async function authSignOut(){await _sb.auth.signOut();location.reload();}
 function _authShowResetForm(){
@@ -2198,12 +2201,13 @@ async function loadUserList(){
       const changeBtn=isOwner&&!isMe?`<select onchange="changeUserRole('${u.id}',this.value)" style="font-size:11px;border:1px solid var(--line-soft);padding:2px 6px;cursor:pointer;background:#fff">
         <option value="">変更...</option>
         <option value="owner">オーナー</option>
-        <option value="admin">管理者</option>
-        <option value="member">作業者</option>
+        <option value="admin">プロデューサー</option>
+        <option value="member">ライター</option>
       </select>`:'';
+      const deleteBtn=isOwner&&!isMe&&r!=='owner'?`<button onclick="removeUser('${u.id}','${esc(u.name||'このユーザー')}')" style="font-size:11px;background:none;border:1px solid #fca5a5;color:#ef4444;padding:2px 8px;cursor:pointer;white-space:nowrap">削除</button>`:'';
       return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line-soft)">
         <div style="flex:1;font-size:13px;font-weight:${isMe?'700':'400'};color:var(--ink)">${esc(u.name||'（名前未設定）')}${meTag}</div>
-        <div>${badge}</div>${changeBtn?`<div>${changeBtn}</div>`:''}
+        <div>${badge}</div>${changeBtn?`<div>${changeBtn}</div>`:''}${deleteBtn?`<div>${deleteBtn}</div>`:''}
       </div>`;
     }).join('')}
     <div style="font-size:11px;color:var(--muted);margin-top:10px">登録ユーザー計 ${data.length}名</div>`;
@@ -2214,6 +2218,13 @@ async function changeUserRole(userId,role){
   if(!confirm(`「${rc.label}」に変更しますか？`))return;
   const {error}=await _sb.from('profiles').update({role}).eq('id',userId);
   if(error){alert('変更できませんでした。\nSupabase Dashboard のSQL Editorで直接変更してください。');}
+  else{loadUserList();}
+}
+async function removeUser(userId,name){
+  if(_sbRole!=='owner'){alert('削除はオーナーのみ可能です。');return;}
+  if(!confirm(`「${name}」をユーザー一覧から削除しますか？\nこの操作は取り消せません。`))return;
+  const {error}=await _sb.from('profiles').delete().eq('id',userId);
+  if(error){alert('削除できませんでした：\n'+error.message);}
   else{loadUserList();}
 }
 function addChapterSlot(){
