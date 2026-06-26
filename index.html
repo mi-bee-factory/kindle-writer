@@ -553,9 +553,7 @@ async function _authLoadProfile(){
       renderModeUI&&renderModeUI();
       renderProjectSwitcher&&renderProjectSwitcher();
       await _sbLoadProjectData();
-      // プロデューサーは初回ログイン時のみ管理ダッシュボードへ自動遷移
-      if(_sbRole==='admin'&&_freshLogin){_freshLogin=false;setTimeout(()=>startAdmin&&startAdmin(),300);}
-      else{_freshLogin=false;}
+      _freshLogin=false;
     }
   }
 }
