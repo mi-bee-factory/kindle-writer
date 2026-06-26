@@ -2124,15 +2124,15 @@ function renderCoInviteAdmin(){
         <div style="font-size:12px;color:#555;font-weight:600;margin-bottom:8px">章ごとにタイトルと担当者名を入れて「招待URLをコピー」→ LINEなどで送る</div>
         ${chapRows}
         <div style="display:flex;gap:8px;margin-bottom:20px">
-          <button class="btn" onclick="addChapterSlot()" style="font-size:12px;padding:5px 12px;display:inline-flex;align-items:center;gap:4px">
+          <button onclick="addChapterSlot()" style="font-size:12px;padding:5px 12px;display:inline-flex;align-items:center;gap:4px;background:#bddf9a;color:#403129;border:none;font-weight:600;cursor:pointer">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>共著者を1名追加
           </button>
           ${canDelete?`<button class="btn gray" onclick="removeLastChapterSlot()" style="font-size:12px;padding:5px 12px">− 最後の枠を削除</button>`:''}
         </div>
         <div style="border-top:1px solid var(--line-soft);padding-top:16px">
           <div style="font-weight:700;font-size:13px;margin-bottom:10px">メンバーから章を受け取る</div>
-          <div style="background:#f0f9ff;border:1px solid #bae6fd;padding:12px 14px;margin-bottom:14px;border-radius:2px">
-            <div style="font-size:12px;font-weight:700;color:#0369a1;margin-bottom:6px">自動受け取り（Supabase連携）</div>
+          <div style="background:#f0fbe8;border:1px solid #bddf9a;padding:12px 14px;margin-bottom:14px;border-radius:2px">
+            <div style="font-size:12px;font-weight:700;color:#3a6929;margin-bottom:6px">自動受け取り（Supabase連携）</div>
             <p style="font-size:12px;color:#555;margin:0 0 10px;line-height:1.6">メンバーが章を保存すると自動でクラウドに届きます。ボタンを押して最新状態を取り込んでください。</p>
             <button id="sbFetchBtn" class="btn ok" onclick="fetchChaptersFromSupabase()" style="font-size:13px;padding:8px 20px">Supabaseから最新を取得</button>
           </div>
