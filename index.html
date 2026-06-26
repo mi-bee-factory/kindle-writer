@@ -530,6 +530,8 @@ async function _authLoadProfile(){
       S.coauthor=true;save();
       renderModeUI&&renderModeUI();
       renderProjectSwitcher&&renderProjectSwitcher();
+      // クラウドからプロジェクトデータを読み込む
+      _sbLoadProjectData();
     }
   }
 }
@@ -645,6 +647,46 @@ async function changePassword(){
   }
 }
 
+async function _getOwnerId(){
+  const {data}=await _sb.from('profiles').select('id').eq('role','owner').single();
+  return data?.id||null;
+}
+async function _sbSaveProjectData(){
+  if(!_sbUser||(_sbRole!=='owner'&&_sbRole!=='admin'))return;
+  const saveData={
+    book:S.book||{},
+    theme:S.theme||'',reader:S.reader||'',goal:S.goal||'',
+    people:S.people||5,totalTarget:S.totalTarget||25000,
+    coauthor:true
+  };
+  const targetId=_sbRole==='owner'?_sbUser.id:await _getOwnerId();
+  if(!targetId)return;
+  await _sb.from('book_settings').upsert({id:targetId,data:saveData,updated_at:new Date().toISOString()});
+}
+async function _sbLoadProjectData(){
+  const ownerId=await _getOwnerId();if(!ownerId)return false;
+  const {data}=await _sb.from('book_settings').select('*').eq('id',ownerId).single();
+  if(!data||!data.data)return false;
+  const d=data.data;
+  if(d.book)S.book=d.book;
+  if(d.theme)S.theme=d.theme;
+  if(d.reader)S.reader=d.reader;
+  if(d.goal)S.goal=d.goal;
+  if(d.people)S.people=d.people;
+  if(d.totalTarget)S.totalTarget=d.totalTarget;
+  S.coauthor=true;S.memberMode=false;
+  save();
+  const el=document.getElementById('theme');if(el)el.value=S.theme||'';
+  const el2=document.getElementById('people');if(el2)el2.value=S.people||5;
+  renderModeUI&&renderModeUI();renderHomeBookCard&&renderHomeBookCard();renderCoInviteAdmin&&renderCoInviteAdmin();
+  return true;
+}
+let _sbProjectTimer=null;
+function _sbScheduleProjectSync(){
+  if(_sbRole!=='owner'&&_sbRole!=='admin')return;
+  if(_sbProjectTimer)clearTimeout(_sbProjectTimer);
+  _sbProjectTimer=setTimeout(_sbSaveProjectData,5000);
+}
 function _sbScheduleSync(){
   if(S.coauthorChap===null||S.coauthorChap===undefined)return;
   if(_sbTimer)clearTimeout(_sbTimer);
@@ -890,6 +932,7 @@ function save(){
   const id=pmCurrentId();
   try{localStorage.setItem(_pmKey(id), JSON.stringify(S));}catch(e){/* 容量超過時も落ちないように */}
   _sbScheduleSync();
+  _sbScheduleProjectSync();
 }
 function load(){
   _pmMigrate();
@@ -2237,6 +2280,11 @@ function renderCoInviteAdmin(){
             .join('')}
         </div>
       </div>
+    </div>
+    <div style="border:1px solid #bddf9a;background:#f0fbe8;padding:12px 16px;margin-top:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:12px;font-weight:700;color:#3a6929;flex:1">プロジェクトデータのクラウド同期</span>
+      <button onclick="_sbSaveProjectData().then(()=>{const t=document.createElement('div');t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:8px 20px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none';t.textContent='✓ クラウドに保存しました';document.body.appendChild(t);setTimeout(()=>t.remove(),2000);})" style="font-size:12px;background:#bddf9a;color:#3a6929;border:1px solid #8fbe6a;padding:5px 14px;cursor:pointer;font-weight:700">↑ クラウドに保存</button>
+      <button onclick="_sbLoadProjectData().then(ok=>{const t=document.createElement('div');t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:8px 20px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none';t.textContent=ok?'✓ クラウドから読み込みました':'データがありません';document.body.appendChild(t);setTimeout(()=>t.remove(),2000);})" style="font-size:12px;background:#fff;color:#3a6929;border:1px solid #8fbe6a;padding:5px 14px;cursor:pointer;font-weight:700">↓ クラウドから取得</button>
     </div>
     <div style="border:1px solid var(--line-soft);margin-top:16px">
       <div style="background:var(--bg-alt);padding:12px 16px;font-weight:700;font-size:13px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between">
