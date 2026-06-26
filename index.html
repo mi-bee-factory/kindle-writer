@@ -880,7 +880,7 @@ function bar(cur,target){const p=Math.min(100,Math.round(cur/target*100));
 function _pmKey(id){return 'kdpwriter_p'+id;}
 function _pmMeta(){
   try{const j=localStorage.getItem('kdpwriter_meta');if(j)return JSON.parse(j);}catch(e){}
-  return {current:0,nextId:1,projects:[{id:0,name:'マイプロジェクト',created:new Date().toLocaleDateString('ja-JP')}]};
+  return {current:0,nextId:1,projects:[{id:0,name:'',created:new Date().toLocaleDateString('ja-JP')}]};
 }
 function _pmSaveMeta(m){try{localStorage.setItem('kdpwriter_meta',JSON.stringify(m));}catch(e){}}
 function _pmMigrate(){
@@ -991,7 +991,7 @@ function renderProjectSwitcher(){
   const roleBadge=rc?`<span style="background:${rc.bg};color:${rc.color};border:1px solid ${rc.border};font-size:10px;font-weight:700;padding:1px 7px;white-space:nowrap;flex-shrink:0">${rc.label}</span>`:'';
   el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;padding:8px 16px;background:var(--bg-alt);border:1px solid var(--line-soft);margin-bottom:12px">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" stroke="var(--sub)" stroke-width="2" stroke-linejoin="round"/><polyline points="9 22 9 12 15 12 15 22" stroke="var(--sub)" stroke-width="2" stroke-linejoin="round"/></svg>
-    <span style="font-size:13px;font-weight:700;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc((S.book&&S.book.title)||(cur?cur.name:'マイプロジェクト'))}</span>
+    <span style="font-size:13px;font-weight:700;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${!(S.book&&S.book.title)&&!(cur&&cur.name&&cur.name!=='マイプロジェクト')?'color:var(--muted)':''}">${esc((S.book&&S.book.title)||(cur&&cur.name&&cur.name!=='マイプロジェクト'?cur.name:'プロジェクトを選ぶ'))}</span>
     ${roleBadge}
     ${m.projects.length>1?`<span style="font-size:11px;color:var(--sub)">${m.projects.length}件</span>`:''}
     <button onclick="showProjectModal()" style="background:none;border:1px solid var(--line-soft);color:var(--sub);font-size:12px;padding:3px 10px;cursor:pointer;white-space:nowrap;flex-shrink:0">切り替え / 追加</button>
