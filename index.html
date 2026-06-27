@@ -391,6 +391,7 @@
     <div class="card" id="homeWritingCard">
       <div class="eyebrow">ツール</div>
       <h2 id="beginTitle">書きはじめる</h2>
+      <div id="beginTitleUnderline" style="height:3px;background:#ffcc00;transform-origin:left;display:none;margin-top:-2px;margin-bottom:10px"></div>
       <p class="muted" id="introText">本を書いたことがなくても大丈夫。流れは <b>① AIで構成・下書き → ② Kindle形式に整える → ③ まとめてEPUBを書き出す</b> の3ステップです。</p>
       <div class="home-choices">
         <div class="choice" onclick="startTemplate()">
@@ -853,16 +854,22 @@ function renderModeUI(){
               onmouseover="if(S.soloPath!=='plan')this.style.background='rgba(255,255,255,.55)'"
               onmouseout="if(S.soloPath!=='plan')this.style.background='rgba(255,255,255,.25)'"
               style="background:${planSel?'rgba(255,255,255,.85)':'rgba(255,255,255,.25)'};color:#403129;border:2px solid #fff;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;transition:background .15s">AIと一緒に本の構成を考える →</button>
-            <span style="position:relative;display:inline-block">
-              <button
-                onclick="S.soloPath='write';save();renderModeUI();(function(){const t=document.getElementById('beginTitle');if(t){t.scrollIntoView({behavior:'smooth',block:'start'});t.style.transition='background .4s';t.style.background='#ffcc00';setTimeout(()=>{t.style.transition='background .8s';t.style.background=''},1600);}})()"
-                onmouseover="if(S.soloPath!=='write')this.style.background='rgba(255,255,255,.55)'"
-                onmouseout="if(S.soloPath!=='write')this.style.background='rgba(255,255,255,.25)'"
-                style="background:${writeSel?'rgba(255,255,255,.85)':'rgba(255,255,255,.25)'};color:#403129;border:2px solid #fff;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s;display:block">すぐに書きはじめる</button>
-              ${writeSel?`<span style="position:absolute;bottom:0;left:0;right:0;height:4px;background:#ffcc00;border-top:1px solid rgba(180,140,0,.5);transform-origin:left;animation:underlineGrow .5s cubic-bezier(.4,0,.2,1) both;pointer-events:none;display:block"></span>`:''}
-            </span>
+            <button
+              onclick="S.soloPath='write';save();renderModeUI();(function(){const t=document.getElementById('beginTitle');if(t)t.scrollIntoView({behavior:'smooth',block:'start'});})()"
+              onmouseover="if(S.soloPath!=='write')this.style.background='rgba(255,255,255,.55)'"
+              onmouseout="if(S.soloPath!=='write')this.style.background='rgba(255,255,255,.25)'"
+              style="background:${writeSel?'rgba(255,255,255,.85)':'rgba(255,255,255,.25)'};color:#403129;border:2px solid #fff;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s">すぐに書きはじめる</button>
           </div>
+          ${writeSel?`<div style="margin-top:14px;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:#403129">
+            <span style="font-size:11px">▼</span>下の「書きはじめる」カードから始めましょう
+          </div>`:''}
         </div>`;
+        // 「書きはじめる」タイトル下のアンダーライン制御
+        const _ul=document.getElementById('beginTitleUnderline');
+        if(_ul){
+          if(writeSel){_ul.style.display='block';_ul.style.animation='none';void _ul.offsetHeight;_ul.style.animation='underlineGrow .6s cubic-bezier(.4,0,.2,1) both';}
+          else{_ul.style.display='none';}
+        }
       }
     }else{
       ns.innerHTML=`<div style="background:#ffcc00;padding:16px 18px">
