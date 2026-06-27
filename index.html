@@ -849,16 +849,19 @@ function renderModeUI(){
           <div style="display:flex;gap:10px;flex-wrap:wrap">
             <button
               onclick="S.soloPath='plan';save();renderModeUI();startBookPlanning()"
-              onmouseover="if(S.soloPath!=='plan')this.style.background='rgba(255,255,255,.45)'"
-              onmouseout="if(S.soloPath!=='plan')this.style.background='rgba(255,255,255,.2)'"
-              style="background:${planSel?'#fff':'rgba(255,255,255,.2)'};color:#403129;border:none;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;transition:all .15s;${planSel?'box-shadow:0 2px 10px rgba(64,49,41,.2)':'opacity:.8'}">${planSel?'✓ ':''}AIと一緒に本の構成を考える →</button>
+              onmouseover="if(S.soloPath!=='plan')this.style.background='rgba(255,255,255,.55)'"
+              onmouseout="if(S.soloPath!=='plan')this.style.background='rgba(255,255,255,.25)'"
+              style="background:${planSel?'rgba(255,255,255,.85)':'rgba(255,255,255,.25)'};color:#403129;border:2px solid #fff;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;transition:background .15s">AIと一緒に本の構成を考える →</button>
             <button
               onclick="S.soloPath='write';save();renderModeUI();(function(){const t=document.getElementById('beginTitle');if(t){t.scrollIntoView({behavior:'smooth',block:'start'});t.style.transition='background .3s';t.style.background='#fff9d6';setTimeout(()=>{t.style.background=''},1200);}})()"
-              onmouseover="if(S.soloPath!=='write')this.style.background='rgba(255,255,255,.45)'"
-              onmouseout="if(S.soloPath!=='write')this.style.background='rgba(255,255,255,.2)'"
-              style="background:${writeSel?'#fff':'rgba(255,255,255,.2)'};color:#403129;border:none;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;transition:all .15s;${writeSel?'box-shadow:0 2px 10px rgba(64,49,41,.2)':'opacity:.8'}">${writeSel?'✓ ':''}すぐに書きはじめる</button>
+              onmouseover="if(S.soloPath!=='write')this.style.background='rgba(255,255,255,.55)'"
+              onmouseout="if(S.soloPath!=='write')this.style.background='rgba(255,255,255,.25)'"
+              style="background:${writeSel?'rgba(255,255,255,.85)':'rgba(255,255,255,.25)'};color:#403129;border:2px solid #fff;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s">すぐに書きはじめる</button>
           </div>
-          ${writeSel?'<div style="margin-top:10px;font-size:12px;color:#403129;font-weight:700">↓ 下の「書きはじめる」ツールから始めましょう</div>':''}
+          ${writeSel?`<div style="margin-top:14px;display:flex;align-items:center;gap:8px;background:rgba(64,49,41,.12);padding:8px 14px;font-size:13px;font-weight:700;color:#403129">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 15l7 7 7-7" stroke="#403129" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            下の「書きはじめる」カードから始めましょう
+          </div>`:''}
         </div>`;
       }
     }else{
