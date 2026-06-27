@@ -849,16 +849,16 @@ function renderModeUI(){
           <div style="display:flex;gap:10px;flex-wrap:wrap">
             <button
               onclick="S.soloPath='plan';save();renderModeUI();startBookPlanning()"
-              onmouseover="if(S.soloPath!=='plan')this.style.background='rgba(255,255,255,.55)'"
-              onmouseout="if(S.soloPath!=='plan')this.style.background='rgba(255,255,255,.25)'"
-              style="background:${planSel?'rgba(255,255,255,.85)':'rgba(255,255,255,.25)'};color:#403129;border:2px solid #fff;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;transition:background .15s">AIと一緒に本の構成を考える →</button>
+              onmouseover="if(S.soloPath!=='plan')this.style.background='rgba(255,255,255,.45)'"
+              onmouseout="if(S.soloPath!=='plan')this.style.background='rgba(255,255,255,.2)'"
+              style="background:${planSel?'#fff':'rgba(255,255,255,.2)'};color:#403129;border:none;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;transition:all .15s;${planSel?'box-shadow:0 2px 10px rgba(64,49,41,.2)':'opacity:.8'}">${planSel?'✓ ':''}AIと一緒に本の構成を考える →</button>
             <button
               onclick="S.soloPath='write';save();renderModeUI();(function(){const t=document.getElementById('beginTitle');if(t){t.scrollIntoView({behavior:'smooth',block:'start'});t.style.transition='background .3s';t.style.background='#fff9d6';setTimeout(()=>{t.style.background=''},1200);}})()"
-              onmouseover="if(S.soloPath!=='write')this.style.background='rgba(255,255,255,.55)'"
-              onmouseout="if(S.soloPath!=='write')this.style.background='rgba(255,255,255,.25)'"
-              style="background:${writeSel?'rgba(255,255,255,.85)':'rgba(255,255,255,.25)'};color:#403129;border:2px solid #fff;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s">すぐに書きはじめる</button>
+              onmouseover="if(S.soloPath!=='write')this.style.background='rgba(255,255,255,.45)'"
+              onmouseout="if(S.soloPath!=='write')this.style.background='rgba(255,255,255,.2)'"
+              style="background:${writeSel?'#fff':'rgba(255,255,255,.2)'};color:#403129;border:none;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;transition:all .15s;${writeSel?'box-shadow:0 2px 10px rgba(64,49,41,.2)':'opacity:.8'}">${writeSel?'✓ ':''}すぐに書きはじめる</button>
           </div>
-          ${writeSel?'<div style="margin-top:10px;font-size:12px;color:#403129;font-weight:600">↓ 下の「書きはじめる」ツールから始めましょう</div>':''}
+          ${writeSel?'<div style="margin-top:10px;font-size:12px;color:#403129;font-weight:700">↓ 下の「書きはじめる」ツールから始めましょう</div>':''}
         </div>`;
       }
     }else{
@@ -4416,5 +4416,8 @@ function chapDropImage(event,i){
 load();
 authInit();
 </script>
+<footer style="text-align:center;padding:20px 16px 28px;font-size:11px;color:var(--muted)">
+  © 2025 mi-bee-factory. All rights reserved.
+</footer>
 </body>
 </html>
