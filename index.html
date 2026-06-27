@@ -158,6 +158,7 @@
   @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
   @keyframes heroSlide{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
   @keyframes popIn{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:scale(1)}}
+  @keyframes underlineGrow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
   .hero-content{animation:heroSlide .4s ease both}
   .hero-eyebrow{animation:fadeUp .35s .06s ease both}
   .hero-title{animation:fadeUp .35s .12s ease both}
@@ -858,9 +859,9 @@ function renderModeUI(){
               onmouseout="if(S.soloPath!=='write')this.style.background='rgba(255,255,255,.25)'"
               style="background:${writeSel?'rgba(255,255,255,.85)':'rgba(255,255,255,.25)'};color:#403129;border:2px solid #fff;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s">すぐに書きはじめる</button>
           </div>
-          ${writeSel?`<div style="margin-top:14px;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#403129">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M22 3L9 10.5M22 3L15 21l-6-10.5M22 3L2 9l7 1.5" stroke="#403129" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 10.5L6 20" stroke="#403129" stroke-width="2" stroke-linecap="round"/></svg>
-            下の「書きはじめる」カードから始めましょう
+          ${writeSel?`<div style="margin-top:14px;display:inline-block">
+            <span style="font-size:13px;font-weight:700;color:#403129;letter-spacing:.02em">下の「書きはじめる」カードから始めましょう</span>
+            <div style="height:2px;background:#403129;transform-origin:left;animation:underlineGrow .55s .05s cubic-bezier(.4,0,.2,1) both"></div>
           </div>`:''}
         </div>`;
       }
@@ -955,7 +956,7 @@ function showProjectModal(){
   const rows=m.projects.map(p=>{
     const isCur=p.id===m.current;
     const bookTitle=_pmBookTitle(p.id);
-    const displayName=bookTitle||p.name;
+    const displayName=bookTitle||(p.name&&p.name!=='マイプロジェクト'?p.name:'');
     return `<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--line-soft);margin-bottom:6px;background:${isCur?'var(--brand-soft)':'#fff'}">
       <div style="flex:1;min-width:0">
         <input type="text" value="${esc(displayName)}" style="width:100%;border:none;background:transparent;font-size:14px;font-weight:${isCur?'700':'400'};padding:2px 4px;outline:1px solid transparent" onfocus="this.style.outline='1px solid var(--brand)'" onblur="this.style.outline='1px solid transparent';pmRenameBook(${p.id},this.value)"
@@ -997,12 +998,12 @@ function renderProjectSwitcher(){
   const cur=m.projects.find(p=>p.id===m.current)||m.projects[0];
   const rc=(_ROLE_CONFIG&&_sbRole)?(_ROLE_CONFIG[_sbRole]||_ROLE_CONFIG.member):null;
   const roleBadge=rc?`<span style="background:${rc.bg};color:${rc.color};border:1px solid ${rc.border};font-size:10px;font-weight:700;padding:1px 7px;white-space:nowrap;flex-shrink:0">${rc.label}</span>`:'';
-  el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;padding:8px 16px;background:var(--bg-alt);border:1px solid var(--line-soft);margin-bottom:12px">
+  el.innerHTML=`<div onclick="showProjectModal()" style="display:flex;align-items:center;gap:8px;padding:8px 16px;background:var(--bg-alt);border:1px solid var(--line-soft);margin-bottom:12px;cursor:pointer" onmouseover="this.style.background='#eaeaea'" onmouseout="this.style.background='var(--bg-alt)'">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" stroke="var(--sub)" stroke-width="2" stroke-linejoin="round"/><polyline points="9 22 9 12 15 12 15 22" stroke="var(--sub)" stroke-width="2" stroke-linejoin="round"/></svg>
     <span style="font-size:13px;font-weight:700;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${!(S.book&&S.book.title)&&!(cur&&cur.name&&cur.name!=='マイプロジェクト')?'color:var(--muted)':''}">${esc((S.book&&S.book.title)||(cur&&cur.name&&cur.name!=='マイプロジェクト'?cur.name:'プロジェクトを選ぶ'))}</span>
     ${roleBadge}
     ${m.projects.length>1?`<span style="font-size:11px;color:var(--sub)">${m.projects.length}件</span>`:''}
-    <button onclick="showProjectModal()" style="background:none;border:1px solid var(--line-soft);color:var(--sub);font-size:12px;padding:3px 10px;cursor:pointer;white-space:nowrap;flex-shrink:0">切り替え / 追加</button>
+    <span style="font-size:11px;color:var(--sub);white-space:nowrap;flex-shrink:0">切り替え / 追加 ›</span>
   </div>`;
 }
 /* ===== /プロジェクト管理 ===== */
@@ -2344,7 +2345,7 @@ function renderCoInviteAdmin(){
       <button onclick="_sbSaveProjectData().then(()=>{const t=document.createElement('div');t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:8px 20px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none';t.textContent='✓ クラウドに保存しました';document.body.appendChild(t);setTimeout(()=>t.remove(),2000);})" style="font-size:12px;background:var(--ok);color:#fff;border:none;padding:5px 14px;cursor:pointer;font-weight:700">↑ クラウドに保存</button>
       <button onclick="_sbLoadProjectData().then(ok=>{const t=document.createElement('div');t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:8px 20px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none';t.textContent=ok?'✓ クラウドから読み込みました':'データがありません';document.body.appendChild(t);setTimeout(()=>t.remove(),2000);})" style="font-size:12px;background:#fff;color:var(--ok);border:none;padding:5px 14px;cursor:pointer;font-weight:700">↓ クラウドから取得</button>
     </div>
-    <div style="margin-top:28px">
+    ${_sbRole==='owner'?`<div style="margin-top:28px">
       <div style="font-size:14px;font-weight:700;color:var(--ink);padding-bottom:10px;border-bottom:2px solid var(--brand);margin-bottom:18px;display:flex;align-items:center;justify-content:space-between">
         <span>参加ユーザー一覧</span>
         <button onclick="loadUserList()" style="font-size:12px;background:none;border:none;padding:0;cursor:pointer;color:var(--ok);font-weight:700">↻ 更新</button>
@@ -2352,9 +2353,9 @@ function renderCoInviteAdmin(){
       <div id="userListSection">
         <p style="font-size:13px;color:var(--sub);margin:0">「更新」を押すと登録済みユーザーが表示されます。</p>
       </div>
-    </div>
+    </div>`:''}
   `;
-  loadUserList();
+  if(_sbRole==='owner')loadUserList();
 }
 const _SPECIAL_LABELS={hajimeni:'はじめに',prologue:'プロローグ',atogaki:'あとがき',owarini:'おわりに',custom:'その他'};
 function _renderSpecialChapters(){
