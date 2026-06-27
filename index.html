@@ -858,8 +858,8 @@ function renderModeUI(){
               onmouseout="if(S.soloPath!=='write')this.style.background='rgba(255,255,255,.25)'"
               style="background:${writeSel?'rgba(255,255,255,.85)':'rgba(255,255,255,.25)'};color:#403129;border:2px solid #fff;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s">すぐに書きはじめる</button>
           </div>
-          ${writeSel?`<div style="margin-top:14px;display:flex;align-items:center;gap:8px;background:rgba(64,49,41,.12);padding:8px 14px;font-size:13px;font-weight:700;color:#403129">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 15l7 7 7-7" stroke="#403129" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          ${writeSel?`<div style="margin-top:14px;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#403129">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M22 3L9 10.5M22 3L15 21l-6-10.5M22 3L2 9l7 1.5" stroke="#403129" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 10.5L6 20" stroke="#403129" stroke-width="2" stroke-linecap="round"/></svg>
             下の「書きはじめる」カードから始めましょう
           </div>`:''}
         </div>`;
