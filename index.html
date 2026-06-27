@@ -853,16 +853,15 @@ function renderModeUI(){
               onmouseover="if(S.soloPath!=='plan')this.style.background='rgba(255,255,255,.55)'"
               onmouseout="if(S.soloPath!=='plan')this.style.background='rgba(255,255,255,.25)'"
               style="background:${planSel?'rgba(255,255,255,.85)':'rgba(255,255,255,.25)'};color:#403129;border:2px solid #fff;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;transition:background .15s">AIと一緒に本の構成を考える →</button>
-            <button
-              onclick="S.soloPath='write';save();renderModeUI();(function(){const t=document.getElementById('beginTitle');if(t){t.scrollIntoView({behavior:'smooth',block:'start'});t.style.transition='background .4s';t.style.background='#ffcc00';setTimeout(()=>{t.style.transition='background .8s';t.style.background=''},1600);}})()"
-              onmouseover="if(S.soloPath!=='write')this.style.background='rgba(255,255,255,.55)'"
-              onmouseout="if(S.soloPath!=='write')this.style.background='rgba(255,255,255,.25)'"
-              style="background:${writeSel?'rgba(255,255,255,.85)':'rgba(255,255,255,.25)'};color:#403129;border:2px solid #fff;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s">すぐに書きはじめる</button>
+            <span style="position:relative;display:inline-block">
+              <button
+                onclick="S.soloPath='write';save();renderModeUI();(function(){const t=document.getElementById('beginTitle');if(t){t.scrollIntoView({behavior:'smooth',block:'start'});t.style.transition='background .4s';t.style.background='#ffcc00';setTimeout(()=>{t.style.transition='background .8s';t.style.background=''},1600);}})()"
+                onmouseover="if(S.soloPath!=='write')this.style.background='rgba(255,255,255,.55)'"
+                onmouseout="if(S.soloPath!=='write')this.style.background='rgba(255,255,255,.25)'"
+                style="background:${writeSel?'rgba(255,255,255,.85)':'rgba(255,255,255,.25)'};color:#403129;border:2px solid #fff;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s;display:block">すぐに書きはじめる</button>
+              ${writeSel?`<span style="position:absolute;bottom:0;left:0;right:0;height:4px;background:#ffcc00;border-top:1px solid rgba(180,140,0,.5);transform-origin:left;animation:underlineGrow .5s cubic-bezier(.4,0,.2,1) both;pointer-events:none;display:block"></span>`:''}
+            </span>
           </div>
-          ${writeSel?`<div style="margin-top:14px;display:inline-block">
-            <span style="font-size:13px;font-weight:700;color:#403129;letter-spacing:.02em">下の「書きはじめる」カードから始めましょう</span>
-            <div style="height:2px;background:#403129;transform-origin:left;animation:underlineGrow .55s .05s cubic-bezier(.4,0,.2,1) both"></div>
-          </div>`:''}
         </div>`;
       }
     }else{
