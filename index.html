@@ -223,6 +223,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 </head>
 <body>
 
@@ -287,12 +288,12 @@
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="2"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         管理者を招待する
       </div>
-      <p style="font-size:12px;color:#555;line-height:1.6;margin:0 0 10px">URLを管理者に送り、メールアドレスで新規登録してもらいます。登録後、管理者ダッシュボードのユーザー一覧で「管理者」ロールに変更してください。</p>
-      <div style="display:flex;align-items:center;gap:6px;background:var(--bg-alt);padding:7px 10px;margin-bottom:8px">
+      <p style="font-size:12px;color:#555;line-height:1.6;margin:0 0 10px">管理者1人につき「招待URLを発行」を1回押してURLを送ってください。そのURLから登録すると自動で管理者になります（使い捨て）。</p>
+      <button onclick="generateAdminInviteUrl()" style="background:var(--brand);color:#403129;border:none;font-size:12px;padding:6px 14px;cursor:pointer;font-weight:700;margin-bottom:8px">＋ 招待URLを発行してコピー</button>
+      <div id="settingsInviteUrlWrap" style="display:none;align-items:center;gap:6px;background:var(--bg-alt);padding:7px 10px;margin-bottom:8px">
         <span id="settingsInviteUrl" style="font-size:11px;color:var(--sub);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace"></span>
-        <button onclick="copyAdminInviteUrl()" style="background:var(--brand);color:#403129;border:none;font-size:11px;padding:4px 10px;cursor:pointer;font-weight:700;white-space:nowrap;flex-shrink:0">コピー</button>
       </div>
-      <div style="font-size:11px;color:var(--sub);line-height:1.6">① 管理者がURLから登録 → ② ユーザー一覧でロールを「管理者」に変更</div>
+      <div style="font-size:11px;color:var(--sub);line-height:1.6">① URLを管理者に送る → ② 登録すると自動で管理者ロールになる（1回限り有効）</div>
     </div>
   </div>
 </div>
@@ -506,6 +507,21 @@
 <div class="savebar" id="savebar"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M17 21v-8H7v8M7 3v5h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>自動保存：このブラウザに保存中（閉じても続きから書けます）</div>
 
 <script>
+/* ---------- EmailJS 通知 ---------- */
+const _EJS_PUBLIC_KEY='i0VsT7KMakB3lRIW0';
+const _EJS_SERVICE_ID='service_megivwv';
+const _EJS_TEMPLATE_ID='template_3tqukyz';
+async function _notifyNewUser(name,email){
+  try{
+    await emailjs.init(_EJS_PUBLIC_KEY);
+    await emailjs.send(_EJS_SERVICE_ID,_EJS_TEMPLATE_ID,{
+      user_name:name,
+      user_email:email,
+      registered_at:new Date().toLocaleString('ja-JP')
+    });
+  }catch(e){console.warn('通知メール送信失敗',e);}
+}
+
 /* ---------- Supabase Auth ---------- */
 const _SB_URL='https://qdqzrwymgyfgplbwdfss.supabase.co';
 const _SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFkcXpyd3ltZ3lmZ3BsYndkZnNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0NDA0MTMsImV4cCI6MjA5ODAxNjQxM30.VUIycG1Vjq0OMwKANJXUqMbbfYqPMWoxt3k89navU5c';
@@ -590,8 +606,27 @@ async function authSignUp(){
   const {data,error}=await _sb.auth.signUp({email,password:pw,options:{data:{name}}});
   if(btn){btn.textContent='登録する →';btn.disabled=false;}
   if(error){err.textContent='登録失敗：'+error.message;err.style.display='block';}
-  else if(data.user&&!data.session){_freshLogin=true;await _sb.auth.signInWithPassword({email,password:pw});}
-  else if(data.session){_freshLogin=true;}
+  else{
+    _notifyNewUser(name,email);
+    const adminToken=new URLSearchParams(location.search).get('admin');
+    if(adminToken&&data.user){
+      // トークン検証：ownerのbook_settingsからトークンを確認
+      const {data:ownerData}=await _sb.from('profiles').select('id').eq('role','owner').single();
+      if(ownerData){
+        const {data:bs}=await _sb.from('book_settings').select('data').eq('id',ownerData.id).single();
+        const tokens=(bs?.data?.adminInviteTokens)||[];
+        const idx=tokens.findIndex(t=>t.token===adminToken&&!t.used);
+        if(idx!==-1){
+          tokens[idx].used=true;
+          const newData={...(bs?.data||{}),adminInviteTokens:tokens};
+          await _sb.from('book_settings').upsert({id:ownerData.id,data:newData,updated_at:new Date().toISOString()});
+          await _sb.from('profiles').update({role:'admin'}).eq('id',data.user.id);
+        }
+      }
+    }
+    if(data.user&&!data.session){_freshLogin=true;await _sb.auth.signInWithPassword({email,password:pw});}
+    else if(data.session){_freshLogin=true;}
+  }
 }
 async function authSignOut(){await _sb.auth.signOut();location.reload();}
 function _authShowResetForm(){
@@ -650,15 +685,31 @@ function openUserSettings(){
   const invSec=document.getElementById('settingsAdminInvite');
   const invUrl=document.getElementById('settingsInviteUrl');
   if(invSec)invSec.style.display=_sbRole==='owner'?'block':'none';
-  if(invUrl)invUrl.textContent=location.origin+location.pathname;
+  if(invUrl)invUrl.textContent=location.origin+location.pathname+'?admin=1';
 }
 function closeUserSettings(){const m=document.getElementById('userSettingsModal');if(m)m.style.display='none';}
-function copyAdminInviteUrl(){
-  navigator.clipboard.writeText(location.origin+location.pathname).then(()=>{
+async function generateAdminInviteUrl(){
+  // 一意トークン生成
+  const token=Math.random().toString(36).slice(2)+Date.now().toString(36);
+  // book_settingsにトークンを保存
+  const ownerId=_sbUser.id;
+  const {data:existing}=await _sb.from('book_settings').select('data').eq('id',ownerId).single();
+  const d=existing?.data||{};
+  const tokens=d.adminInviteTokens||[];
+  tokens.push({token,used:false,created:new Date().toISOString()});
+  d.adminInviteTokens=tokens;
+  await _sb.from('book_settings').upsert({id:ownerId,data:d,updated_at:new Date().toISOString()});
+  // URL表示＆コピー
+  const url=location.origin+location.pathname+'?admin='+token;
+  const wrap=document.getElementById('settingsInviteUrlWrap');
+  const urlEl=document.getElementById('settingsInviteUrl');
+  if(urlEl)urlEl.textContent=url;
+  if(wrap)wrap.style.display='flex';
+  navigator.clipboard.writeText(url).then(()=>{
     const t=document.createElement('div');
     t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#403129;color:#fff;padding:8px 20px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none';
-    t.textContent='✓ 管理者招待URLをコピーしました';
-    document.body.appendChild(t);setTimeout(()=>t.remove(),2000);
+    t.textContent='✓ 管理者招待URLをコピーしました（1回限り有効）';
+    document.body.appendChild(t);setTimeout(()=>t.remove(),2500);
   });
 }
 async function saveUserName(){
@@ -1705,8 +1756,8 @@ function _showInviteWelcome(d){
   const m=document.createElement('div');m.id=mid;
   m.style.cssText='position:fixed;inset:0;background:#f5f5f5;z-index:9999;overflow-y:auto;';
   const existBody=esc((S.book&&S.book.chapters&&S.book.chapters[d.chapIdx]&&S.book.chapters[d.chapIdx].body)||'');
-  const mwTmplA=`あなたはベストセラーを何冊も手がけるプロのブックライター兼インタビュアーです。\n私は「${d.bookTitle}」という本の\n第${d.chapIdx+1}章「${d.chapTitle}」（全${d.totalChaps}章のうちの1章）を書く担当者です。\n\nこれから私に、やさしい質問を【1つずつ】してください。私は話し言葉で答えます。\n次の順番で聞いてください：\n1) この章で読者に伝えたいメインメッセージ\n2) 読者が今いちばん困っていること・悩んでいること\n3) 私自身の体験・エピソード（いつ・どこで・何があったか）\n4) 数字や具体例（あれば）\n5) 失敗・遠回りした話\n6) 読者が今日からできる最初の一歩\n\n私の答えがそろったら、それを元に 約5000〜8000文字の「本の章」に書き直してください。\n条件：\n・話し言葉のクセは消し、読みやすい書き言葉にする\n・内容に合った【小見出し】を3〜5個（行頭に「■ 」をつける）\n・太字にしたい部分は「**テキスト**」で囲む（例：**重要なポイント**）\n・セクション間に空白を入れたいときは「---」を単独の行で入れる\n・冒頭に読者を引き込むフック、章末に「次が読みたくなる一言」\n・スマホで読みやすい短めの文・段落\n・事実や数字を作り話にしない。不明な点は私に聞く\nそれでは、1つ目の質問からお願いします。`;
-  const mwTmplB=`あなたはKindle出版のプロ編集者です。\n以下は「${d.bookTitle}」第${d.chapIdx+1}章「${d.chapTitle}」の下書きです。\n\nこの文章を売れるKindle本として仕上げるために、順番に次をしてください：\n1) 良い点を簡単に教えてください。\n2) 読者の感情（共感／不安／欲求／好奇心）がもっと動くよう、具体的な改善点を挙げてください。\n3) 冒頭フック・章末の「次が読みたくなる一言」を強化してください。\n4) 改善した「完成版の本文（5000〜8000文字）」を書いてください。\n条件：\n・話し言葉のクセは消し、読みやすい書き言葉に\n・小見出しは3〜5個（行頭に「■ 」をつける）\n・太字は「**テキスト**」で囲む\n・事実や数字は作り話にしない\n--- 私の文章（ここから下に貼る）---\n`;
+  const mwTmplA=`あなたは、ベストセラー書籍を何冊も企画・制作してきた、出版のプロフェッショナルです。\n\nプロのブックライター、編集者、インタビュアー、マーケター、ブックプロデューサーとして、著者の経験や考えを丁寧に引き出し、読者の心に届くKindle本の章を一緒につくってください。\n\n私は「${d.bookTitle}」という本の、\n第${d.chapIdx+1}章「${d.chapTitle}」を書く担当者です。\n\n本全体は全${d.totalChaps}章です。\n\n【この本のテーマ・目的】\nここに入力\n\n【想定している読者】\nここに入力\n\n【この章で伝えたいこと】\nまだ明確でない場合は「未定」と入力\n\n【希望する文字数】\n約5,000〜8,000文字\n\n私は完成した文章を最初から書くのではなく、あなたからの質問に話し言葉で答えながら内容をつくっていきます。\n\nこれから、やさしく分かりやすい質問を、必ず一度に1つだけしてください。\n\n私の回答を確認してから、次の質問へ進んでください。\n\n一度に複数の質問を並べないでください。\n\n回答が短い、抽象的、分かりにくい、情報が不足している場合は、そのまま次の項目へ進まず、必要な追加質問を1つだけしてください。\n\nただし、答えを誘導したり、尋問のように細かく質問しすぎたりしないでください。\n\nすでに私が答えた内容を、重複して質問しないでください。\n\n以下の内容を、順番に確認してください。\n\n1．この章の中心メッセージ\n・読者に最も伝えたいこと\n・この章を読み終えた読者に、どう変化してほしいか\n・本全体の中で、この章がどのような役割を持つか\n\n2．読者の悩み\n・この章を届けたい読者\n・読者が現在困っていること\n・読者が感じている不安、迷い、思い込み\n・読者が本当はどうなりたいのか\n\n3．私自身の体験やエピソード\n・いつ頃の出来事か\n・どこで起きたことか\n・誰が関わっていたか\n・何が起きたか\n・そのとき何を感じ、何を考えたか\n・その後、何が変わったか\n\n4．転機や気づき\n・考え方が変わったきっかけ\n・以前はどのように考えていたか\n・経験を通して何が分かったか\n・読者に伝えたい本質的な気づき\n\n5．失敗、葛藤、遠回り\n・うまくいかなかったこと\n・勘違いしていたこと\n・避けていたこと\n・もっと早く知りたかったこと\n・当時の自分に伝えたいこと\n\n6．方法、考え方、具体例\n・実際に行ったこと\n・読者にも使える考え方や方法\n・具体的な手順\n・数字、期間、回数、結果\n・注意点\n・読者が誤解しやすいこと\n\n数字や実績がない場合は、無理に入れないでください。\n\n7．読者が今日からできること\n・最初にできる小さな一歩\n・すぐに試せる行動\n・考えてみてほしい問い\n・行動を続けるための工夫\n\n8．次の章へのつながり\n・次章のテーマ\n・この章と次章の関係\n・次章を読みたくなる自然なつなぎ方\n\n次章の情報がない場合は、勝手に作らず私に確認してください。\n\n【インタビュー中の重要ルール】\n\n私が話していない事実、数字、実績、人物、会話、感情、出来事を追加しないでください。\n\n私の回答を、必要以上に立派な話や感動的な物語へ脚色しないでください。\n\n内容に矛盾や不明点がある場合は、推測で補わず質問してください。\n\n私の言葉の中に、読者の心を動かす体験、気づき、価値観、具体例が含まれている場合は、見落とさずに掘り下げてください。\n\n私の回答に複数のテーマが混ざっている場合は、今回の章に必要な内容と、別の章へ分けた方がよい内容を整理してください。\n\n章のテーマから大きく外れる場合は、否定せず、今回の章では何に焦点を当てると伝わりやすいかを説明してください。\n\n質問の際に、毎回長い解説や感想を付けないでください。\n\n必要な場合のみ、私の回答を短く整理してから次の質問をしてください。\n\n【構成を作る前の確認】\n\n必要な情報がそろったと判断したら、すぐに本文を書かないでください。\n\nまず、以下を整理して提示してください。\n\n1．この章の中心メッセージ\n2．想定読者が抱えている悩み\n3．章を読む前と読んだ後の読者の変化\n4．本文で使用する主な体験やエピソード\n5．小見出し3〜5個の構成案\n6．読者が今日からできること\n7．章末のまとめ方\n8．次章へのつなぎ方\n\n構成案を提示した後に、必ず、\n\n「この構成で本文を作成してよろしいですか？」\n\nと確認してください。\n\n私が承認する前に、本文を書き始めないでください。\n\n修正を希望した場合は、構成を修正して、再度確認してください。\n\n【本文の執筆条件】\n\n私が構成を承認した場合のみ、約5,000〜8,000文字の本の章として本文を作成してください。\n\n文字数を満たすために、同じ内容を言い換えて繰り返したり、内容を水増ししたりしないでください。\n\n情報が足りず、十分な本文が書けない場合は、勝手に作らず、追加で必要な質問を1つずつしてください。\n\n文章は、著者本人が語っているような自然な書き言葉にしてください。\n\n話し言葉の雰囲気や本人らしさは適度に残しながら、重複、言いよどみ、不要な口癖を整理してください。\n\n過度に整いすぎたAIらしい文章にしないでください。\n\n体験談だけで終わらせず、その体験から読者が得られる気づきや行動につなげてください。\n\n読者へ一方的に正解を押しつけず、自分自身を振り返れる余白を残してください。\n\n専門用語を使う場合は、初めて読む人にも分かるように説明してください。\n\n読者の不安を過度にあおったり、根拠のない成功を約束したりしないでください。\n\n【冒頭のルール】\n\n章の冒頭には、読者が続きを読みたくなる自然なフックを入れてください。\n\n内容に応じて、次の中から最適な形を選んでください。\n\n・読者が感じている悩み\n・意外な気づき\n・体験の印象的な一場面\n・以前の自分が信じていたこと\n・読者が自分のことだと感じる言葉\n・この章を読むことで得られる変化\n\n内容と関係のない強い煽りや、根拠のない断定は使わないでください。\n\n「こんな経験はありませんか」\n「いかがでしょうか」\nなどの定型表現を、毎回機械的に使わないでください。\n\n【本文の形式】\n\n・内容に合った小見出しを3〜5個作成する\n・小見出しの行頭には、必ず「■ 」を付ける\n・一つの小見出しに複数のテーマを詰め込みすぎない\n・一文を必要以上に長くしない\n・1段落は2〜4文程度を基本にする\n・スマートフォンでも読みやすい段落にする\n・改行を多用しすぎて、SNS投稿のようにしない\n・短い文ばかりを並べず、自然なリズムをつくる\n・重要な部分だけ「**テキスト**」で囲む\n・太字を多用しない\n・大きな区切りを入れる場合は「---」を単独の行で使う\n・不要な絵文字や記号を使わない\n・「！」や「→」を多用しない\n・同じ主張を何度も繰り返さない\n\n【章末のルール】\n\n章末には、次の内容を自然に入れてください。\n\n・この章で最も伝えたかったこと\n・読者が自分を振り返るための問い\n・今日からできる小さく具体的な一歩\n・次の章を読みたくなる自然な一文\n\n本文の内容を単純に繰り返すだけのまとめにしないでください。\n\n「大切なのは〇〇です」\n「一歩踏み出しましょう」\nなどの定型的な結びだけで終わらせないでください。\n\n【禁止事項】\n\n・私が話していない事実やエピソードを作ること\n・存在しない人物や会話を追加すること\n・数字、実績、研究結果、専門情報を作ること\n・私の感情を勝手に決めること\n・不自然に感動的な話へ脚色すること\n・根拠なく「必ず」「絶対」「誰でも」と断定すること\n・他の本やWeb記事の文章をそのまま使うこと\n・一般論だけで文章を埋めること\n・同じ意味を言い換えて文字数を増やすこと\n・著者を過剰に立派な人物として描くこと\n・読者を否定したり、上から教えたりすること\n・AI特有の抽象的で整いすぎた文章にすること\n\n【本文完成後の確認】\n\n本文を作成した後は、次の観点で自分自身で確認し、必要があれば修正してから提示してください。\n\n・冒頭で読者が自分に関係のある内容だと感じられるか\n・読者の悩みと本文がつながっているか\n・著者の体験だけの自己満足な文章になっていないか\n・体験から得られる気づきが明確か\n・著者本人ならではの視点が残っているか\n・読者が実行できる内容があるか\n・同じ表現や主張を繰り返していないか\n・根拠のない断定がないか\n・事実を勝手に追加していないか\n・次の章へ自然につながっているか\n\n完成した本文の後に、本文とは分けて、次の3項目を記載してください。\n\n【文字数の目安】\n本文のおおよその文字数\n\n【確認が必要な箇所】\n数字、名称、時系列、事実関係など、著者本人による確認が必要な箇所\n確認がない場合は「特になし」\n\n【編集上の補足】\n他の章との重複や、追加すると内容が深まりそうな点\n特にない場合は「特になし」\n\nそれでは、まだ本文は書かず、最初の質問を1つだけしてください。`;
+  const mwTmplB=`あなたは、ベストセラー書籍を何冊も企画・編集してきたKindle出版のプロフェッショナルです。\n\nプロの編集者、ブックライター、マーケター、ブックプロデューサーとして、私が書いた原稿を、読者の心に届く本の章へ仕上げてください。\n\n私は「${d.bookTitle}」という本の、\n第${d.chapIdx+1}章「${d.chapTitle}」を書く担当者です。\n\n本全体は全${d.totalChaps}章です。\n\n【この本のテーマ・目的】\nここに入力\n\n【想定している読者】\nここに入力\n\n【この章で伝えたいこと】\nここに入力\n\n【希望する文字数】\n約5,000〜8,000文字\n\n以下に、私が書いた原稿を貼り付けます。\n\n【原稿】\nここに原稿を貼り付けてください。\n\n原稿を受け取っても、すぐに全文を書き直さないでください。\n\nまず、出版のプロとして原稿を客観的に分析してください。\n\n【最初に確認すること】\n\n次の観点で原稿を確認してください。\n\n1．この章の中心メッセージが明確か\n2．想定読者の悩みと内容がつながっているか\n3．冒頭に続きを読みたくなる要素があるか\n4．体験や具体例が十分にあるか\n5．体験から得られる気づきが読者に伝わるか\n6．著者本人ならではの視点があるか\n7．説明が抽象的になっていないか\n8．話が途中で飛んでいないか\n9．同じ内容を繰り返していないか\n10．読者が今日からできる行動があるか\n11．章末に余韻や次章へのつながりがあるか\n12．AI特有の不自然な表現がないか\n13．根拠のない断定や、事実の不明確な箇所がないか\n14．他の章で扱うべき内容が混ざっていないか\n\n原稿の良い点だけを褒めるのではなく、読者目線で分かりにくい部分、足りない部分、矛盾、重複、論理の飛躍を具体的に指摘してください。\n\nただし、原稿を書いた人を否定する表現は使わないでください。\n\n【最初の出力】\n\n原稿を確認したら、まず次の形式で提示してください。\n\n【この章の中心メッセージ】\n原稿から読み取れる中心メッセージ\n\n【良い点】\n読者に伝わりやすい点や、残した方がよい表現・体験\n\n【改善が必要な点】\nどの部分を、なぜ改善した方がよいのか\n\n【不足している情報】\n具体性、時系列、感情、数字、体験、読者への行動提案など、追加が必要な内容\n\n【削除・整理を検討する部分】\n重複、脱線、一般論、長すぎる説明など\n\n【構成案】\n冒頭フックと「■ 」を付けた小見出し3〜5個\n\n【確認したいこと】\n本文を完成させるために必要な質問\n\n確認したいことがある場合は、質問を一度に1つだけしてください。\n\n私が回答してから、次の質問へ進んでください。\n\n一度に複数の質問を並べないでください。\n\nすでに原稿に書かれている内容を、重複して質問しないでください。\n\n原稿の情報だけで十分な場合は、質問を無理に作らないでください。\n\n【重要なルール】\n\n原稿に書かれていない事実、数字、実績、人物、会話、感情、出来事を追加しないでください。\n\n不明な内容は、推測で補わず私に確認してください。\n\n元の文章の意図を勝手に変えないでください。\n\n文章を整えるために、著者の体験を別の出来事へ置き換えないでください。\n\n不自然に感動的な話や、成功物語へ脚色しないでください。\n\n著者本人らしい言葉、価値観、体験はできる限り残してください。\n\n話し言葉の重複、言いよどみ、不要な口癖は整理してください。\n\n誤字脱字、表記の揺れ、不自然な文法は修正してください。\n\n数字、名称、日付、肩書など、確認が必要な内容は分かるようにしてください。\n\n【執筆前の確認】\n\n必要な情報がそろったら、次の内容を整理して提示してください。\n\n1．修正後の中心メッセージ\n2．読者が抱えている悩み\n3．章を読む前と読んだ後の読者の変化\n4．残す体験やエピソード\n5．削除または短くする内容\n6．追加する内容\n7．小見出し3〜5個の構成\n8．章末で読者に促す行動\n9．次章へのつなぎ方\n\nその後に、必ず、\n\n「この構成で完成版の本文を作成してよろしいですか？」\n\nと確認してください。\n\n私が承認する前に、完成版の本文を書かないでください。\n\n私が修正を希望した場合は、構成を修正して再度確認してください。\n\n【完成版本文の条件】\n\n承認後、元の原稿と私の回答をもとに、約5,000〜8,000文字の本の章として書き直してください。\n\n文字数を満たすために、同じ内容を言い換えて繰り返したり、一般論を追加して水増ししたりしないでください。\n\n元の情報が不足している場合は、勝手に作らず、追加質問をしてください。\n\n元の原稿がすでに良い部分は、無理に言い換えず残してください。\n\nすべてを別の文章に変えるのではなく、必要な箇所を整えながら完成度を高めてください。\n\n【文章の方向性】\n\n・著者本人が語っているような自然な文章\n・読者に寄り添いながらも、過度に感傷的にしない\n・体験と読者への学びが自然につながっている\n・難しい言葉を使いすぎない\n・専門用語は分かりやすく説明する\n・抽象的な主張だけで終わらせない\n・結論を押しつけず、読者が考えられる余白を残す\n・著者を過剰に立派な人物として描かない\n・読者を否定したり、不安をあおったりしない\n・AIが書いたと分かるような、整いすぎた表現を避ける\n\n【冒頭のルール】\n\n章の冒頭には、読者が続きを読みたくなるフックを入れてください。\n\n内容に応じて、次の中から適した形を選んでください。\n\n・読者の悩みや迷い\n・意外な気づき\n・印象的な体験の一場面\n・以前の著者が持っていた思い込み\n・読者が自分のことだと感じる言葉\n・この章を読むことで得られる変化\n\n内容と関係のない煽りや、根拠のない強い表現は使わないでください。\n\n「こんな経験はありませんか」\n「いかがでしょうか」\nなどの定型表現を、機械的に使用しないでください。\n\n【本文の形式】\n\n・小見出しを3〜5個作成する\n・小見出しの行頭には、必ず「■ 」を付ける\n・一つの小見出しに複数のテーマを詰め込みすぎない\n・一文を必要以上に長くしない\n・1段落は2〜4文程度を基本にする\n・スマートフォンでも読みやすい段落にする\n・改行を多用してSNS投稿のようにしない\n・短い文ばかりを並べない\n・重要な部分だけ「**テキスト**」で囲む\n・太字を多用しない\n・大きな区切りには「---」を単独の行で使用する\n・不要な絵文字や装飾記号を使わない\n・「！」や「→」を多用しない\n・同じ表現や結論を繰り返さない\n\n【章末のルール】\n\n章末には、次の内容を自然に入れてください。\n\n・この章の中心メッセージ\n・読者が自分を振り返るための問い\n・今日からできる具体的で小さな一歩\n・次の章を読みたくなる自然な一文\n\n本文の内容を単純に繰り返すだけのまとめにしないでください。\n\n定型的な励ましの言葉だけで終わらせないでください。\n\n【禁止事項】\n\n・原稿にない事実やエピソードを作ること\n・存在しない人物や会話を追加すること\n・数字、実績、研究結果を作ること\n・著者の感情を勝手に決めること\n・元の原稿の意図を変えること\n・不自然に感動的な話へ脚色すること\n・根拠なく「必ず」「絶対」「誰でも」と断定すること\n・他の本やWeb記事の文章をそのまま使うこと\n・一般論だけで文章を埋めること\n・同じ意味の文章を繰り返して文字数を増やすこと\n・著者らしい表現をすべて消してしまうこと\n・読者に一方的な正解を押しつけること\n・AI特有の抽象的で整いすぎた文章にすること\n\n【完成後の確認】\n\n完成版を作成した後は、次の観点で自己チェックし、必要があれば修正してから提示してください。\n\n・原文の意図が保たれているか\n・著者本人らしさが残っているか\n・冒頭で読者が引き込まれるか\n・読者の悩みと本文がつながっているか\n・体験から得られる学びが明確か\n・読者が実行できる内容があるか\n・重複や脱線がないか\n・事実を勝手に追加していないか\n・根拠のない断定がないか\n・次章へ自然につながっているか\n\n完成した本文の後に、本文とは分けて次の項目を記載してください。\n\n【主な修正内容】\n原稿から何を変更したか\n\n【文字数の目安】\n完成本文のおおよその文字数\n\n【確認が必要な箇所】\n数字、名称、日付、肩書、時系列など、著者本人による確認が必要な部分\n確認がない場合は「特になし」\n\n【編集上の補足】\n他章との重複や、追加すると内容が深まりそうな点\n特にない場合は「特になし」\n\nそれでは、まず原稿を分析し、完成版の本文を書く前に、分析結果と構成案を提示してください。`;
   m.innerHTML=`
     <div style="max-width:680px;margin:0 auto;padding:0 0 80px">
       <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 0 4px">
