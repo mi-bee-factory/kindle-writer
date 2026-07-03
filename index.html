@@ -289,6 +289,7 @@
         管理者を招待する
       </div>
       <p style="font-size:12px;color:#555;line-height:1.6;margin:0 0 10px">管理者1人につき「招待URLを発行」を1回押してURLを送ってください。そのURLから登録すると自動で管理者になります（使い捨て）。</p>
+      <input id="adminInviteMemo" type="text" placeholder="宛先メモ（例：山田さん用）※任意" style="width:100%;border:1px solid var(--line-soft);padding:6px 8px;font-size:12px;box-sizing:border-box;margin-bottom:8px">
       <button onclick="generateAdminInviteUrl()" style="background:var(--brand);color:#403129;border:none;font-size:12px;padding:6px 14px;cursor:pointer;font-weight:700;margin-bottom:8px">＋ 招待URLを発行してコピー</button>
       <div id="settingsInviteUrlWrap" style="display:none;align-items:center;gap:6px;background:var(--bg-alt);padding:7px 10px;margin-bottom:8px">
         <span id="settingsInviteUrl" style="font-size:11px;color:var(--sub);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace"></span>
@@ -315,6 +316,12 @@
 
   <!-- HOME -->
   <section id="home" style="display:flex;flex-direction:column;gap:20px">
+    <div id="homeMemberFallback" style="display:none;background:#fff;padding:40px 24px;text-align:center">
+      <div style="font-size:15px;font-weight:700;color:var(--ink);margin-bottom:10px">参加しているプロジェクトが見つかりません</div>
+      <div style="font-size:13px;color:var(--sub);line-height:1.7;margin-bottom:18px">管理者から届いた招待URLからアクセスしてください。</div>
+      <button class="btn gray" onclick="authSignOut()">ログアウト</button>
+    </div>
+    <div id="homeMainContent" style="display:flex;flex-direction:column;gap:20px">
     <div class="hero-banner">
       <div class="hero-content">
         <div class="hero-eyebrow">本づくりの旅をはじめましょう</div>
@@ -328,6 +335,7 @@
     </div>
     <div id="projectSwitcher"></div>
     <div id="homeBookCard"></div>
+    <div id="homeUserPanel"></div>
     <div style="cursor:pointer;background:var(--brand);padding:16px 20px" onclick="startChecklist()">
       <div style="display:flex;align-items:center;gap:14px">
         <div style="flex-shrink:0"><svg width="36" height="36" viewBox="0 0 32 32" fill="none"><rect x="4" y="4" width="24" height="24" rx="3" stroke="#403129" stroke-width="2.2"/><path d="M10 11l2.5 2.5 5-5" stroke="#403129" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 18l2.5 2.5 5-5" stroke="#403129" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 12h2M22 19h2" stroke="#403129" stroke-width="2" stroke-linecap="round"/></svg></div>
@@ -439,6 +447,7 @@
         </div>
       </div>
     </div>
+    </div>
   </section>
 
   <!-- TALK（話しながらまとめる・旧／未使用） -->
@@ -549,6 +558,9 @@ function _authOnLogin(){
   document.getElementById('authOverlay').classList.add('hidden');
   _authLoadProfile();
 }
+function _syncCoauthorForRole(){
+  if((_sbRole==='owner'||_sbRole==='admin')&&!S.memberMode){S.coauthor=true;}
+}
 async function _authLoadProfile(){
   const metaName=_sbUser.user_metadata?.name||'';
   const {data}=await _sb.from('profiles').select('*').eq('id',_sbUser.id).single();
@@ -571,13 +583,18 @@ async function _authLoadProfile(){
     if(S.memberMode&&S._inviteData&&S._inviteData.v===1){
       _showInviteWelcome(S._inviteData);return;
     }
+    // 招待URLを介さないライターの直ログイン：プロデューサー向けHomeを見せない
+    if(_sbRole==='member'&&!S.memberMode){
+      _renderMemberNoAccess();return;
+    }
     if((_sbRole==='owner'||_sbRole==='admin')&&!S.memberMode){
-      S.coauthor=true;save();
+      _syncCoauthorForRole();save();
       renderModeUI&&renderModeUI();
       renderProjectSwitcher&&renderProjectSwitcher();
       await _sbLoadProjectData();
       _freshLogin=false;
     }
+    renderHomeUserPanel&&renderHomeUserPanel();
   }
 }
 function authShowSignUp(){document.getElementById('loginForm').style.display='none';document.getElementById('signupForm').style.display='';}
@@ -618,6 +635,8 @@ async function authSignUp(){
         const idx=tokens.findIndex(t=>t.token===adminToken&&!t.used);
         if(idx!==-1){
           tokens[idx].used=true;
+          tokens[idx].usedByName=name;
+          tokens[idx].usedAt=new Date().toISOString();
           const newData={...(bs?.data||{}),adminInviteTokens:tokens};
           await _sb.from('book_settings').upsert({id:ownerData.id,data:newData,updated_at:new Date().toISOString()});
           await _sb.from('profiles').update({role:'admin'}).eq('id',data.user.id);
@@ -691,12 +710,14 @@ function closeUserSettings(){const m=document.getElementById('userSettingsModal'
 async function generateAdminInviteUrl(){
   // 一意トークン生成
   const token=Math.random().toString(36).slice(2)+Date.now().toString(36);
+  const memoEl=document.getElementById('adminInviteMemo');
+  const memo=(memoEl?memoEl.value.trim():'');
   // book_settingsにトークンを保存
   const ownerId=_sbUser.id;
   const {data:existing}=await _sb.from('book_settings').select('data').eq('id',ownerId).single();
   const d=existing?.data||{};
   const tokens=d.adminInviteTokens||[];
-  tokens.push({token,used:false,created:new Date().toISOString()});
+  tokens.push({token,memo,used:false,created:new Date().toISOString()});
   d.adminInviteTokens=tokens;
   await _sb.from('book_settings').upsert({id:ownerId,data:d,updated_at:new Date().toISOString()});
   // URL表示＆コピー
@@ -705,6 +726,8 @@ async function generateAdminInviteUrl(){
   const urlEl=document.getElementById('settingsInviteUrl');
   if(urlEl)urlEl.textContent=url;
   if(wrap)wrap.style.display='flex';
+  if(memoEl)memoEl.value='';
+  renderHomeUserPanel&&renderHomeUserPanel();
   navigator.clipboard.writeText(url).then(()=>{
     const t=document.createElement('div');
     t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#403129;color:#fff;padding:8px 20px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none';
@@ -844,8 +867,8 @@ const S = {
 function chapterTarget(){return Math.max(500,Math.round((S.totalTarget||25000)/(S.people||5)));}
 function updTarget(){const el=document.getElementById('targetHint');if(el)el.innerHTML=
   `${S.coauthor?'1人（＝1章）':'1章'}あたりの目標：<b>約 ${chapterTarget().toLocaleString()} 字</b>（小見出し3〜5個）。Kindleのビジネス書は全体2万〜2.5万字が標準です。`;}
-function setMode(co){S.coauthor=!!co;if(!co&&!(S.people>=1))S.people=5;save();renderModeUI();updTarget();}
-function setModeAdmin(){S.coauthor=true;if((S.people||1)<2)S.people=5;save();renderModeUI();startAdmin();}
+function setMode(co){S.coauthor=!!co;if(!co&&!(S.people>=1))S.people=5;save();renderModeUI();updTarget();renderHomeBookCard();}
+function setModeAdmin(){S.coauthor=true;if((S.people||1)<2)S.people=5;save();renderModeUI();renderHomeBookCard();startAdmin();}
 function setCount(n){S.people=Math.max(1,n);save();renderModeUI();updTarget();}
 function renderModeUI(){
   const co=!!S.coauthor;
@@ -966,6 +989,7 @@ function pmNewProject(name){
   _pmSaveMeta(m);
   // S をリセット
   for(const k of Object.keys(S))delete S[k];
+  _syncCoauthorForRole();save();
   renderProjectSwitcher();
   renderModeUI();renderHomeBookCard();
 }
@@ -974,6 +998,7 @@ function pmSwitch(id){
   const m=_pmMeta();m.current=id;_pmSaveMeta(m);
   for(const k of Object.keys(S))delete S[k];
   const r=localStorage.getItem(_pmKey(id));if(r){try{Object.assign(S,JSON.parse(r));}catch(e){}}
+  _syncCoauthorForRole();
   const set=(id2,v)=>{const e=document.getElementById(id2);if(e)e.value=v;};
   set('author',S.author||'');set('chapTitle',S.chapTitle||'');
   set('theme',S.theme||'');set('totalTarget',S.totalTarget||25000);set('people',S.people||5);
@@ -1075,6 +1100,7 @@ function load(){
   _pmMigrate();
   const id=pmCurrentId();
   const r=localStorage.getItem(_pmKey(id));if(r){try{Object.assign(S,JSON.parse(r));}catch(e){}}
+  _syncCoauthorForRole();
   const set=(id2,v)=>{const e=document.getElementById(id2);if(e)e.value=v;};
   set('author',S.author||'');set('chapTitle',S.chapTitle||'');
   set('theme',S.theme||'');set('totalTarget',S.totalTarget||25000);set('people',S.people||5);
@@ -1212,7 +1238,7 @@ function renderStep(){
       </div>
       <div class="row" style="margin-top:14px">
         <button class="btn ok" onclick="exportChapter()">この章を書き出す（.txt）</button>
-        <button class="btn gray" onclick="copyText()">本文をコピー</button>
+        <button class="btn gray" onclick="copyEditedBody()">本文をコピー</button>
       </div>
       <div class="hint" style="margin-top:16px">
         Kindle提出物（原稿の結合・タイトル/紹介文/キーワード/カテゴリ・規約チェック）は、本番アプリで統括画面がまとめて出力します。ここはβ版なので章の書き出しまでを体験できます。
@@ -1251,13 +1277,38 @@ function toggleDetails(){
   body.style.display=open?'none':'block';
   if(arrow)arrow.textContent=open?'▾':'▴';
 }
+function _resumeSoloDraft(){
+  if(S.mode==='convert')startConvert();
+  else if(S.mode==='talk')startTalk();
+  else startTemplate();
+}
 function renderHomeBookCard(){
   const el=document.getElementById('homeBookCard');
   if(!el)return;
   const isUpload=!!(S.uploadChapters&&S.uploadChapters.length>0);
   const bookCh=(S.book&&S.book.chapters&&S.book.chapters.length>0)?S.book.chapters:[];
   const ch=isUpload?S.uploadChapters:bookCh;
-  if(!ch.length){el.innerHTML='';return;}
+  if(!ch.length){
+    const draftText=(S.body||'').trim();
+    const draftTitle=(S.chapTitle||'').trim();
+    if(!S.coauthor&&(draftText||draftTitle)){
+      const chars=draftText.replace(/\s/g,'').length;
+      el.innerHTML=`<div style="background:#c5e070;padding:20px 24px;cursor:pointer" onclick="_resumeSoloDraft()">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span style="font-size:11px;color:#403129;font-weight:700;letter-spacing:.5px;opacity:.7">執筆中の下書き</span>
+        </div>
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:20px;font-weight:700;color:#403129;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:2px">${esc(draftTitle)||'章タイトル未設定'}</div>
+            <div style="font-size:12px;color:#403129;opacity:.7">${chars>0?chars.toLocaleString()+'字 書きました':'まだ本文はありません'}</div>
+          </div>
+          <span style="flex-shrink:0;font-size:13px;font-weight:700;color:#403129;white-space:nowrap">続きから書く →</span>
+        </div>
+      </div>`;
+      return;
+    }
+    el.innerHTML='';return;
+  }
   const title=S.uploadTitle||(S.book&&S.book.title)||'';
   const author=S.uploadAuthor||S.author||'';
   const done=ch.filter(c=>(c.body||'').trim()).length;
@@ -1284,6 +1335,66 @@ function renderHomeBookCard(){
       <span>${totalChars>0?totalChars.toLocaleString()+'字':'—'}</span>
     </div>
   </div>`;
+}
+function _homeCopyUrl(t){if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).catch(()=>fallbackCopy(t));}else fallbackCopy(t);}
+function _toggleHomeUserPanel(){
+  const body=document.getElementById('homeUserPanelBody');
+  const arrow=document.getElementById('homeUserPanelArrow');
+  if(!body)return;
+  const open=body.style.display!=='none';
+  body.style.display=open?'none':'block';
+  if(arrow)arrow.textContent=open?'▾':'▴';
+}
+async function renderHomeUserPanel(){
+  const el=document.getElementById('homeUserPanel');
+  if(!el)return;
+  if(_sbRole!=='owner'){el.innerHTML='';return;}
+  const loginUrl=location.origin+location.pathname;
+  el.innerHTML=`
+    <div style="background:#fff">
+      <div style="padding:14px 18px;cursor:pointer;display:flex;align-items:center;justify-content:space-between" onclick="_toggleHomeUserPanel()">
+        <span style="font-size:14px;font-weight:700;color:var(--ink)">参加ユーザー・招待URL管理</span>
+        <span id="homeUserPanelArrow" style="font-size:13px;color:var(--sub)">▾</span>
+      </div>
+      <div id="homeUserPanelBody" style="display:none;padding:0 18px 18px">
+        <div style="margin-bottom:16px">
+          <div style="font-size:12px;font-weight:700;color:var(--sub);margin-bottom:6px">ログイン入口URL（登録済みの方はこちらからメール・パスワードでログイン。PCが変わっても入れます）</div>
+          <div style="display:flex;align-items:center;gap:6px;background:var(--bg-alt);padding:7px 10px">
+            <span style="font-size:11px;color:var(--sub);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace">${esc(loginUrl)}</span>
+            <button onclick="_homeCopyUrl('${loginUrl}')" style="background:var(--brand);color:#403129;border:none;font-size:11px;padding:4px 10px;cursor:pointer;font-weight:700;white-space:nowrap;flex-shrink:0">コピー</button>
+          </div>
+        </div>
+        <div style="margin-bottom:16px">
+          <div style="font-size:12px;font-weight:700;color:var(--sub);margin-bottom:6px">参加ユーザー一覧</div>
+          <div id="homeUserListSection"></div>
+        </div>
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--sub);margin-bottom:6px">発行済み管理者招待URL</div>
+          <div id="homeInviteTokenSection">読み込み中...</div>
+        </div>
+      </div>
+    </div>`;
+  loadUserList('homeUserListSection');
+  _renderHomeInviteTokens();
+}
+async function _renderHomeInviteTokens(){
+  const el=document.getElementById('homeInviteTokenSection');
+  if(!el||!_sbUser)return;
+  const {data:bs}=await _sb.from('book_settings').select('data').eq('id',_sbUser.id).single();
+  const tokens=(bs?.data?.adminInviteTokens)||[];
+  if(!tokens.length){el.innerHTML='<p style="font-size:12px;color:var(--sub);margin:0">まだ発行していません。</p>';return;}
+  el.innerHTML=tokens.slice().reverse().map(t=>{
+    const created=t.created?new Date(t.created).toLocaleDateString('ja-JP'):'';
+    const memoLabel=t.memo?esc(t.memo):'（メモなし）';
+    const url=location.origin+location.pathname+'?admin='+t.token;
+    const status=t.used
+      ?`<span style="font-size:11px;color:var(--sub)">✓ 使用済み${t.usedByName?'（'+esc(t.usedByName)+'が登録）':''}</span>`
+      :`<button onclick="_homeCopyUrl('${url}');this.textContent='✓ コピーしました'" style="font-size:11px;background:var(--brand);color:#403129;border:none;padding:3px 10px;cursor:pointer;font-weight:700;white-space:nowrap">再コピー</button>`;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line-soft)">
+      <div style="flex:1;font-size:12px;color:var(--ink)">${memoLabel}<span style="color:var(--sub);margin-left:6px">${created}</span></div>
+      ${status}
+    </div>`;
+  }).join('');
 }
 function startChapters(focusIdx){
   // ID重複を防ぐためアップロードカードをクリア
@@ -1328,8 +1439,19 @@ function renderChaptersPage(focusIdx){
     renderChapterDashboard();
   }
 }
+function _renderMemberNoAccess(){
+  screen('home');
+  const main=document.getElementById('homeMainContent');
+  const fb=document.getElementById('homeMemberFallback');
+  if(main)main.style.display='none';
+  if(fb)fb.style.display='block';
+}
 function goHome(){
-  screen('home');load();renderProjectSwitcher();renderHomeBookCard();
+  const main=document.getElementById('homeMainContent');
+  const fb=document.getElementById('homeMemberFallback');
+  if(main)main.style.display='flex';
+  if(fb)fb.style.display='none';
+  screen('home');load();renderProjectSwitcher();renderHomeBookCard();renderHomeUserPanel&&renderHomeUserPanel();
   if(S._uploadSuccess){
     const n=S._uploadSuccess;S._uploadSuccess=0;save();
     const hint=document.createElement('div');
@@ -1577,10 +1699,12 @@ const CHECKLIST=[
    {id:'c2c',label:'表紙画像をセットした',go:'compile',url:'https://www.canva.com/ja_jp/',urlLabel:'Canvaで作る'},
    {id:'c2d',label:'（必要なら）図を入れた',go:'compile'},
    {id:'c2e',label:'巻末のLINE特典を設定した',go:'compile'},
-   {id:'c2f',label:'メタデータ（紹介文・キーワード7・カテゴリ3）を用意した',go:'compile'}]},
+   {id:'c2f',label:'メタデータ（紹介文・キーワード7・カテゴリ3）を用意した',go:'compile'},
+   {id:'c2g',label:'タイトル・サブタイトルの最終チェック（競合タイトルと比較した）',go:'compile'}]},
  {step:'3',phase:'仕上げ確認',items:[
    {id:'c3a',label:'EPUBを書き出した',go:'compile'},
-   {id:'c3b',label:'Kindle Previewerで表示を確認した',go:'kdp',url:'https://www.amazon.com/Kindle-Previewer/b?ie=UTF8&node=21381691011',urlLabel:'ダウンロード'}]},
+   {id:'c3b',label:'Kindle Previewerで表示を確認した',go:'kdp',url:'https://www.amazon.com/Kindle-Previewer/b?ie=UTF8&node=21381691011',urlLabel:'ダウンロード'},
+   {id:'c3c',label:'AIで書いた内容の事実確認・自分の言葉になっているか最終チェックをした'}]},
  {step:'4',phase:'KDPに登録',items:[
    {id:'c4a',label:'詳細タブを入力（タイトル/著者/紹介文/KW/カテゴリ）',go:'kdp',url:'https://kdp.amazon.co.jp/en_US/title-setup/kindle/new/details',urlLabel:'KDP入力画面'},
    {id:'c4b',label:'原稿(EPUB)と表紙をアップした',go:'kdp'},
@@ -2258,8 +2382,9 @@ const _ROLE_CONFIG={
   admin:{label:'プロデューサー',bg:'#e8f4c4',color:'#5d9020',border:'#a8d060'},
   member:{label:'ライター',bg:'#fff0d6',color:'#a65c00',border:'#f0a030'}
 };
-async function loadUserList(){
-  const el=document.getElementById('userListSection');if(!el)return;
+async function loadUserList(targetId){
+  targetId=targetId||'userListSection';
+  const el=document.getElementById(targetId);if(!el)return;
   el.innerHTML='<p style="font-size:13px;color:var(--sub);margin:0">読み込み中...</p>';
   const {data,error}=await _sb.from('profiles').select('*').order('created_at',{ascending:true});
   if(error||!data){el.innerHTML='<p style="font-size:13px;color:#e03131;margin:0">取得できませんでした。</p>';return;}
@@ -2291,20 +2416,24 @@ async function loadUserList(){
     }).join('')}
     <div style="font-size:11px;color:var(--muted);margin-top:10px">登録ユーザー計 ${data.length}名</div>`;
 }
+function _reloadAllUserLists(){
+  if(document.getElementById('userListSection'))loadUserList('userListSection');
+  if(document.getElementById('homeUserListSection'))loadUserList('homeUserListSection');
+}
 async function changeUserRole(userId,role){
   if(!role)return;
   const rc=_ROLE_CONFIG[role]||_ROLE_CONFIG.member;
   if(!confirm(`「${rc.label}」に変更しますか？`))return;
   const {error}=await _sb.from('profiles').update({role}).eq('id',userId);
   if(error){alert('変更できませんでした。\nSupabase Dashboard のSQL Editorで直接変更してください。');}
-  else{loadUserList();}
+  else{_reloadAllUserLists();}
 }
 async function removeUser(userId,name){
   if(_sbRole!=='owner'){alert('削除はオーナーのみ可能です。');return;}
   if(!confirm(`「${name}」をユーザー一覧から削除しますか？\nこの操作は取り消せません。`))return;
   const {error}=await _sb.from('profiles').delete().eq('id',userId);
   if(error){alert('削除できませんでした：\n'+error.message);}
-  else{loadUserList();}
+  else{_reloadAllUserLists();}
 }
 function addChapterSlot(){
   if(!S.book)S.book={chapters:[],title:''};
@@ -2537,7 +2666,7 @@ function exportChapter(){
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);
   a.download=(S.chapTitle||'章')+'.txt';a.click();
 }
-function copyText(){navigator.clipboard.writeText(S.edited||S.body||'').then(()=>alert('本文をコピーしました'))}
+function copyEditedBody(){navigator.clipboard.writeText(S.edited||S.body||'').then(()=>alert('本文をコピーしました'))}
 
 /* ---------- 話しながらまとめるモード ---------- */
 const TALK_Q=[
@@ -2814,7 +2943,7 @@ function renderConvResult(isAI){
     <div class="row" style="margin-top:14px">
       ${S.currentChap!==null&&S.currentChap!==undefined?`<button class="btn ok" onclick="saveChapterToBook()">この章を本に保存する（第${(S.currentChap||0)+1}章）</button>`:''}
       <button class="btn ok" onclick="exportChapter()">⬇️ Kindle用に書き出し</button>
-      <button class="btn gray" onclick="copyText()">コピー</button>
+      <button class="btn gray" onclick="copyEditedBody()">コピー</button>
     </div>
     ${(S.currentChap===null||S.currentChap===undefined)?`
     <div style="margin-top:20px;padding:16px 18px;border-top:2px solid var(--line-soft);background:#F3F2EE">
@@ -4274,6 +4403,10 @@ function renderChapterDashboard(){
     }).join('');
     const allDone=done===ch.length;
     const canCompile=done>=2;
+    const nextIdx=ch.findIndex(c=>!(c.body||'').trim());
+    const nextActionBanner=isFromUpload?'':(allDone
+      ?`<div style="background:var(--brand-soft);padding:10px 14px;margin-bottom:12px;font-size:13px;font-weight:700;color:#403129">✓ 全章完成！次は「まとめてEPUBを書き出す」へ</div>`
+      :nextIdx>=0?`<div style="background:var(--brand-soft);padding:10px 14px;margin-bottom:12px;font-size:13px;font-weight:700;color:#403129">次にやること：第${nextIdx+1}章「${esc(ch[nextIdx].title||`第${nextIdx+1}章`)}」を書く</div>`:'');
     const uploadPendingBanner=isUploadPreview?`<div style="background:#F3F2EE;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;font-size:13px">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><circle cx="12" cy="12" r="9" stroke="#b45309" stroke-width="2"/><path d="M12 8v4M12 16h.01" stroke="#b45309" stroke-width="2" stroke-linecap="round"/></svg>
       <span style="color:#403129"><b>アップロード済み・EPUB書き出し待ち</b><br>アップロードページで「EPUBで書き出す」を押すと本に登録されます。</span>
@@ -4289,6 +4422,7 @@ function renderChapterDashboard(){
         ${pbar}
       </div>
       ${uploadPendingBanner?`<div style="padding:10px 24px;border-bottom:1px solid var(--line-soft)">${uploadPendingBanner}</div>`:''}
+      ${nextActionBanner?`<div style="padding:10px 24px 0">${nextActionBanner}</div>`:''}
       <div style="padding:8px 0">${chCards}</div>
       ${canCompile?`<div style="padding:16px 24px;border-top:1px solid var(--line-soft);text-align:right"><button class="btn" style="font-size:14px;padding:10px 24px;display:inline-flex;align-items:center;gap:6px" onclick="${(S.uploadChapters&&S.uploadChapters.length>0)?'startUpload()':'startCompile()'}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><rect x="4" y="6" width="13" height="16" rx="2" stroke="currentColor" stroke-width="2"/><path d="M7 3h13a2 2 0 012 2v14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>まとめてEPUBを書き出す →</button></div>`:''}
     </div>`;
