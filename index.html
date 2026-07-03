@@ -327,7 +327,10 @@
         <div class="hero-eyebrow">本づくりの旅をはじめましょう</div>
         <h2 class="hero-title">あなたの言葉で、<br>Kindle本を作ろう</h2>
         <p class="hero-sub">企画・執筆・AI添削・出版準備まで。<br>初めての方でも、ステップどおりに進めるだけ。</p>
-        <button class="btn brand" style="font-size:14px;align-self:flex-start" onclick="startGuide()">出版の流れを確認する →</button>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn brand" style="font-size:14px" onclick="startGuide()">出版の流れを確認する →</button>
+          <button class="btn gray" style="font-size:14px" onclick="startAppGuide('producer')">アプリの使い方ガイド</button>
+        </div>
       </div>
       <div class="hero-photo">
         <img id="heroImg" src="owner3.png" alt="" loading="eager">
@@ -484,6 +487,11 @@
   <!-- GUIDE -->
   <section id="guide" class="hide">
     <div id="guideCard"></div>
+  </section>
+
+  <!-- APP GUIDE（アプリの使い方） -->
+  <section id="appGuide" class="hide">
+    <div id="appGuideCard"></div>
   </section>
 
   <!-- CHECKLIST -->
@@ -1131,11 +1139,11 @@ const STEPS = ["読者・ゴール","章の型","小見出し","要点メモ","�
 function startNew(){S.mode='new';S.step=1;show();}
 function startPaste(){S.mode='paste';S.step=5;show();}
 
-const PAGE_NAMES={roadmap:'STEP 0 · 出版の全体像',guide:'出版の流れ',checklist:'進捗チェックリスト',talk:'ChatGPTで下書き',tmpl:'テンプレート',convert:'Word変換',compile:'1冊にまとめる',upload:'アップロード',admin:'管理・設定',plan:'本の構成を考える',wizard:'章を書く',chapters:'章の確認・編集'};
+const PAGE_NAMES={roadmap:'STEP 0 · 出版の全体像',guide:'出版の流れ',checklist:'進捗チェックリスト',talk:'ChatGPTで下書き',tmpl:'テンプレート',convert:'Word変換',compile:'1冊にまとめる',upload:'アップロード',admin:'管理・設定',plan:'本の構成を考える',wizard:'章を書く',chapters:'章の確認・編集',appGuide:'使い方ガイド'};
 function updateHeader(name){const nav=document.getElementById('hdrNav');if(!nav)return;if(name==='home'){nav.innerHTML='<h1>Kindle出版サポート</h1><span class="tag">β版</span>';}else{const label=PAGE_NAMES[name]||'';nav.innerHTML=`<button class="hdr-back" onclick="goHome()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>ホームに戻る</button><span class="hdr-sep">|</span><span class="hdr-page">${label}</span>`;}}
 function screen(name,noHistory){
   if(name!=='home'){S.lastScreen=name;S.lastScreenTime=Date.now();S.lastScreenLabel=PAGE_NAMES[name]||name;save();}
-  ['home','talk','tmpl','convert','compile','wizard','guide','checklist','admin','roadmap','plan','upload','chapters'].forEach(s=>document.getElementById(s).classList.toggle('hide',s!==name));
+  ['home','talk','tmpl','convert','compile','wizard','guide','checklist','admin','roadmap','plan','upload','chapters','appGuide'].forEach(s=>document.getElementById(s).classList.toggle('hide',s!==name));
   updateHeader(name);
   if(!noHistory){try{history.pushState({screen:name},'','');}catch(e){}}
 }
@@ -1625,6 +1633,73 @@ const GUIDE=[
  {n:'6',t:'ローンチ（宣伝）',time:'出版後すぐ',note:'1位＋LINE登録を同時に',items:['無料キャンペーンを週末に設定（共著は同時刻に一斉拡散）','SNS・公式LINEで告知 → ニッチ部門1位を狙う','各章末・巻末のLINE特典で登録を促す','⚠「レビューしたら特典」はNG。条件はLINE登録のみ']}
 ];
 const GUIDE_PITFALLS=['税情報(W-8BEN)は最初に済ませる','文章は必ずリライト（話し言葉のまま出さない）','表紙はCanva無料か外注で“ジャンルが一目で伝わる”ものに','カテゴリは競合の弱いニッチ3枠で1位を狙う','Previewer未確認でアップしない（崩れに気づけない）'];
+function startAppGuide(tab){
+  window._appGuideTab=tab||window._appGuideTab||(S.memberMode?'writer':'producer');
+  screen('appGuide');renderAppGuide();window.scrollTo(0,0);
+}
+function _appGuideSetTab(tab){window._appGuideTab=tab;renderAppGuide();window.scrollTo(0,0);}
+function renderAppGuide(){
+  const tab=window._appGuideTab||'writer';
+  const el=document.getElementById('appGuideCard');if(!el)return;
+  const backBtn=`<div style="margin-bottom:8px"><button class="btn gray" onclick="${S.memberMode?"document.getElementById('appGuide').classList.add('hide');_showInviteWelcome(S._inviteData)":'goHome()'}" style="font-size:13px;padding:6px 14px">← 戻る</button></div>`;
+  const tabBtn=(id,label)=>`<button onclick="_appGuideSetTab('${id}')" style="flex:1;padding:10px;font-size:13px;font-weight:700;border:none;cursor:pointer;background:${tab===id?'#f5a623':'#f5f5f3'};color:${tab===id?'#fff':'var(--sub)'}">${label}</button>`;
+  const writerContent=`
+    <div class="card" style="background:#F3F2EE;margin-bottom:12px">
+      <b style="font-size:15px;display:block;margin-bottom:6px">① ログイン・登録の仕方</b>
+      <p class="small" style="line-height:1.8;margin:0">管理者から届いた「招待URL」をタップすると、名前・メールアドレス・パスワードを入力する登録画面が開きます。登録すると、自動であなたの担当章の画面に入ります。<br>2回目以降は、同じURL（または <code style="background:#fff;padding:1px 5px">${location.origin+location.pathname}</code>）を開き、同じメール・パスワードでログインすれば、続きから再開できます。</p>
+    </div>
+    <div class="card" style="background:#F3F2EE;margin-bottom:12px">
+      <b style="font-size:15px;display:block;margin-bottom:6px">② 執筆モードの使い方</b>
+      <p class="small" style="line-height:1.8;margin:0 0 8px">「どのように書きますか？」で3つから選べます。</p>
+      <ul class="small" style="margin:0;padding-left:18px;line-height:1.9">
+        <li><b>ChatGPT等のAIに書いてもらう</b>：テンプレを「コピー」→ ChatGPT等に貼って質問に答える → 出てきた文章を下の欄に貼り戻す</li>
+        <li><b>構成を考えながら書く</b>：見出しを追加して、それぞれの下に本文を書く</li>
+        <li><b>原稿を貼る・アップロードする</b>：すでに書いた文章をそのまま貼り付け、または.txt/Wordファイルをアップロード</li>
+      </ul>
+    </div>
+    <div class="card" style="background:#F3F2EE;margin-bottom:12px">
+      <b style="font-size:15px;display:block;margin-bottom:6px">③ 見出し・太字・区切りの入れ方</b>
+      <p class="small" style="line-height:1.8;margin:0 0 8px">記号を自分で打つ必要はありません。本文入力欄の下にあるボタンを押すだけで、カーソル位置に自動で入ります。</p>
+      <ul class="small" style="margin:0;padding-left:18px;line-height:1.9">
+        <li><b>■ 見出しを追加</b>：その段落の見出しになります</li>
+        <li><b>太字にする</b>：選択した文字、または挿入された文字を太字にします</li>
+        <li><b>－ 区切りを入れる</b>：段落の間に余白を入れます</li>
+        <li><b>画像位置を挿入</b>：後で画像を入れたい場所に印を付けます</li>
+      </ul>
+    </div>
+    <div class="card" style="background:#F3F2EE">
+      <b style="font-size:15px;display:block;margin-bottom:6px">④ 提出後の流れ</b>
+      <p class="small" style="line-height:1.8;margin:0">本文を書き終えたら「完成して管理者に届ける」を押すと、自動でクラウドに保存されます。管理者が受け取って本にまとめます。あとで修正したい場合は、同じ画面から書き直して再度保存すればOKです。<br>右上の「今どこ？次なに？」ボタンから、進み具合をいつでも確認できます。</p>
+    </div>`;
+  const producerContent=`
+    <div class="card" style="background:#F3F2EE;margin-bottom:12px">
+      <b style="font-size:15px;display:block;margin-bottom:6px">① ログイン・登録の仕方</b>
+      <p class="small" style="line-height:1.8;margin:0">基本URL（<code style="background:#fff;padding:1px 5px">${location.origin+location.pathname}</code>）を開き、メールアドレス・パスワードでログインします。2人目以降のプロデューサーは、オーナーが発行した「管理者招待URL」から登録すると、自動でプロデューサー権限になります。</p>
+    </div>
+    <div class="card" style="background:#F3F2EE;margin-bottom:12px">
+      <b style="font-size:15px;display:block;margin-bottom:6px">② 招待URLの発行・ユーザー管理</b>
+      <ul class="small" style="margin:0;padding-left:18px;line-height:1.9">
+        <li><b>ライターを招待する</b>：管理者ダッシュボードで章タイトル・担当者名を入力 →「招待URLをコピー」→ LINE等で送る（章ごとに別々のURLです）</li>
+        <li><b>他のプロデューサーを招待する</b>（オーナーのみ）：右上「⚙ アカウント設定」→「管理者を招待する」→ 宛先メモを入れて「招待URLを発行してコピー」（1回限り有効）</li>
+        <li><b>参加ユーザー一覧の確認・ロール変更</b>（オーナーのみ）：ホーム画面の「参加ユーザー・招待URL管理」パネルを開くと確認できます</li>
+      </ul>
+    </div>
+    <div class="card" style="background:#F3F2EE">
+      <b style="font-size:15px;display:block;margin-bottom:6px">③ 章を受け取る・本にまとめる</b>
+      <p class="small" style="line-height:1.8;margin:0">ライターが提出すると、管理者ダッシュボードの「メンバーの最新原稿を取り込む」ボタンで自動的に反映されます。全員分がそろったら「まとめてEPUBを書き出す」からKindle提出用データを作成できます。</p>
+    </div>`;
+  el.innerHTML=`${backBtn}
+    <div class="card" style="padding:0;overflow:hidden">
+      <div style="display:flex;border-bottom:1px solid var(--line-soft)">
+        ${tabBtn('writer','ライター向け')}
+        ${tabBtn('producer','プロデューサー向け')}
+      </div>
+      <div style="padding:18px 20px">
+        <h2 style="margin:0 0 14px;font-size:18px">アプリの使い方ガイド</h2>
+        ${tab==='writer'?writerContent:producerContent}
+      </div>
+    </div>`;
+}
 function startGuide(){screen('guide');renderGuide();window.scrollTo(0,0);}
 function renderGuide(){
   const phases=GUIDE.map(p=>`
@@ -1892,6 +1967,7 @@ function _showInviteWelcome(d){
     <div style="max-width:680px;margin:0 auto;padding:0 0 80px">
       <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 0 4px">
         <button onclick="document.getElementById('inviteWelcomeModal').remove();document.body.style.overflow='';startChecklist()" style="background:#f5a623;border:none;padding:7px 16px;font-size:12px;cursor:pointer;color:#fff;font-weight:700;display:flex;align-items:center;gap:4px;transition:filter .15s,transform .15s" onmouseover="this.style.filter='brightness(1.08)';this.style.transform='translateY(-1px)'" onmouseout="this.style.filter='';this.style.transform=''"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M9 11l3 3L22 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>今どこ？次なに？</button>
+        <button onclick="document.getElementById('inviteWelcomeModal').remove();document.body.style.overflow='';startAppGuide('writer')" style="background:none;border:1px solid var(--line-soft);padding:5px 12px;font-size:12px;cursor:pointer;color:var(--sub);font-weight:600;display:flex;align-items:center;gap:4px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 17v-5M12 8h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>使い方ガイド</button>
         <button onclick="openUserSettings()" style="background:none;border:1px solid var(--line-soft);padding:5px 12px;font-size:12px;cursor:pointer;color:var(--sub);font-weight:600;display:flex;align-items:center;gap:4px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke="currentColor" stroke-width="2"/></svg>アカウント設定</button>
         <button onclick="authSignOut()" style="background:none;border:1px solid var(--line-soft);padding:5px 12px;font-size:12px;cursor:pointer;color:var(--sub);font-weight:600">ログアウト</button>
       </div>
