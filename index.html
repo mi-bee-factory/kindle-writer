@@ -555,9 +555,9 @@ async function authInit(){
   if(session&&!handled){_sbUser=session.user;_authOnLogin();}
 }
 function _authOnLogin(){
-  document.getElementById('authOverlay').classList.add('hidden');
   _authLoadProfile();
 }
+function _hideAuthOverlay(){const el=document.getElementById('authOverlay');if(el)el.classList.add('hidden');}
 function _syncCoauthorForRole(){
   if((_sbRole==='owner'||_sbRole==='admin')&&!S.memberMode){S.coauthor=true;}
 }
@@ -577,15 +577,15 @@ async function _authLoadProfile(){
     // ログイン後に保留中の招待URLを処理（ライター）
     const pending=sessionStorage.getItem('_pendingInvite');
     if(pending){
-      try{const d=JSON.parse(pending);sessionStorage.removeItem('_pendingInvite');_applyInviteData(d);return;}catch(e){}
+      try{const d=JSON.parse(pending);sessionStorage.removeItem('_pendingInvite');_applyInviteData(d);_hideAuthOverlay();return;}catch(e){}
     }
     // 再訪ライター：localStorageに招待データが残っていれば章画面へ直接戻す
     if(S.memberMode&&S._inviteData&&S._inviteData.v===1){
-      _showInviteWelcome(S._inviteData);return;
+      _showInviteWelcome(S._inviteData);_hideAuthOverlay();return;
     }
     // 招待URLを介さないライターの直ログイン：プロデューサー向けHomeを見せない
     if(_sbRole==='member'&&!S.memberMode){
-      _renderMemberNoAccess();return;
+      _renderMemberNoAccess();_hideAuthOverlay();return;
     }
     if((_sbRole==='owner'||_sbRole==='admin')&&!S.memberMode){
       _syncCoauthorForRole();save();
@@ -596,6 +596,7 @@ async function _authLoadProfile(){
     }
     renderHomeUserPanel&&renderHomeUserPanel();
   }
+  _hideAuthOverlay();
 }
 function authShowSignUp(){document.getElementById('loginForm').style.display='none';document.getElementById('signupForm').style.display='';}
 function authShowLogin(){document.getElementById('signupForm').style.display='none';document.getElementById('loginForm').style.display='';}
@@ -1447,6 +1448,10 @@ function _renderMemberNoAccess(){
   if(fb)fb.style.display='block';
 }
 function goHome(){
+  // 招待経由のライターは、プロデューサー向けHomeを見せず担当章ウェルカム画面へ戻す
+  if(_sbRole==='member'&&S.memberMode&&S._inviteData&&S._inviteData.v===1){
+    _showInviteWelcome(S._inviteData);return;
+  }
   const main=document.getElementById('homeMainContent');
   const fb=document.getElementById('homeMemberFallback');
   if(main)main.style.display='flex';
@@ -1885,6 +1890,7 @@ function _showInviteWelcome(d){
   m.innerHTML=`
     <div style="max-width:680px;margin:0 auto;padding:0 0 80px">
       <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 0 4px">
+        <button onclick="document.getElementById('inviteWelcomeModal').remove();startChecklist()" style="background:none;border:1px solid var(--brand);padding:5px 12px;font-size:12px;cursor:pointer;color:var(--brand-dim);font-weight:700;display:flex;align-items:center;gap:4px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M9 11l3 3L22 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>今どこ？次なに？</button>
         <button onclick="openUserSettings()" style="background:none;border:1px solid var(--line-soft);padding:5px 12px;font-size:12px;cursor:pointer;color:var(--sub);font-weight:600;display:flex;align-items:center;gap:4px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke="currentColor" stroke-width="2"/></svg>アカウント設定</button>
         <button onclick="authSignOut()" style="background:none;border:1px solid var(--line-soft);padding:5px 12px;font-size:12px;cursor:pointer;color:var(--sub);font-weight:600">ログアウト</button>
       </div>
@@ -4439,6 +4445,7 @@ function renderChapterDashboard(){
       <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
         <button class="btn ok" style="width:100%;font-size:14px;display:inline-flex;align-items:center;justify-content:center;gap:6px" onclick="startWritingChapter(${myIdx})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>${isCurrent?'続きを書く':isDone?'書き直す':'担当章を書き始める →'}</button>
         ${isDone?`<button onclick="generateChapterCode()" style="width:100%;font-size:13px;padding:8px;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--ok);color:#fff;border:none;cursor:pointer;font-weight:700"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 2L15 22l-4-9-9-4 20-7z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>章を提出する（管理者にファイルを送る）</button>`:''}
+        <button onclick="startChecklist()" style="width:100%;font-size:13px;padding:8px;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:none;color:var(--brand-dim);border:1px solid var(--brand);cursor:pointer;font-weight:700">✓ 今どこ？次なに？（タスク確認）</button>
       </div>
     </div>`;
   }
