@@ -2099,11 +2099,13 @@ function _mwInsertBold(taId){
   const ta=document.getElementById(taId);if(!ta)return;
   const s=ta.selectionStart,e=ta.selectionEnd;
   const sel=ta.value.substring(s,e);
-  const tag='**'+(sel||'ここに強調したい文')+'**';
+  const placeholder='ここに強調したい文';
+  const inner=sel||placeholder;
+  const tag='**'+inner+'**';
   ta.value=ta.value.substring(0,s)+tag+ta.value.substring(e);
   const pos=sel?s+tag.length:s+2;
   ta.selectionStart=pos;
-  ta.selectionEnd=sel?pos:pos+7;
+  ta.selectionEnd=sel?pos:pos+placeholder.length;
   ta.focus();
   ta.dispatchEvent(new Event('input'));
 }
@@ -2137,14 +2139,15 @@ function _mwRenderImageList(){
   </div>`).join('');
 }
 function _mwInsertToolbar(taId){
-  const btnStyle='font-size:12px;background:#fff;border:1px solid var(--brand);color:#403129;padding:4px 12px;cursor:pointer;font-weight:700;display:inline-flex;align-items:center;gap:4px;white-space:nowrap';
+  const btnStyle='font-size:12px;background:#f5a623;border:none;color:#fff;padding:6px 14px;cursor:pointer;font-weight:700;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;transition:filter .15s,transform .15s';
+  const hover='onmouseover="this.style.filter=\'brightness(1.08)\';this.style.transform=\'translateY(-1px)\'" onmouseout="this.style.filter=\'\';this.style.transform=\'\'"';
   return `<div style="font-size:11px;color:var(--sub);padding:8px;background:#F3F2EE;margin-top:6px">
     <div style="margin-bottom:6px;color:#403129">ボタンを押すとカーソル位置に自動で入ります（自分で記号を打つ必要はありません）</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
-      <button onclick="_mwInsertHeading('${taId}')" style="${btnStyle}">■ 見出しを追加</button>
-      <button onclick="_mwInsertBold('${taId}')" style="${btnStyle}">太字にする</button>
-      <button onclick="_mwInsertDivider('${taId}')" style="${btnStyle}">－ 区切りを入れる</button>
-      <button onclick="_mwInsertImage('${taId}')" style="${btnStyle}">画像位置を挿入</button>
+      <button onclick="_mwInsertHeading('${taId}')" style="${btnStyle}" ${hover}>■ 見出しを追加</button>
+      <button onclick="_mwInsertBold('${taId}')" style="${btnStyle}" ${hover}>太字にする</button>
+      <button onclick="_mwInsertDivider('${taId}')" style="${btnStyle}" ${hover}>－ 区切りを入れる</button>
+      <button onclick="_mwInsertImage('${taId}')" style="${btnStyle}" ${hover}>画像位置を挿入</button>
     </div>
   </div>`;
 }
