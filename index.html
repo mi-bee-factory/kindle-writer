@@ -1890,7 +1890,7 @@ function _showInviteWelcome(d){
   m.innerHTML=`
     <div style="max-width:680px;margin:0 auto;padding:0 0 80px">
       <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 0 4px">
-        <button onclick="document.getElementById('inviteWelcomeModal').remove();startChecklist()" style="background:none;border:1px solid var(--brand);padding:5px 12px;font-size:12px;cursor:pointer;color:var(--brand-dim);font-weight:700;display:flex;align-items:center;gap:4px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M9 11l3 3L22 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>今どこ？次なに？</button>
+        <button onclick="document.getElementById('inviteWelcomeModal').remove();startChecklist()" style="background:var(--brand-soft);border:2px solid var(--brand);padding:5px 14px;font-size:12px;cursor:pointer;color:var(--brand-dim);font-weight:700;display:flex;align-items:center;gap:4px;transition:filter .15s,transform .15s" onmouseover="this.style.filter='brightness(1.05)';this.style.transform='translateY(-1px)'" onmouseout="this.style.filter='';this.style.transform=''"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M9 11l3 3L22 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>今どこ？次なに？</button>
         <button onclick="openUserSettings()" style="background:none;border:1px solid var(--line-soft);padding:5px 12px;font-size:12px;cursor:pointer;color:var(--sub);font-weight:600;display:flex;align-items:center;gap:4px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke="currentColor" stroke-width="2"/></svg>アカウント設定</button>
         <button onclick="authSignOut()" style="background:none;border:1px solid var(--line-soft);padding:5px 12px;font-size:12px;cursor:pointer;color:var(--sub);font-weight:600">ログアウト</button>
       </div>
@@ -1963,15 +1963,7 @@ function _showInviteWelcome(d){
           <textarea id="mwBodyA" placeholder="AIで生成した文章をここに貼り付けてください..."
             ondblclick="_mwExpandTA(this)"
             style="width:100%;min-height:320px;border:1px solid var(--line-soft);padding:10px 12px;font-size:14px;line-height:1.8;box-sizing:border-box;resize:both;font-family:inherit"></textarea>
-          <div style="font-size:11px;color:var(--sub);display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 8px;background:#F3F2EE;margin-top:6px">
-            <span><code style="background:#f2f2f2;padding:1px 5px;font-size:10px">■ 見出し</code> → 太字見出し</span>
-            <span><code style="background:#f2f2f2;padding:1px 5px;font-size:10px">**テキスト**</code> → <b>太字</b></span>
-            <span><code style="background:#f2f2f2;padding:1px 5px;font-size:10px">---</code> → 空白区切り</span>
-            <button onclick="_mwInsertImage('mwBodyA')" style="margin-left:auto;font-size:11px;background:#fff;border:1px solid var(--brand);color:#403129;padding:2px 10px;cursor:pointer;font-weight:700;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/><path d="M21 15l-5-5L5 21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              画像位置を挿入
-            </button>
-          </div>
+          ${_mwInsertToolbar('mwBodyA')}
         </div>
       </div>
       <div id="mwPanelB" style="display:none;background:#fff;padding:16px 20px;margin-bottom:16px">
@@ -1986,15 +1978,7 @@ function _showInviteWelcome(d){
           ondblclick="_mwExpandTA(this)"
           style="width:100%;min-height:400px;border:1px solid var(--line-soft);padding:10px 12px;font-size:14px;line-height:1.8;box-sizing:border-box;resize:both;font-family:inherit"
         >${existBody}</textarea>
-        <div style="font-size:11px;color:var(--sub);display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 8px;background:#F3F2EE;margin-top:6px">
-          <span><code style="background:#f2f2f2;padding:1px 5px;font-size:10px">■ 見出し</code> → 太字見出し</span>
-          <span><code style="background:#f2f2f2;padding:1px 5px;font-size:10px">**テキスト**</code> → <b>太字</b></span>
-          <span><code style="background:#f2f2f2;padding:1px 5px;font-size:10px">---</code> → 空白区切り</span>
-          <button onclick="_mwInsertImage('mwBody')" style="margin-left:auto;font-size:11px;background:#fff;border:1px solid var(--brand);color:#403129;padding:2px 10px;cursor:pointer;font-weight:700;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/><path d="M21 15l-5-5L5 21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            画像位置を挿入
-          </button>
-        </div>
+        ${_mwInsertToolbar('mwBody')}
         <div style="margin-top:10px">
           <label style="font-size:12px;color:var(--sub);display:block;margin-bottom:4px">または .txt / Word(.docx) ファイルをアップロード</label>
           <input type="file" accept=".txt,.docx" style="font-size:13px" onchange="_mwLoadFile(this)">
@@ -2090,11 +2074,8 @@ function _mwExpandTA(el){
   el.style.height='auto';
   el.style.height=Math.max(el.scrollHeight+40,parseInt(el.style.minHeight)||300)+'px';
 }
-function _mwInsertImage(taId){
+function _mwInsertAtCursor(taId,tag){
   const ta=document.getElementById(taId);if(!ta)return;
-  const desc=prompt('画像の説明・キャプションを入力してください（例：グラフ、著者写真）');
-  if(desc===null)return;
-  const tag='[画像：'+(desc.trim()||'ここに説明')+']';
   const s=ta.selectionStart,e=ta.selectionEnd;
   const before=ta.value.substring(0,s),after=ta.value.substring(e);
   const needNL=before.length>0&&!before.endsWith('\n');
@@ -2104,6 +2085,29 @@ function _mwInsertImage(taId){
   ta.focus();
   ta.dispatchEvent(new Event('input'));
 }
+function _mwInsertImage(taId){
+  const desc=prompt('画像の説明・キャプションを入力してください（例：グラフ、著者写真）');
+  if(desc===null)return;
+  _mwInsertAtCursor(taId,'[画像：'+(desc.trim()||'ここに説明')+']');
+}
+function _mwInsertHeading(taId){
+  const text=prompt('見出しの文言を入力してください（例：まず結論から）');
+  if(text===null)return;
+  _mwInsertAtCursor(taId,'■ '+(text.trim()||'見出し'));
+}
+function _mwInsertBold(taId){
+  const ta=document.getElementById(taId);if(!ta)return;
+  const s=ta.selectionStart,e=ta.selectionEnd;
+  const sel=ta.value.substring(s,e);
+  const tag='**'+(sel||'ここに強調したい文')+'**';
+  ta.value=ta.value.substring(0,s)+tag+ta.value.substring(e);
+  const pos=sel?s+tag.length:s+2;
+  ta.selectionStart=pos;
+  ta.selectionEnd=sel?pos:pos+7;
+  ta.focus();
+  ta.dispatchEvent(new Event('input'));
+}
+function _mwInsertDivider(taId){_mwInsertAtCursor(taId,'---');}
 function _mwAddImage(){
   if(!window._mwImages)window._mwImages=[];
   window._mwImages.push({name:'',url:''});
@@ -2131,6 +2135,18 @@ function _mwRenderImageList(){
       oninput="window._mwImages[${i}].url=this.value">
     <button onclick="_mwRemoveImage(${i})" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:18px;line-height:1;padding:0 4px;flex-shrink:0">×</button>
   </div>`).join('');
+}
+function _mwInsertToolbar(taId){
+  const btnStyle='font-size:12px;background:#fff;border:1px solid var(--brand);color:#403129;padding:4px 12px;cursor:pointer;font-weight:700;display:inline-flex;align-items:center;gap:4px;white-space:nowrap';
+  return `<div style="font-size:11px;color:var(--sub);padding:8px;background:#F3F2EE;margin-top:6px">
+    <div style="margin-bottom:6px;color:#403129">ボタンを押すとカーソル位置に自動で入ります（自分で記号を打つ必要はありません）</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button onclick="_mwInsertHeading('${taId}')" style="${btnStyle}">■ 見出しを追加</button>
+      <button onclick="_mwInsertBold('${taId}')" style="${btnStyle}">太字にする</button>
+      <button onclick="_mwInsertDivider('${taId}')" style="${btnStyle}">－ 区切りを入れる</button>
+      <button onclick="_mwInsertImage('${taId}')" style="${btnStyle}">画像位置を挿入</button>
+    </div>
+  </div>`;
 }
 function _mwRenderHtml(text){
   if(!text)return '<p style="color:#aaa">（本文がありません）</p>';
@@ -2302,12 +2318,7 @@ function previewCoChapter(i){
       ${_mwRenderHtml(c.body||'')}
     </div>
     <div id="coChapEdit" style="display:none;flex:1;flex-direction:column;min-height:0">
-      <div style="padding:8px 12px;background:#faf9f6;border-bottom:1px solid var(--line-soft);font-size:11px;color:var(--sub);display:flex;gap:12px;flex-wrap:wrap">
-        <span><code style="background:#f0efe9;padding:1px 5px">■ 見出し</code> → 太字見出し</span>
-        <span><code style="background:#f0efe9;padding:1px 5px">**太字**</code> → 太字</span>
-        <span><code style="background:#f0efe9;padding:1px 5px">---</code> → 空白行</span>
-        <span><code style="background:#f0efe9;padding:1px 5px">[画像：説明]</code> → 画像位置</span>
-      </div>
+      ${_mwInsertToolbar('coChapEditTA')}
       <textarea id="coChapEditTA" ondblclick="_mwExpandTA(this)"
         style="flex:1;width:100%;border:none;padding:16px 20px;font-size:14px;line-height:1.9;resize:none;font-family:inherit;box-sizing:border-box;min-height:300px;outline:none"
         oninput="document.getElementById('coChapCount').textContent=this.value.length.toLocaleString()+'文字'"
@@ -2537,17 +2548,7 @@ function renderCoInviteAdmin(){
       <button onclick="_sbSaveProjectData().then(()=>{const t=document.createElement('div');t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:8px 20px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none';t.textContent='✓ クラウドに保存しました';document.body.appendChild(t);setTimeout(()=>t.remove(),2000);})" style="font-size:12px;background:var(--ok);color:#fff;border:none;padding:5px 14px;cursor:pointer;font-weight:700">↑ クラウドに保存</button>
       <button onclick="_sbLoadProjectData().then(ok=>{const t=document.createElement('div');t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:8px 20px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none';t.textContent=ok?'✓ クラウドから読み込みました':'データがありません';document.body.appendChild(t);setTimeout(()=>t.remove(),2000);})" style="font-size:12px;background:#fff;color:var(--ok);border:none;padding:5px 14px;cursor:pointer;font-weight:700">↓ クラウドから取得</button>
     </div>
-    ${_sbRole==='owner'?`<div style="margin-top:28px">
-      <div style="font-size:14px;font-weight:700;color:var(--ink);padding-bottom:10px;border-bottom:2px solid var(--brand);margin-bottom:18px;display:flex;align-items:center;justify-content:space-between">
-        <span>参加ユーザー一覧</span>
-        <button onclick="loadUserList()" style="font-size:12px;background:none;border:none;padding:0;cursor:pointer;color:var(--ok);font-weight:700">↻ 更新</button>
-      </div>
-      <div id="userListSection">
-        <p style="font-size:13px;color:var(--sub);margin:0">「更新」を押すと登録済みユーザーが表示されます。</p>
-      </div>
-    </div>`:''}
   `;
-  if(_sbRole==='owner')loadUserList();
 }
 const _SPECIAL_LABELS={hajimeni:'はじめに',prologue:'プロローグ',atogaki:'あとがき',owarini:'おわりに',custom:'その他'};
 function _renderSpecialChapters(){
@@ -2563,12 +2564,7 @@ function _renderSpecialChapters(){
       <span style="font-size:11px;color:var(--sub)">${(c.body||'').length.toLocaleString()}文字</span>
       <button onclick="removeSpecialChapter(${i})" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:18px;line-height:1;padding:0 4px" title="削除">×</button>
     </div>
-    <div style="padding:4px 8px 2px;background:#faf9f6;border-bottom:1px solid var(--line-soft);font-size:11px;color:var(--sub);display:flex;gap:10px">
-      <span><code style="background:#f0efe9;padding:0 4px">■ 見出し</code> 太字見出し</span>
-      <span><code style="background:#f0efe9;padding:0 4px">**太字**</code></span>
-      <span><code style="background:#f0efe9;padding:0 4px">---</code> 区切り</span>
-      <span><code style="background:#f0efe9;padding:0 4px">[画像：説明]</code> 画像位置</span>
-    </div>
+    ${_mwInsertToolbar('specialTA_'+i)}
     <textarea id="specialTA_${i}" ondblclick="_mwExpandTA(this)"
       style="width:100%;min-height:200px;border:none;padding:12px 14px;font-size:13px;line-height:1.8;resize:vertical;box-sizing:border-box;font-family:inherit;outline:none"
       placeholder="${esc((_SPECIAL_LABELS[c.type]||'この章')+'の本文をここに書いてください...')}"
