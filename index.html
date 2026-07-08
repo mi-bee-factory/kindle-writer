@@ -1502,10 +1502,12 @@ async function _renderHomeManagedProjects(){
         ${notGrantedList.map(pr=>`<button onclick="_sbShareProject('${p.id}','${pr.id}',true)" style="font-size:10px;padding:2px 10px;cursor:pointer;font-weight:700;border:1px solid var(--line-soft);background:#fff;color:var(--sub)">＋ ${esc(pr.name||'（名前未設定）')}</button>`).join('')}
       </div>`:''}
     </div>`:'';
+    const isMyEmptySlot=isMe&&!p.title&&!p.updatedAt;
+    const titleLabel=p.title?esc(p.title):(isMyEmptySlot?'🆕 あなたの新しいプロジェクト（ここから始められます）':'（タイトル未設定）');
     return `<div style="padding:8px 0;border-bottom:1px solid var(--line-soft)">
       <div style="display:flex;align-items:center;gap:8px">
         <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:700;color:var(--ink)">${esc(p.title||'（タイトル未設定）')}${isActive?'<span style="font-size:11px;color:var(--ok);margin-left:6px">● 管理中</span>':''}</div>
+          <div style="font-size:13px;font-weight:700;color:var(--ink)">${titleLabel}${isActive?'<span style="font-size:11px;color:var(--ok);margin-left:6px">● 管理中</span>':''}</div>
           <div style="font-size:11px;color:var(--sub);margin-top:2px">${esc(p.name)}（${roleLabel}）${isMe?'・あなた':''}　最終更新：${p.updatedByName?esc(p.updatedByName)+'・':''}${updated}</div>
         </div>
         ${isActive?'':`<button onclick="_sbSwitchTarget('${p.id}')" style="font-size:11px;background:var(--brand);color:#403129;border:none;padding:4px 10px;cursor:pointer;font-weight:700;white-space:nowrap;flex-shrink:0">これを管理する</button>`}
