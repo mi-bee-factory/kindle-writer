@@ -824,16 +824,32 @@ async function _sbListManagedProjects(){
   const ids=profiles.map(p=>p.id);
   const {data:settings}=await _sb.from('book_settings').select('id,data,updated_at').in('id',ids);
   const map={};(settings||[]).forEach(s=>map[s.id]=s);
+  const myId=_sbUser?.id;
+  const isOwner=_sbRole==='owner';
   return profiles.map(p=>{
     const s=map[p.id];
     const d=s&&s.data||{};
+    const sharedWith=d.sharedWith||[];
     return {
       id:p.id,name:p.name||'（名前未設定）',role:p.role,
       title:(d.book&&d.book.title)||'',
       updatedByName:d.updatedByName||'',
-      updatedAt:(s&&s.updated_at)||''
+      updatedAt:(s&&s.updated_at)||'',
+      sharedWith
     };
-  });
+  }).filter(p=>isOwner||p.id===myId||p.sharedWith.includes(myId));
+}
+async function _sbShareProject(targetId,producerId,grant){
+  if(_sbRole!=='owner')return;
+  const {data:existing}=await _sb.from('book_settings').select('data').eq('id',targetId).single();
+  const d=existing?.data||{};
+  const sharedWith=d.sharedWith||[];
+  const idx=sharedWith.indexOf(producerId);
+  if(grant&&idx===-1)sharedWith.push(producerId);
+  if(!grant&&idx!==-1)sharedWith.splice(idx,1);
+  d.sharedWith=sharedWith;
+  await _sb.from('book_settings').upsert({id:targetId,data:d,updated_at:existing?.updated_at||new Date().toISOString()});
+  _renderHomeManagedProjects();
 }
 async function _sbSwitchTarget(id){
   const ok=await _sbLoadProjectData(id);
@@ -1444,7 +1460,10 @@ async function renderHomeProjectPanel(){
         <span id="homeProjectPanelArrow" style="font-size:13px;color:var(--sub)">▾</span>
       </div>
       <div id="homeProjectPanelBody" style="display:none;padding:0 18px 18px">
-        <div style="font-size:12px;color:var(--sub);margin-bottom:10px">オーナー・プロデューサーは互いのプロジェクトを選んで、同じデータを共同編集できます。</div>
+        <div style="font-size:12px;color:var(--sub);margin-bottom:10px;line-height:1.7">
+          オーナーは全プロジェクトを閲覧・共同管理できます。プロデューサーは<b>自分のプロジェクト</b>と<b>オーナーが共有を許可したプロジェクトのみ</b>選べます（他のプロデューサーのプロジェクトが無条件に見えることはありません）。<br>
+          <span style="color:var(--sub)">※ ライター（章担当者）はこの一覧の対象外です。ライターは招待URLで届いた自分の担当章のみ編集でき、プロジェクト全体の管理権限は持ちません。</span>
+        </div>
         <div id="homeManagedProjectsSection">読み込み中...</div>
       </div>
     </div>`;
@@ -1453,21 +1472,38 @@ async function renderHomeProjectPanel(){
 async function _renderHomeManagedProjects(){
   const el=document.getElementById('homeManagedProjectsSection');
   if(!el)return;
+  const isOwner=_sbRole==='owner';
   const list=await _sbListManagedProjects();
   const myId=_sbUser?.id;
   const activeId=_activeTargetId();
   if(!list.length){el.innerHTML='<p style="font-size:12px;color:var(--sub);margin:0">見つかりませんでした。</p>';return;}
+  // オーナーのみ：共有設定用に全プロデューサー一覧を取得
+  let allProducers=[];
+  if(isOwner){
+    const {data:profs}=await _sb.from('profiles').select('id,name').eq('role','admin');
+    allProducers=profs||[];
+  }
   el.innerHTML=list.map(p=>{
     const isActive=p.id===activeId;
     const roleLabel=p.role==='owner'?'オーナー':'プロデューサー';
     const isMe=p.id===myId;
     const updated=p.updatedAt?new Date(p.updatedAt).toLocaleString('ja-JP'):'まだ保存なし';
-    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line-soft)">
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:700;color:var(--ink)">${esc(p.title||'（タイトル未設定）')}${isActive?'<span style="font-size:11px;color:var(--ok);margin-left:6px">● 管理中</span>':''}</div>
-        <div style="font-size:11px;color:var(--sub);margin-top:2px">${esc(p.name)}（${roleLabel}）${isMe?'・あなた':''}　最終更新：${p.updatedByName?esc(p.updatedByName)+'・':''}${updated}</div>
+    const shareUi=(isOwner&&allProducers.length)?`<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--line-soft);display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:10px;color:var(--sub)">共有先：</span>
+      ${allProducers.filter(pr=>pr.id!==p.id).map(pr=>{
+        const granted=p.sharedWith.includes(pr.id);
+        return `<button onclick="_sbShareProject('${p.id}','${pr.id}',${!granted})" style="font-size:10px;padding:2px 8px;cursor:pointer;font-weight:700;border:1px solid ${granted?'var(--ok)':'var(--line-soft)'};background:${granted?'var(--ok-soft)':'#fff'};color:${granted?'var(--ok)':'var(--sub)'}">${granted?'✓ ':''}${esc(pr.name||'（名前未設定）')}</button>`;
+      }).join('')}
+    </div>`:'';
+    return `<div style="padding:8px 0;border-bottom:1px solid var(--line-soft)">
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:700;color:var(--ink)">${esc(p.title||'（タイトル未設定）')}${isActive?'<span style="font-size:11px;color:var(--ok);margin-left:6px">● 管理中</span>':''}</div>
+          <div style="font-size:11px;color:var(--sub);margin-top:2px">${esc(p.name)}（${roleLabel}）${isMe?'・あなた':''}　最終更新：${p.updatedByName?esc(p.updatedByName)+'・':''}${updated}</div>
+        </div>
+        ${isActive?'':`<button onclick="_sbSwitchTarget('${p.id}')" style="font-size:11px;background:var(--brand);color:#403129;border:none;padding:4px 10px;cursor:pointer;font-weight:700;white-space:nowrap;flex-shrink:0">これを管理する</button>`}
       </div>
-      ${isActive?'':`<button onclick="_sbSwitchTarget('${p.id}')" style="font-size:11px;background:var(--brand);color:#403129;border:none;padding:4px 10px;cursor:pointer;font-weight:700;white-space:nowrap;flex-shrink:0">これを管理する</button>`}
+      ${shareUi}
     </div>`;
   }).join('');
 }
