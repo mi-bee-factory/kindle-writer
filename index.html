@@ -339,6 +339,7 @@
     <div id="projectSwitcher"></div>
     <div id="homeBookCard"></div>
     <div id="homeUserPanel"></div>
+    <div id="homeProjectPanel"></div>
     <div style="cursor:pointer;background:var(--brand);padding:16px 20px" onclick="startChecklist()">
       <div style="display:flex;align-items:center;gap:14px">
         <div style="flex-shrink:0"><svg width="36" height="36" viewBox="0 0 32 32" fill="none"><rect x="4" y="4" width="24" height="24" rx="3" stroke="#403129" stroke-width="2.2"/><path d="M10 11l2.5 2.5 5-5" stroke="#403129" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 18l2.5 2.5 5-5" stroke="#403129" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 12h2M22 19h2" stroke="#403129" stroke-width="2" stroke-linecap="round"/></svg></div>
@@ -603,6 +604,7 @@ async function _authLoadProfile(){
       _freshLogin=false;
     }
     renderHomeUserPanel&&renderHomeUserPanel();
+    renderHomeProjectPanel&&renderHomeProjectPanel();
   }
   _hideAuthOverlay();
 }
@@ -777,21 +779,27 @@ async function _getOwnerId(){
   const {data}=await _sb.from('profiles').select('id').eq('role','owner').single();
   return data?.id||null;
 }
+function _activeTargetId(){return S._activeTargetId||(_sbUser&&_sbUser.id);}
 async function _sbSaveProjectData(){
   if(!_sbUser||(_sbRole!=='owner'&&_sbRole!=='admin'))return;
+  const myName=S.author||_sbUser.user_metadata?.name||_sbUser.email||'';
+  const targetId=_activeTargetId();
+  if(!targetId)return;
+  const {data:existing}=await _sb.from('book_settings').select('data').eq('id',targetId).single();
   const saveData={
+    ...(existing?.data||{}),
     book:S.book||{},
     theme:S.theme||'',reader:S.reader||'',goal:S.goal||'',
     people:S.people||5,totalTarget:S.totalTarget||25000,
-    coauthor:true
+    coauthor:true,
+    updatedByName:myName,updatedByEmail:_sbUser.email||''
   };
-  const targetId=_sbRole==='owner'?_sbUser.id:await _getOwnerId();
-  if(!targetId)return;
   await _sb.from('book_settings').upsert({id:targetId,data:saveData,updated_at:new Date().toISOString()});
 }
-async function _sbLoadProjectData(){
-  const ownerId=await _getOwnerId();if(!ownerId)return false;
-  const {data}=await _sb.from('book_settings').select('*').eq('id',ownerId).single();
+async function _sbLoadProjectData(targetId){
+  targetId=targetId||_activeTargetId();
+  if(!targetId)return false;
+  const {data}=await _sb.from('book_settings').select('*').eq('id',targetId).single();
   if(!data||!data.data)return false;
   const d=data.data;
   if(d.book)S.book=d.book;
@@ -801,11 +809,42 @@ async function _sbLoadProjectData(){
   if(d.people)S.people=d.people;
   if(d.totalTarget)S.totalTarget=d.totalTarget;
   S.coauthor=true;S.memberMode=false;
+  S._activeTargetId=targetId;
+  S._lastUpdatedByName=d.updatedByName||'';
+  S._lastUpdatedAt=data.updated_at||'';
   save();
   const el=document.getElementById('theme');if(el)el.value=S.theme||'';
   const el2=document.getElementById('people');if(el2)el2.value=S.people||5;
   renderModeUI&&renderModeUI();renderHomeBookCard&&renderHomeBookCard();renderCoInviteAdmin&&renderCoInviteAdmin();
   return true;
+}
+async function _sbListManagedProjects(){
+  const {data:profiles}=await _sb.from('profiles').select('id,name,role').in('role',['owner','admin']);
+  if(!profiles||!profiles.length)return [];
+  const ids=profiles.map(p=>p.id);
+  const {data:settings}=await _sb.from('book_settings').select('id,data,updated_at').in('id',ids);
+  const map={};(settings||[]).forEach(s=>map[s.id]=s);
+  return profiles.map(p=>{
+    const s=map[p.id];
+    const d=s&&s.data||{};
+    return {
+      id:p.id,name:p.name||'（名前未設定）',role:p.role,
+      title:(d.book&&d.book.title)||'',
+      updatedByName:d.updatedByName||'',
+      updatedAt:(s&&s.updated_at)||''
+    };
+  });
+}
+async function _sbSwitchTarget(id){
+  const ok=await _sbLoadProjectData(id);
+  if(ok){
+    renderModeUI&&renderModeUI();renderHomeBookCard&&renderHomeBookCard();renderCoInviteAdmin&&renderCoInviteAdmin();
+    renderHomeUserPanel&&renderHomeUserPanel();renderHomeProjectPanel&&renderHomeProjectPanel();
+    const t=document.createElement('div');
+    t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:8px 20px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none';
+    t.textContent='✓ このプロジェクトを管理対象に切り替えました';
+    document.body.appendChild(t);setTimeout(()=>t.remove(),2200);
+  }
 }
 let _sbProjectTimer=null;
 function _sbScheduleProjectSync(){
@@ -1386,6 +1425,52 @@ async function renderHomeUserPanel(){
   loadUserList('homeUserListSection');
   _renderHomeInviteTokens();
 }
+function _toggleHomeProjectPanel(){
+  const body=document.getElementById('homeProjectPanelBody');
+  const arrow=document.getElementById('homeProjectPanelArrow');
+  if(!body)return;
+  const open=body.style.display!=='none';
+  body.style.display=open?'none':'block';
+  if(arrow)arrow.textContent=open?'▾':'▴';
+}
+async function renderHomeProjectPanel(){
+  const el=document.getElementById('homeProjectPanel');
+  if(!el)return;
+  if(_sbRole!=='owner'&&_sbRole!=='admin'){el.innerHTML='';return;}
+  el.innerHTML=`
+    <div style="background:#fff">
+      <div style="padding:14px 18px;cursor:pointer;display:flex;align-items:center;justify-content:space-between" onclick="_toggleHomeProjectPanel()">
+        <span style="font-size:14px;font-weight:700;color:var(--ink)">管理するプロジェクトを選ぶ</span>
+        <span id="homeProjectPanelArrow" style="font-size:13px;color:var(--sub)">▾</span>
+      </div>
+      <div id="homeProjectPanelBody" style="display:none;padding:0 18px 18px">
+        <div style="font-size:12px;color:var(--sub);margin-bottom:10px">オーナー・プロデューサーは互いのプロジェクトを選んで、同じデータを共同編集できます。</div>
+        <div id="homeManagedProjectsSection">読み込み中...</div>
+      </div>
+    </div>`;
+  _renderHomeManagedProjects();
+}
+async function _renderHomeManagedProjects(){
+  const el=document.getElementById('homeManagedProjectsSection');
+  if(!el)return;
+  const list=await _sbListManagedProjects();
+  const myId=_sbUser?.id;
+  const activeId=_activeTargetId();
+  if(!list.length){el.innerHTML='<p style="font-size:12px;color:var(--sub);margin:0">見つかりませんでした。</p>';return;}
+  el.innerHTML=list.map(p=>{
+    const isActive=p.id===activeId;
+    const roleLabel=p.role==='owner'?'オーナー':'プロデューサー';
+    const isMe=p.id===myId;
+    const updated=p.updatedAt?new Date(p.updatedAt).toLocaleString('ja-JP'):'まだ保存なし';
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line-soft)">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700;color:var(--ink)">${esc(p.title||'（タイトル未設定）')}${isActive?'<span style="font-size:11px;color:var(--ok);margin-left:6px">● 管理中</span>':''}</div>
+        <div style="font-size:11px;color:var(--sub);margin-top:2px">${esc(p.name)}（${roleLabel}）${isMe?'・あなた':''}　最終更新：${p.updatedByName?esc(p.updatedByName)+'・':''}${updated}</div>
+      </div>
+      ${isActive?'':`<button onclick="_sbSwitchTarget('${p.id}')" style="font-size:11px;background:var(--brand);color:#403129;border:none;padding:4px 10px;cursor:pointer;font-weight:700;white-space:nowrap;flex-shrink:0">これを管理する</button>`}
+    </div>`;
+  }).join('');
+}
 async function _renderHomeInviteTokens(){
   const el=document.getElementById('homeInviteTokenSection');
   if(!el||!_sbUser)return;
@@ -1464,7 +1549,7 @@ function goHome(){
   const fb=document.getElementById('homeMemberFallback');
   if(main)main.style.display='flex';
   if(fb)fb.style.display='none';
-  screen('home');load();renderProjectSwitcher();renderHomeBookCard();renderHomeUserPanel&&renderHomeUserPanel();
+  screen('home');load();renderProjectSwitcher();renderHomeBookCard();renderHomeUserPanel&&renderHomeUserPanel();renderHomeProjectPanel&&renderHomeProjectPanel();
   if(S._uploadSuccess){
     const n=S._uploadSuccess;S._uploadSuccess=0;save();
     const hint=document.createElement('div');
@@ -2581,6 +2666,7 @@ function renderCoInviteAdmin(){
   el.innerHTML=`
     <div style="margin-top:24px">
       <div style="font-size:14px;font-weight:700;color:var(--ink);padding-bottom:10px;border-bottom:2px solid var(--brand);margin-bottom:18px">共著メンバーへの招待と章の受け取り</div>
+      ${S._lastUpdatedByName?`<div style="font-size:11px;color:var(--sub);margin:-8px 0 14px">最終更新：${esc(S._lastUpdatedByName)}${S._lastUpdatedAt?'・'+new Date(S._lastUpdatedAt).toLocaleString('ja-JP'):''}</div>`:''}
       <div style="margin-bottom:14px">
         <label style="font-size:11px;color:var(--sub);display:block;margin-bottom:4px;font-weight:700;letter-spacing:.04em;text-transform:uppercase">書籍タイトル（URLに含まれます）</label>
         <input type="text" value="${esc(S.book.title||'')}" placeholder="本のタイトル"
