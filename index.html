@@ -879,11 +879,11 @@ function _sbScheduleSync(){
 async function _sbSaveChapter(opts){
   opts=opts||{};
   const idx=(opts.idx!=null)?opts.idx:S.coauthorChap;
-  if(idx===null||idx===undefined)return {ok:false};
-  if(!_sbUser)return {ok:false};
+  if(idx===null||idx===undefined)return {ok:false,reason:'no-idx'};
+  if(!_sbUser)return {ok:false,reason:'no-user'};
   const body=(opts.body!=null)?opts.body:(S.edited||S.body||'');
   // 明示bodyもstatusも無い旧来の自動同期呼び出しでは、空本文を保存しない（旧挙動の維持）
-  if(!(body||'').trim()&&opts.body==null&&!opts.status)return {ok:false};
+  if(!(body||'').trim()&&opts.body==null&&!opts.status)return {ok:false,reason:'empty'};
   const row={
     book_id:BOOK_ID,user_id:_sbUser.id,chapter_index:idx,
     author_name:opts.author||S.memberName||S.author||'',
@@ -2703,6 +2703,11 @@ async function _mwSaveDraftNow(){
   const body=_mwGetBody();
   const draft=_mwCollectDraft();
   const btn=document.getElementById('mwDraftBtn');const orig=btn?btn.textContent:'';
+  if(!body){ // 本文が空
+    _mwSaveDraftLocal();
+    _mwToast('本文がまだありません。何か書いてから「下書きを保存」を押してください','warn');
+    return;
+  }
   if(btn){btn.disabled=true;btn.textContent='保存中…';}
   _mwSaveDraftLocal();
   if(!S.book)S.book={chapters:[],title:''};while(S.book.chapters.length<=idx)S.book.chapters.push({author:'',title:'',body:''});
@@ -2723,6 +2728,8 @@ async function _mwSaveDraftNow(){
     if(r.bookTitleSaved){msg='✓ 「'+projName+'」に保存しました';kind='ok';}
     else if(!projName){msg='保存しました。ただし本のタイトルが未設定のため、まとめ役の画面で本ごとに分類されません。プロデューサーに本のタイトル設定を依頼してください。';kind='warn';}
     else{msg='保存しました（クラウドへの反映待ち。数分後にもう一度この保存を押すと確実です）';kind='warn';}
+  }else if(r&&r.reason==='no-user'){
+    msg='ログインが切れているため、クラウドに保存できませんでした。一度ログアウトして、招待URLからログインし直してください。（今の内容はこの端末に残っています）';kind='err';
   }else{
     msg='この端末に保存しました（クラウド未接続）';kind='warn';
   }
