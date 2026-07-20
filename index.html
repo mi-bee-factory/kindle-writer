@@ -1511,7 +1511,11 @@ async function renderHomeUserPanel(){
           </div>
         </div>
         <div style="margin-bottom:16px">
-          <div style="font-size:12px;font-weight:700;color:var(--sub);margin-bottom:6px">参加ユーザー一覧</div>
+          <div style="font-size:12px;font-weight:700;color:var(--sub);margin-bottom:6px">プロジェクト別ライター一覧（誰がどの本を書いているか）</div>
+          <div id="writersByProjectSection"></div>
+        </div>
+        <div style="margin-bottom:16px">
+          <div style="font-size:12px;font-weight:700;color:var(--sub);margin-bottom:6px">参加ユーザー一覧（役割の変更・削除）</div>
           <div id="homeUserListSection"></div>
         </div>
         <div>
@@ -1521,6 +1525,7 @@ async function renderHomeUserPanel(){
       </div>
     </div>`;
   loadUserList('homeUserListSection');
+  renderWritersByProject('writersByProjectSection');
   _renderHomeInviteTokens();
 }
 function _toggleHomeProjectPanel(){
@@ -2908,17 +2913,6 @@ async function loadUserList(targetId){
   const myId=_sbUser?.id;
   const myRole=data.find(u=>u.id===myId)?.role||'member';
   const isOwner=myRole==='owner';
-  // ライターの所属（どのプロジェクト／プロデューサー配下か）を member_chapters から集約
-  const affMap={};
-  const mcRes=await _sb.from('member_chapters').select('user_id,book_title,producer_name');
-  if(mcRes&&!mcRes.error&&mcRes.data){
-    mcRes.data.forEach(row=>{
-      const label=(row.book_title||'').trim()+((row.producer_name||'').trim()?'（招待：'+row.producer_name.trim()+'さん）':'');
-      if(!label.trim())return;
-      if(!affMap[row.user_id])affMap[row.user_id]=new Set();
-      affMap[row.user_id].add(label);
-    });
-  }
   el.innerHTML=`
     <div style="font-size:11px;color:var(--sub);margin-bottom:10px;padding:6px 10px;background:var(--bg-alt)">
       あなたの権限：<b>${(_ROLE_CONFIG[myRole]||_ROLE_CONFIG.member).label}</b>
@@ -2937,21 +2931,69 @@ async function loadUserList(targetId){
         <option value="member">ライター</option>
       </select>`:'';
       const deleteBtn=isOwner&&!isMe&&r!=='owner'?`<button onclick="removeUser('${u.id}','${esc(u.name||'このユーザー')}')" style="font-size:11px;background:none;border:1px solid #fca5a5;color:#ef4444;padding:2px 8px;cursor:pointer;white-space:nowrap">削除</button>`:'';
-      const affList=affMap[u.id]?[...affMap[u.id]]:[];
-      const affLine=r==='member'
-        ? (affList.length
-            ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">所属：${affList.map(esc).join(' ／ ')}</div>`
-            : `<div style="font-size:11px;color:var(--muted);margin-top:2px">所属：未参加（招待URL未使用）</div>`)
-        : '';
       return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line-soft)">
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:${isMe?'700':'400'};color:var(--ink)">${esc(u.name||'（名前未設定）')}${meTag}</div>
-          ${affLine}
-        </div>
+        <div style="flex:1;font-size:13px;font-weight:${isMe?'700':'400'};color:var(--ink)">${esc(u.name||'（名前未設定）')}${meTag}</div>
         <div>${badge}</div>${changeBtn?`<div>${changeBtn}</div>`:''}${deleteBtn?`<div>${deleteBtn}</div>`:''}
       </div>`;
     }).join('')}
     <div style="font-size:11px;color:var(--muted);margin-top:10px">登録ユーザー計 ${data.length}名</div>`;
+}
+// プロジェクト（進行中の本のタイトル）ごとにライターをグループ表示（誰がどの本を書いているか一目で）
+async function renderWritersByProject(containerId){
+  containerId=containerId||'writersByProjectSection';
+  const el=document.getElementById(containerId);if(!el)return;
+  el.innerHTML='<p style="font-size:12px;color:var(--sub);margin:0">読み込み中...</p>';
+  let rows=[],needsSQL=false;
+  const res=await _sb.from('member_chapters').select('user_id,chapter_index,author_name,chapter_title,status,book_title,producer_name');
+  if(res&&res.error){
+    needsSQL=true;
+    const base=await _sb.from('member_chapters').select('user_id,chapter_index,author_name,chapter_title');
+    rows=(base&&base.data)||[];
+  }else{ rows=(res&&res.data)||[]; }
+  // profiles で表示名を補完
+  const {data:profs}=await _sb.from('profiles').select('id,name');
+  const nameMap={};(profs||[]).forEach(p=>{nameMap[p.id]=p.name||'';});
+  // book_title 単位でグループ化
+  const groups={};
+  rows.forEach(r=>{
+    const key=(r.book_title||'').trim()||'__none__';
+    if(!groups[key])groups[key]={name:key==='__none__'?'':(r.book_title||'').trim(),producer:'',writers:[]};
+    if(!groups[key].producer&&r.producer_name)groups[key].producer=r.producer_name;
+    groups[key].writers.push({
+      name:nameMap[r.user_id]||r.author_name||'（名前未設定）',
+      chap:(r.chapter_index!=null?('第'+(r.chapter_index+1)+'章'):'')+(r.chapter_title?'「'+(r.chapter_title||'').replace(/^\*+$/,'').trim()+'」':''),
+      status:r.status||'submitted' // 行が存在する＝保存済み。列が無い旧環境は提出扱い
+    });
+  });
+  const _b=(st)=>st==='draft'
+    ? '<span style="color:#b8860b;font-weight:700;white-space:nowrap">🟡書きかけ</span>'
+    : st==='submitted'
+      ? '<span style="color:var(--ok);font-weight:700;white-space:nowrap">🟢提出済み</span>'
+      : '<span style="color:var(--muted);white-space:nowrap">⚪未着手</span>';
+  const keys=Object.keys(groups).sort((a,b)=>a==='__none__'?1:b==='__none__'?-1:String(groups[a].name).localeCompare(String(groups[b].name),'ja'));
+  let html='';
+  if(needsSQL){
+    html+=`<div style="background:#fff7e6;border:1px solid #f0c674;padding:10px 12px;margin-bottom:10px;font-size:12px;color:#7a5c00;line-height:1.6"><b>あと一歩：</b>プロジェクト名で分けるには、Supabaseで列追加のSQLを1回実行してください（実行済みでも安全に再実行できます）。実行後、ライターがもう一度「保存」するとプロジェクト名が記録されます。</div>`;
+  }
+  if(!keys.length){el.innerHTML=html+'<p style="font-size:12px;color:var(--sub);margin:0">まだライターの保存データがありません。</p>';return;}
+  keys.forEach(k=>{
+    const g=groups[k];
+    const title=g.name||'（プロジェクト名 未記録 — ライターが再保存すると表示されます）';
+    html+=`<div style="border:1px solid var(--line-soft);margin-bottom:10px">
+      <div style="background:var(--brand-soft);padding:8px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <span style="font-size:13px;font-weight:700;color:#403129">📘 ${esc(title)}</span>
+        <span style="font-size:11px;color:var(--sub)">${g.producer?'プロデューサー：'+esc(g.producer)+'さん ／ ':''}ライター ${g.writers.length}名</span>
+      </div>
+      <div style="padding:4px 12px">
+        ${g.writers.map(w=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line-soft);font-size:12px">
+          <span style="flex:1;min-width:0;color:var(--ink);font-weight:600">${esc(w.name)}</span>
+          <span style="color:var(--sub);white-space:nowrap">${esc(w.chap)}</span>
+          ${_b(w.status)}
+        </div>`).join('')}
+      </div>
+    </div>`;
+  });
+  el.innerHTML=html;
 }
 function _reloadAllUserLists(){
   if(document.getElementById('userListSection'))loadUserList('userListSection');
