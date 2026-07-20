@@ -854,14 +854,31 @@ async function _sbShareProject(targetId,producerId,grant){
 }
 async function _sbSwitchTarget(id){
   const ok=await _sbLoadProjectData(id);
-  if(ok){
-    renderModeUI&&renderModeUI();renderHomeBookCard&&renderHomeBookCard();renderCoInviteAdmin&&renderCoInviteAdmin();
-    renderHomeUserPanel&&renderHomeUserPanel();renderHomeProjectPanel&&renderHomeProjectPanel();
-    const t=document.createElement('div');
-    t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:8px 20px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none';
-    t.textContent='✓ このプロジェクトを管理対象に切り替えました';
-    document.body.appendChild(t);setTimeout(()=>t.remove(),2200);
+  if(!ok){
+    // クラウドにまだ保存が無い（新規・空）プロジェクト：空の状態から管理を始められるようにする
+    S._activeTargetId=id;
+    S.coauthor=true;S.memberMode=false;
+    S.book={chapters:[],title:'',subtitle:'',desc:'',keywords:'',cats:'',manuscript:''};
+    S.theme='';S.reader='';S.goal='';
+    if(!(S.people>=1))S.people=5;
+    S._lastUpdatedByName='';S._lastUpdatedAt='';
+    save();
+    const el=document.getElementById('theme');if(el)el.value='';
+    const el2=document.getElementById('people');if(el2)el2.value=S.people||5;
   }
+  renderModeUI&&renderModeUI();renderHomeBookCard&&renderHomeBookCard();renderCoInviteAdmin&&renderCoInviteAdmin();
+  renderHomeUserPanel&&renderHomeUserPanel();renderHomeProjectPanel&&renderHomeProjectPanel();
+  const t=document.createElement('div');
+  t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:8px 20px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none';
+  t.textContent='✓ このプロジェクトを管理対象に切り替えました';
+  document.body.appendChild(t);setTimeout(()=>t.remove(),2200);
+  return true;
+}
+// 指定プロジェクトに切り替えて、その管理ダッシュボードを開く（一覧から直接ダッシュボードへ）
+async function _sbOpenProjectDashboard(id){
+  if(id&&id!==_activeTargetId()){await _sbSwitchTarget(id);}
+  else{S.coauthor=true;save();}
+  startAdmin();
 }
 let _sbProjectTimer=null;
 function _sbScheduleProjectSync(){
@@ -1600,7 +1617,10 @@ async function _renderHomeManagedProjects(){
           <div style="font-size:13px;font-weight:700;color:var(--ink)">${titleLabel}${isActive?'<span style="font-size:11px;color:var(--ok);margin-left:6px">● 管理中</span>':''}</div>
           <div style="font-size:11px;color:var(--sub);margin-top:2px">${esc(p.name)}（${roleLabel}）${isMe?'・あなた':''}　最終更新：${p.updatedByName?esc(p.updatedByName)+'・':''}${updated}</div>
         </div>
-        ${isActive?'':`<button onclick="_sbSwitchTarget('${p.id}')" style="font-size:11px;background:var(--brand);color:#403129;border:none;padding:4px 10px;cursor:pointer;font-weight:700;white-space:nowrap;flex-shrink:0">これを管理する</button>`}
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          ${isActive?'':`<button onclick="_sbSwitchTarget('${p.id}')" style="font-size:11px;background:#fff;color:var(--brand-dim);border:1px solid var(--brand);padding:4px 10px;cursor:pointer;font-weight:700;white-space:nowrap">これを管理する</button>`}
+          <button onclick="_sbOpenProjectDashboard('${p.id}')" style="font-size:11px;background:var(--brand);color:#403129;border:none;padding:4px 10px;cursor:pointer;font-weight:700;white-space:nowrap">管理画面を開く →</button>
+        </div>
       </div>
       ${shareUi}
     </div>`;
