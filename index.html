@@ -2718,17 +2718,24 @@ async function _mwSaveDraftNow(){
   if(btn){btn.disabled=false;btn.textContent=orig;}
   _mwUpdateStatusBadge(idx);
   const projName=(S._inviteData&&S._inviteData.projName)||(S.book&&S.book.title)||'';
+  let msg,kind;
   if(r&&r.ok){
-    if(r.bookTitleSaved){
-      _mwSetSaveIndicator('「'+projName+'」に保存しました '+_mwNowStr());
-    }else if(!projName){
-      _mwSetSaveIndicator('保存しました（⚠この本にタイトルが未設定のため、まとめ役の画面で分類されません）');
-    }else{
-      _mwSetSaveIndicator('保存しました（クラウド反映待ち。数分後にもう一度保存すると確実です） '+_mwNowStr());
-    }
+    if(r.bookTitleSaved){msg='✓ 「'+projName+'」に保存しました';kind='ok';}
+    else if(!projName){msg='保存しました。ただし本のタイトルが未設定のため、まとめ役の画面で本ごとに分類されません。プロデューサーに本のタイトル設定を依頼してください。';kind='warn';}
+    else{msg='保存しました（クラウドへの反映待ち。数分後にもう一度この保存を押すと確実です）';kind='warn';}
   }else{
-    _mwSetSaveIndicator('この端末に保存しました '+_mwNowStr());
+    msg='この端末に保存しました（クラウド未接続）';kind='warn';
   }
+  _mwSetSaveIndicator(msg.replace(/^✓ /,'')+' '+_mwNowStr());
+  _mwToast(msg,kind);
+}
+function _mwToast(text,kind){
+  const bg=kind==='warn'?'#b8860b':(kind==='err'?'#c0392b':'#2e8b57');
+  const ex=document.getElementById('mwToast');if(ex)ex.remove();
+  const t=document.createElement('div');t.id='mwToast';
+  t.style.cssText='position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:'+bg+';color:#fff;padding:13px 22px;font-size:14px;font-weight:700;line-height:1.6;z-index:10020;pointer-events:none;max-width:88%;text-align:center;box-shadow:0 6px 20px rgba(0,0,0,.25);border-radius:6px;opacity:1;transition:opacity .5s';
+  t.textContent=text;document.body.appendChild(t);
+  setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),500);},4500);
 }
 function generateInviteUrl(chapIdx){
   if(!S.book)S.book={chapters:[],title:''};
