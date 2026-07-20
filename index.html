@@ -2943,13 +2943,15 @@ async function renderWritersByProject(containerId){
   containerId=containerId||'writersByProjectSection';
   const el=document.getElementById(containerId);if(!el)return;
   el.innerHTML='<p style="font-size:12px;color:var(--sub);margin:0">読み込み中...</p>';
-  let rows=[],needsSQL=false;
-  const res=await _sb.from('member_chapters').select('user_id,chapter_index,author_name,chapter_title,status,book_title,producer_name');
+  // 列名を指定せず全件取得（未反映の列があってもエラーにならない＝反映され次第バナーは自動で消える）
+  const res=await _sb.from('member_chapters').select('*');
   if(res&&res.error){
-    needsSQL=true;
-    const base=await _sb.from('member_chapters').select('user_id,chapter_index,author_name,chapter_title');
-    rows=(base&&base.data)||[];
-  }else{ rows=(res&&res.data)||[]; }
+    el.innerHTML='<p style="font-size:12px;color:#e03131;margin:0">一覧を取得できませんでした。少し時間をおいて、もう一度お試しください。</p>';
+    return;
+  }
+  const rows=(res&&res.data)||[];
+  // 返ってきた行に book_title 列が含まれているか＝SQLの列追加が反映済みかを判定
+  const needsSQL=rows.length>0 && !rows.some(r=>Object.prototype.hasOwnProperty.call(r,'book_title'));
   // profiles で表示名を補完
   const {data:profs}=await _sb.from('profiles').select('id,name');
   const nameMap={};(profs||[]).forEach(p=>{nameMap[p.id]=p.name||'';});
