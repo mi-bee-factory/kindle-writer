@@ -590,6 +590,7 @@ async function _authLoadProfile(){
     }
     // 再訪ライター：localStorageに招待データが残っていれば章画面へ直接戻す
     if(S.memberMode&&S._inviteData&&S._inviteData.v===1){
+      await _sbLoadMyChapter(S._inviteData.chapIdx); // 別端末でも続きを復元
       _showInviteWelcome(S._inviteData);_hideAuthOverlay();return;
     }
     // 招待URLを介さないライターの直ログイン：プロデューサー向けHomeを見せない
@@ -873,23 +874,68 @@ function _sbScheduleSync(){
   if(_sbTimer)clearTimeout(_sbTimer);
   _sbTimer=setTimeout(_sbSaveChapter,8000);
 }
-async function _sbSaveChapter(){
-  const body=S.edited||S.body||'';if(!body.trim())return;
-  const idx=S.coauthorChap;if(idx===null||idx===undefined)return;
-  if(!_sbUser)return;
-  const {error}=await _sb.from('member_chapters').upsert({
+// member_chapters への保存。引数で明示的に本文・状態を渡せる（招待ライターフロー対応）。
+// opts:{idx,body,title,author,edited,status,mode,images,silent}
+async function _sbSaveChapter(opts){
+  opts=opts||{};
+  const idx=(opts.idx!=null)?opts.idx:S.coauthorChap;
+  if(idx===null||idx===undefined)return {ok:false};
+  if(!_sbUser)return {ok:false};
+  const body=(opts.body!=null)?opts.body:(S.edited||S.body||'');
+  // 明示bodyもstatusも無い旧来の自動同期呼び出しでは、空本文を保存しない（旧挙動の維持）
+  if(!(body||'').trim()&&opts.body==null&&!opts.status)return {ok:false};
+  const row={
     book_id:BOOK_ID,user_id:_sbUser.id,chapter_index:idx,
-    author_name:S.memberName||S.author||'',
-    chapter_title:S.chapTitle||`第${idx+1}章`,
-    body:S.body||'',edited:S.edited||'',
+    author_name:opts.author||S.memberName||S.author||'',
+    chapter_title:opts.title||S.chapTitle||`第${idx+1}章`,
+    body:body||'', edited:(opts.edited!=null)?opts.edited:'',
     updated_at:new Date().toISOString()
-  },{onConflict:'book_id,user_id'});
-  if(!error){
+  };
+  // 追加列（未対応スキーマでも動くよう、値がある時だけ付与）
+  if(opts.status)row.status=opts.status;
+  if(opts.mode)row.mode=opts.mode;
+  if(opts.images!=null)row.images=opts.images;
+  const inv=S._inviteData||{};
+  if(inv.projId)row.project_id=inv.projId;
+  const bt=inv.projName||(S.book&&S.book.title)||'';
+  if(bt)row.book_title=bt;
+  if(inv.producerName)row.producer_name=inv.producerName;
+  let {error}=await _sb.from('member_chapters').upsert(row,{onConflict:'book_id,user_id'});
+  if(error){
+    // 追加列が無い旧スキーマ：既知の追加列を落として再試行（後方互換）
+    ['status','mode','images','project_id','book_title','producer_name'].forEach(k=>{delete row[k];});
+    ({error}=await _sb.from('member_chapters').upsert(row,{onConflict:'book_id,user_id'}));
+  }
+  if(!error&&!opts.silent){
     const t=document.createElement('div');
     t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:8px 18px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none;opacity:1;transition:opacity .4s';
     t.textContent='✓ クラウドに保存しました';document.body.appendChild(t);
     setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),400);},2000);
   }
+  return {ok:!error, error};
+}
+// 自分（ライター）の章をクラウドから読み込み、S.book.chapters とローカル下書きに反映（クロス端末復元）
+async function _sbLoadMyChapter(idx){
+  if(!_sbUser)return null;
+  if(idx==null)idx=S.coauthorChap;
+  if(idx==null)return null;
+  const {data,error}=await _sb.from('member_chapters').select('*').eq('book_id',BOOK_ID).eq('user_id',_sbUser.id).eq('chapter_index',idx);
+  if(error||!data||!data.length)return null;
+  const row=data[0];
+  if(!S.book)S.book={chapters:[],title:''};
+  while(S.book.chapters.length<=idx)S.book.chapters.push({author:'',title:'',body:''});
+  const c=S.book.chapters[idx];
+  const cloudBody=row.edited||row.body||'';
+  // ローカルに未保存の下書きが無い、またはクラウドが新しい場合のみ反映
+  c.body=cloudBody||c.body||'';
+  if(row.author_name)c.author=row.author_name;
+  if(row.chapter_title)c.title=row.chapter_title;
+  c.status=row.status||c.status||(cloudBody?'submitted':'');
+  c.cloudUpdatedAt=row.updated_at||'';
+  // 下書きの生データがクラウドに無い場合は本文からモードCとして復元できるようにしておく
+  if(!c.draft&&cloudBody){c.draft={mode:row.mode||'C',title:row.chapter_title||'',bodyA:'',heads:[],bodyC:cloudBody,images:Array.isArray(row.images)?row.images:[]};}
+  save();
+  return row;
 }
 async function fetchChaptersFromSupabase(){
   const btn=document.getElementById('sbFetchBtn');
@@ -898,18 +944,28 @@ async function fetchChaptersFromSupabase(){
   if(btn){btn.textContent='Supabaseから最新を取得';btn.disabled=false;}
   if(error||!data||!data.length){alert('まだデータがありません。\nメンバーに章を保存してもらってください。');return;}
   if(!S.book)S.book={chapters:[],title:'',subtitle:'',desc:'',keywords:'',cats:'',manuscript:''};
-  let n=0;
+  let n=0,nSub=0,nDraft=0;
   data.forEach(row=>{
     const i=row.chapter_index||0;
     while(S.book.chapters.length<=i)S.book.chapters.push({author:'',title:'',body:''});
     const prev=S.book.chapters[i]||{};
-    S.book.chapters[i]={...prev,author:row.author_name||prev.author||'',title:row.chapter_title||prev.title||`第${i+1}章`,body:row.edited||row.body||prev.body||''};
+    const cloudBody=row.edited||row.body||'';
+    const st=row.status||(cloudBody?'submitted':'');
+    S.book.chapters[i]={...prev,
+      author:row.author_name||prev.author||'',
+      title:row.chapter_title||prev.title||`第${i+1}章`,
+      body:cloudBody||prev.body||'',
+      status:st||prev.status||'',
+      cloudUpdatedAt:row.updated_at||prev.cloudUpdatedAt||'',
+      affiliation:{book:row.book_title||'',producer:row.producer_name||'',projId:row.project_id||''}
+    };
+    if(st==='submitted')nSub++;else if(st==='draft')nDraft++;
     n++;
   });
   save();renderCoInviteAdmin();
   const t=document.createElement('div');
   t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:10px 22px;font-size:14px;font-weight:700;z-index:10010;pointer-events:none;opacity:1;transition:opacity .4s';
-  t.textContent=`✓ ${n}件の章を取得しました`;document.body.appendChild(t);
+  t.textContent=`✓ ${n}件を取得（提出 ${nSub}・書きかけ ${nDraft}）`;document.body.appendChild(t);
   setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),400);},2500);
 }
 
@@ -1203,7 +1259,32 @@ function screen(name,noHistory){
   updateHeader(name);
   if(!noHistory){try{history.pushState({screen:name},'','');}catch(e){}}
 }
-window.onpopstate=function(e){const s=(e.state&&e.state.screen)||'home';screen(s,true);};
+/* ---------- モーダル履歴（ブラウザの「戻る」で最前面のモーダルを閉じる） ---------- */
+let _modalStack=[]; // {id, close}
+let _suppressPop=false;
+function _openModalHistory(id,closeFn){
+  _modalStack=_modalStack.filter(x=>x.id!==id); // 同一idの二重登録を防ぐ
+  _modalStack.push({id:id,close:closeFn});
+  try{history.pushState({modal:id},'','');}catch(e){}
+}
+// ボタン等でモーダルを閉じたとき：DOMを消し、積んだ履歴も1つ戻して整合を保つ
+function _dismissModal(id){
+  const idx=_modalStack.map(x=>x.id).lastIndexOf(id);
+  if(idx<0){const el=document.getElementById(id);if(el)el.remove();return;}
+  const entry=_modalStack.splice(idx,1)[0];
+  try{if(entry&&entry.close)entry.close();}catch(e){}
+  _suppressPop=true;
+  try{history.back();}catch(e){}
+}
+window.onpopstate=function(e){
+  if(_suppressPop){_suppressPop=false;return;} // 自前の history.back() による発火は無視
+  if(_modalStack.length){ // モーダルが開いていれば最前面だけを閉じる
+    const entry=_modalStack.pop();
+    try{if(entry&&entry.close)entry.close();}catch(err){}
+    return;
+  }
+  const s=(e.state&&e.state.screen)||'home';screen(s,true);
+};
 (function(){try{history.replaceState({screen:'home'},'','');}catch(e){}})();
 function show(){
   save();
@@ -2053,13 +2134,14 @@ function renderAdmin(){
 function _invEnc(d){return btoa(unescape(encodeURIComponent(JSON.stringify(d))));}
 function _invDec(s){try{return JSON.parse(decodeURIComponent(escape(atob(s))));}catch(e){return null;}}
 
-function _applyInviteData(d){
+async function _applyInviteData(d){
   S.coauthor=true;S.coauthorChap=d.chapIdx;S.memberMode=true;
   if(!S.book)S.book={chapters:[],title:'',subtitle:''};
   S.book.title=d.bookTitle;
   while(S.book.chapters.length<=d.chapIdx)S.book.chapters.push({author:'',title:'',body:''});
   S.book.chapters[d.chapIdx].title=d.chapTitle;
   S._inviteData=d;save();
+  await _sbLoadMyChapter(d.chapIdx); // 既にクラウドに下書きがあれば復元
   _showInviteWelcome(d);
 }
 function processInviteParam(){
@@ -2115,6 +2197,7 @@ function _showInviteWelcome(d){
           <div style="position:absolute;inset:0;background:linear-gradient(to right,#fff 0%,rgba(255,255,255,.2) 40%,transparent 65%)"></div>
         </div>
       </div>
+      <div id="mwResumeHero"></div>
       <div style="background:#fff;padding:16px 20px;margin-bottom:20px;margin-top:0">
         <label style="font-size:12px;font-weight:700;color:var(--sub);display:block;margin-bottom:6px">お名前（提出コードに記録されます）</label>
         <input id="mwName" type="text" placeholder="例：山田太郎" value="${esc(S.memberName||S.author||'')}"
@@ -2125,6 +2208,11 @@ function _showInviteWelcome(d){
         <input id="mwChapTitle" type="text" placeholder="例：はじめに" value="${esc(d.chapTitle)}"
           style="width:100%;border:1px solid var(--line-soft);padding:8px 10px;font-size:14px;box-sizing:border-box">
       </div>
+      <div id="mwStatusBar" style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff;padding:10px 20px;margin-bottom:12px;font-size:12px;flex-wrap:wrap">
+        <span id="mwStatusBadge" style="font-weight:700;color:var(--sub)">まだ保存していません</span>
+        <span id="mwSaveIndicator" style="color:var(--sub)"></span>
+      </div>
+      <div style="font-size:11px;color:var(--sub);background:#f0f4ff;border:1px solid #c8d8f8;padding:8px 12px;margin-bottom:14px;line-height:1.6">入力すると自動で保存されます。途中でこの画面を閉じても、次に開くと続きから編集できます。区切りが良いところで「下書きを保存」を押すと確実です。</div>
       <div style="font-size:12px;font-weight:700;color:var(--sub);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">どのように書きますか？</div>
       <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px">
         <div id="mwModeCardA" onclick="_mwSetMode('A')" style="background:#fff;padding:14px 18px;cursor:pointer;display:flex;align-items:center;gap:14px;transition:outline .1s,background .1s">
@@ -2208,6 +2296,10 @@ function _showInviteWelcome(d){
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/></svg>
           仕上がりをプレビューで確認する
         </button>
+        <button id="mwDraftBtn" style="width:100%;padding:13px;font-size:14px;background:#fff;border:1px solid var(--brand);cursor:pointer;font-weight:700;margin-bottom:10px;color:var(--brand-dim);display:flex;align-items:center;justify-content:center;gap:8px" onclick="_mwSaveDraftNow()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M17 21v-8H7v8M7 3v5h8" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+          下書きを保存（まだ提出しない）
+        </button>
         <button class="btn ok" style="width:100%;padding:16px;font-size:16px;font-weight:700" onclick="_mwSubmit(${d.chapIdx})">
           完成して管理者に届ける
         </button>
@@ -2215,9 +2307,18 @@ function _showInviteWelcome(d){
     </div>
   `;
   document.body.appendChild(m);
+  // 下書きの復元（保存済みモード・本文・見出し・画像・章タイトル）
+  const _dr=_mwRestoreDraft(d.chapIdx);
+  if(_dr&&_dr.mode){_mwSetMode(_dr.mode,true);_mwApplyDraftToDom(d.chapIdx);} // noScroll: まず上部の「続き」ヒーローを見せる
+  else{_mwRenderImageList();}
+  _mwUpdateStatusBadge(d.chapIdx); // 内部で _mwRenderResumeHero も呼ばれる
+  // 再入場時は必ず最上部（ヒーロー）から表示して迷子を防ぐ
+  m.scrollTop=0;
+  // 自動保存（イベント委譲で全入力をカバー）
+  m.addEventListener('input',_mwOnInput);
   setTimeout(()=>{const el=document.getElementById('mwName');if(el&&!el.value)el.focus();},100);
 }
-function _mwSetMode(mode){
+function _mwSetMode(mode,noScroll){
   window._mwMode=mode;
   ['A','B','C'].forEach(k=>{
     const panel=document.getElementById('mwPanel'+k);
@@ -2226,24 +2327,39 @@ function _mwSetMode(mode){
     if(card){card.style.outline=k===mode?'2px solid var(--brand)':'none';card.style.background=k===mode?'var(--bg-pale)':'#fff';}
   });
   const sub=document.getElementById('mwSubmitArea');if(sub)sub.style.display='block';
-  if(mode==='B'&&!(window._mwHeads||[]).length){window._mwHeads=[''];_mwRenderHeadings();}
-  const panel=document.getElementById('mwPanel'+mode);
-  if(panel)setTimeout(()=>panel.scrollIntoView({behavior:'smooth',block:'start'}),50);
+  if(mode==='B'&&!(window._mwHeads||[]).length){window._mwHeads=[''];window._mwHeadBodies=[''];_mwRenderHeadings();}
+  if(!noScroll){
+    const panel=document.getElementById('mwPanel'+mode);
+    if(panel)setTimeout(()=>panel.scrollIntoView({behavior:'smooth',block:'start'}),50);
+  }
+}
+function _mwSyncHeadsFromDom(){
+  if(!window._mwHeads)return;
+  window._mwHeadBodies=window._mwHeadBodies||[];
+  window._mwHeads.forEach((h,i)=>{
+    const hEl=document.getElementById('mwH_'+i);const bEl=document.getElementById('mwHB_'+i);
+    if(hEl)window._mwHeads[i]=hEl.value;
+    if(bEl)window._mwHeadBodies[i]=bEl.value;
+  });
 }
 function _mwAddHeading(){
   if(!window._mwHeads)window._mwHeads=[];
   if(window._mwHeads.length>=8)return;
-  window._mwHeads.push('');_mwRenderHeadings();
+  _mwSyncHeadsFromDom();
+  window._mwHeadBodies=window._mwHeadBodies||[];
+  window._mwHeads.push('');window._mwHeadBodies.push('');
+  _mwRenderHeadings();
 }
 function _mwRenderHeadings(){
   const c=document.getElementById('mwHeadingList');if(!c)return;
+  const bodies=window._mwHeadBodies||[];
   c.innerHTML=(window._mwHeads||[]).map((h,i)=>`
     <div style="margin-bottom:16px">
       <input id="mwH_${i}" value="${esc(h)}" placeholder="見出し ${i+1}（例：このセクションのタイトル）"
         style="width:100%;border:1px solid var(--line-soft);padding:6px 10px;font-size:14px;font-weight:700;box-sizing:border-box;margin-bottom:6px"
         oninput="if(window._mwHeads)window._mwHeads[${i}]=this.value">
       <textarea id="mwHB_${i}" placeholder="この見出しの本文..."
-        style="width:100%;min-height:120px;border:1px solid var(--line-soft);padding:8px 10px;font-size:14px;line-height:1.7;box-sizing:border-box;resize:vertical;font-family:inherit"></textarea>
+        style="width:100%;min-height:120px;border:1px solid var(--line-soft);padding:8px 10px;font-size:14px;line-height:1.7;box-sizing:border-box;resize:vertical;font-family:inherit">${esc(bodies[i]||'')}</textarea>
     </div>
   `).join('');
 }
@@ -2389,10 +2505,11 @@ function _mwPreview(chapIdx){
       ${_mwRenderHtml(body)}
     </div>
     <div style="padding:12px 22px;border-top:1px solid var(--line-soft);flex-shrink:0">
-      <button class="btn gray" style="width:100%;font-size:14px" onclick="document.getElementById('${mid}').remove()">閉じて編集に戻る</button>
+      <button class="btn gray" style="width:100%;font-size:14px" onclick="_dismissModal('${mid}')">閉じて編集に戻る</button>
     </div>
   </div>`;
   document.body.appendChild(modal);
+  _openModalHistory(mid,()=>{const e=document.getElementById(mid);if(e)e.remove();});
 }
 async function _mwSubmit(chapIdx){
   const nameEl=document.getElementById('mwName');
@@ -2406,10 +2523,20 @@ async function _mwSubmit(chapIdx){
   while(S.book.chapters.length<=chapIdx)S.book.chapters.push({author:'',title:'',body:''});
   const chapTitleEl=document.getElementById('mwChapTitle');
   const chapTitleInput=(chapTitleEl&&chapTitleEl.value.trim())||'';
+  // 履歴退避（最新3件・ローカルのみ・上書き事故の保険）
+  const prevBody=S.book.chapters[chapIdx].body||'';
+  if(prevBody&&prevBody!==body){
+    S.book.chapters[chapIdx].history=[{body:prevBody,at:new Date().toISOString()}].concat(S.book.chapters[chapIdx].history||[]).slice(0,3);
+  }
   S.book.chapters[chapIdx].body=body;S.book.chapters[chapIdx].author=name;
   if(chapTitleInput)S.book.chapters[chapIdx].title=chapTitleInput;
+  S.book.chapters[chapIdx].status='submitted';
+  S.book.chapters[chapIdx].submittedAt=Date.now();
+  S.book.chapters[chapIdx].images=(window._mwImages||[]).map(x=>({name:x.name||'',url:x.url||''}));
+  S.book.chapters[chapIdx].draft=_mwCollectDraft();
   save();
-  await _sbSaveChapter();
+  await _sbSaveChapter({idx:chapIdx,body:body,title:(chapTitleInput||S.book.chapters[chapIdx].title||''),author:name,status:'submitted',mode:window._mwMode||'',images:S.book.chapters[chapIdx].images,silent:true});
+  _mwUpdateStatusBadge(chapIdx);
   const chapTitle=((chapTitleInput||S.book.chapters[chapIdx].title||'').replace(/^\*+$/,'').trim())||`第${chapIdx+1}章`;
   const mid2='chapSubmitModal';const ex2=document.getElementById(mid2);if(ex2)ex2.remove();
   const modal=document.createElement('div');modal.id=mid2;
@@ -2420,15 +2547,176 @@ async function _mwSubmit(chapIdx){
     </div>
     <h3 style="margin:0 0 8px;font-size:18px">管理者に届けました！</h3>
     <p style="font-size:13px;color:var(--sub);margin:0 0 20px;line-height:1.7">「${esc(chapTitle)}」をクラウドに保存しました。<br>管理者がまとめて取り込みます。<br>後日修正したい場合はこの画面から上書き保存できます。</p>
-    <button class="btn ok" style="width:100%;font-size:14px" onclick="document.getElementById('${mid2}').remove()">閉じる</button>
+    <button class="btn ok" style="width:100%;font-size:14px" onclick="_dismissModal('${mid2}')">閉じる</button>
   </div>`;
   document.body.appendChild(modal);
+  _openModalHistory(mid2,()=>{const e=document.getElementById(mid2);if(e)e.remove();});
 }
 function _submitMemberChapter(chapIdx){_mwSubmit(chapIdx);}
+/* ---------- ライター：自動保存・下書き・復元・ステータス ---------- */
+let _mwDraftTimer=null,_mwCloudTimer=null;
+function _mwNowStr(){const d=new Date();const p=n=>String(n).padStart(2,'0');return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());}
+function _mwSetSaveIndicator(text,pending){
+  const el=document.getElementById('mwSaveIndicator');if(!el)return;
+  el.textContent=(pending?'● ':'✓ ')+text;
+  el.style.color=pending?'var(--sub)':'var(--ok)';
+}
+function _mwActiveChapIdx(){return (S._inviteData&&S._inviteData.chapIdx!=null)?S._inviteData.chapIdx:S.coauthorChap;}
+function _mwCollectDraft(){
+  _mwSyncHeadsFromDom();
+  const titleEl=document.getElementById('mwChapTitle');
+  const draft={mode:window._mwMode||'',title:titleEl?titleEl.value:'',bodyA:'',heads:[],bodyC:'',images:(window._mwImages||[]).map(x=>({name:x.name||'',url:x.url||''}))};
+  const aEl=document.getElementById('mwBodyA');if(aEl)draft.bodyA=aEl.value;
+  (window._mwHeads||[]).forEach((h,i)=>{draft.heads.push({h:h||'',b:(window._mwHeadBodies||[])[i]||''});});
+  const cEl=document.getElementById('mwBody');if(cEl)draft.bodyC=cEl.value;
+  return draft;
+}
+function _mwSaveDraftLocal(){
+  const idx=_mwActiveChapIdx();if(idx==null)return;
+  if(!S.book)S.book={chapters:[],title:''};
+  while(S.book.chapters.length<=idx)S.book.chapters.push({author:'',title:'',body:''});
+  const draft=_mwCollectDraft();
+  S.book.chapters[idx].draft=draft;
+  const hasContent=!!(draft.bodyA||draft.bodyC||(draft.heads||[]).some(h=>h.h||h.b));
+  // 本文に手が入っている＝下書き（提出済みを編集したら差し戻し扱いで下書きに戻す）
+  if(hasContent){S.book.chapters[idx].status='draft';S.book.chapters[idx].draftSavedAt=Date.now();}
+  save();
+  _mwUpdateStatusBadge(idx);
+  _mwSetSaveIndicator('自動保存しました '+_mwNowStr());
+}
+async function _mwCloudDraftSave(){
+  const idx=_mwActiveChapIdx();if(idx==null||!_sbUser)return;
+  const body=_mwGetBody();if(!body)return; // 空なら送らない
+  const draft=_mwCollectDraft();
+  const nameEl=document.getElementById('mwName');
+  const r=await _sbSaveChapter({idx:idx,body:body,title:draft.title,author:(nameEl?nameEl.value.trim():''),status:'draft',mode:draft.mode,images:draft.images,silent:true});
+  if(r&&r.ok){
+    if(!S.book)S.book={chapters:[],title:''};while(S.book.chapters.length<=idx)S.book.chapters.push({author:'',title:'',body:''});
+    S.book.chapters[idx].status='draft'; // 自動保存＝下書き（提出済みを編集したら差し戻し）
+    save();_mwUpdateStatusBadge(idx);_mwSetSaveIndicator('クラウドに自動保存 '+_mwNowStr());
+  }
+}
+function _mwOnInput(){
+  _mwSetSaveIndicator('保存中…',true);
+  if(_mwDraftTimer)clearTimeout(_mwDraftTimer);
+  _mwDraftTimer=setTimeout(_mwSaveDraftLocal,500);
+  if(_mwCloudTimer)clearTimeout(_mwCloudTimer);
+  _mwCloudTimer=setTimeout(_mwCloudDraftSave,4000);
+}
+function _mwRestoreDraft(idx){
+  // クラウド/ローカルの下書きから window 状態を復元（DOM構築前に呼ぶ）
+  const c=(S.book&&S.book.chapters&&S.book.chapters[idx])||null;
+  const d=c&&c.draft;
+  window._mwImages=(d&&Array.isArray(d.images))?d.images.map(x=>({name:x.name||'',url:x.url||''})):[];
+  if(d&&d.mode==='B'){
+    window._mwHeads=(d.heads||[]).map(x=>x.h||'');
+    window._mwHeadBodies=(d.heads||[]).map(x=>x.b||'');
+    if(!window._mwHeads.length){window._mwHeads=[''];window._mwHeadBodies=[''];}
+  }else{window._mwHeads=[];window._mwHeadBodies=[];}
+  window._mwMode=(d&&d.mode)||null;
+  return d;
+}
+function _mwApplyDraftToDom(idx){
+  const c=(S.book&&S.book.chapters&&S.book.chapters[idx])||null;
+  const d=c&&c.draft;if(!d)return;
+  const titleEl=document.getElementById('mwChapTitle');if(titleEl&&d.title)titleEl.value=d.title;
+  if(d.mode==='A'){const a=document.getElementById('mwBodyA');if(a)a.value=d.bodyA||'';}
+  if(d.mode==='B'){_mwRenderHeadings();}
+  if(d.mode==='C'){const cc=document.getElementById('mwBody');if(cc)cc.value=d.bodyC||'';}
+  _mwRenderImageList();
+}
+function _mwUpdateStatusBadge(idx){
+  const el=document.getElementById('mwStatusBadge');if(!el)return;
+  const c=(S.book&&S.book.chapters&&S.book.chapters[idx])||{};
+  const st=c.status||'';
+  if(st==='submitted'){el.textContent='✓ 提出済み';el.style.color='var(--ok)';}
+  else if(st==='draft'){el.textContent='● 下書き保存済み（未提出）';el.style.color='#b8860b';}
+  else{el.textContent='まだ保存していません';el.style.color='var(--sub)';}
+  _mwRenderResumeHero(idx); // ヒーローも同期
+}
+function _mwFmtTime(ts){if(!ts)return'';const d=new Date(ts);const p=n=>String(n).padStart(2,'0');return `${d.getMonth()+1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`;}
+function _mwCharCount(idx){
+  const c=(S.book&&S.book.chapters&&S.book.chapters[idx])||{};
+  const d=c.draft;
+  let s=c.body||'';
+  if(!s&&d){s=d.bodyC||d.bodyA||(d.heads||[]).map(h=>(h.h||'')+(h.b||'')).join('')||'';}
+  return (s||'').replace(/\s/g,'').length;
+}
+// 「おかえりなさい／続きを書く」ヒーロー（迷子防止・成功事例の resume パターン）
+function _mwRenderResumeHero(idx){
+  const el=document.getElementById('mwResumeHero');if(!el)return;
+  const c=(S.book&&S.book.chapters&&S.book.chapters[idx])||{};
+  const st=c.status||'';
+  const d=c.draft;
+  const hasWork=st==='submitted'||st==='draft'||(d&&(d.bodyA||d.bodyC||(d.heads||[]).some(h=>h.h||h.b)));
+  const title=(c.title||'').replace(/^\*+$/,'').trim()||`第${idx+1}章`;
+  const chars=_mwCharCount(idx);
+  if(!hasWork){
+    el.innerHTML=`<div style="background:#fbfaf5;border:1px dashed var(--brand);padding:16px 20px;margin-bottom:16px">
+      <div style="font-size:15px;font-weight:700;color:var(--ink);margin-bottom:4px">✍ 第${idx+1}章を書きはじめましょう</div>
+      <div style="font-size:12px;color:var(--sub);line-height:1.7">下の「どのように書きますか？」から方法を選んでください。入力すると自動で保存され、途中で閉じても次に開くと<b>ここから続き</b>を再開できます。</div>
+    </div>`;
+    return;
+  }
+  const savedAt=st==='submitted'?c.submittedAt:c.draftSavedAt;
+  const chip=st==='submitted'
+    ? `<span style="background:var(--ok-soft);color:var(--ok);font-weight:700;padding:2px 10px;border-radius:10px">✓ 提出済み</span>`
+    : `<span style="background:#fff4d6;color:#b8860b;font-weight:700;padding:2px 10px;border-radius:10px">● 下書き（未提出）</span>`;
+  el.innerHTML=`<div style="background:#fffef5;border:1px solid var(--brand);padding:18px 20px;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.05)">
+    <div style="font-size:12px;font-weight:700;color:var(--brand-dim);letter-spacing:.06em;margin-bottom:6px">おかえりなさい 👋 前回の続きです</div>
+    <div style="font-size:17px;font-weight:700;color:var(--ink);margin-bottom:10px">第${idx+1}章「${esc(title)}」</div>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:var(--sub)">
+      ${chip}
+      <span>これまで <b style="color:var(--ink)">${chars.toLocaleString()}字</b></span>
+      ${savedAt?`<span>最終保存：${_mwFmtTime(savedAt)}</span>`:''}
+    </div>
+    <button class="btn ok" style="width:100%;padding:14px;font-size:15px;font-weight:700" onclick="_mwScrollToEditor()">
+      ▶ ${st==='submitted'?'修正する（直したら再提出できます）':'続きを書く'}
+    </button>
+  </div>`;
+}
+function _mwScrollToEditor(){
+  const mode=window._mwMode;
+  let target=null,panel=null;
+  if(mode){panel=document.getElementById('mwPanel'+mode);}
+  if(mode==='A')target=document.getElementById('mwBodyA');
+  else if(mode==='B')target=document.getElementById('mwHeadingList');
+  else if(mode==='C')target=document.getElementById('mwBody');
+  const dest=panel||target||document.getElementById('mwSubmitArea')||document.getElementById('mwModeCardA');
+  if(dest&&dest.scrollIntoView)dest.scrollIntoView({behavior:'smooth',block:'start'});
+  if(target&&target.focus)setTimeout(()=>{try{target.focus();}catch(e){}},350);
+}
+async function _mwSaveDraftNow(){
+  const idx=_mwActiveChapIdx();if(idx==null)return;
+  if(!window._mwMode){alert('書き方を選んでください');return;}
+  const nameEl=document.getElementById('mwName');const name=nameEl?nameEl.value.trim():'';
+  if(name){S.memberName=name;S.author=name;}
+  const body=_mwGetBody();
+  const draft=_mwCollectDraft();
+  const btn=document.getElementById('mwDraftBtn');const orig=btn?btn.textContent:'';
+  if(btn){btn.disabled=true;btn.textContent='保存中…';}
+  _mwSaveDraftLocal();
+  if(!S.book)S.book={chapters:[],title:''};while(S.book.chapters.length<=idx)S.book.chapters.push({author:'',title:'',body:''});
+  if(body)S.book.chapters[idx].body=body;
+  if(name)S.book.chapters[idx].author=name;
+  if(draft.title)S.book.chapters[idx].title=draft.title;
+  S.book.chapters[idx].status='draft';
+  S.book.chapters[idx].draftSavedAt=Date.now();
+  S.book.chapters[idx].images=draft.images;
+  save();
+  let r={ok:false};
+  if(body)r=await _sbSaveChapter({idx:idx,body:body,title:draft.title,author:name,status:'draft',mode:draft.mode,images:draft.images,silent:true});
+  if(btn){btn.disabled=false;btn.textContent=orig;}
+  _mwUpdateStatusBadge(idx);
+  _mwSetSaveIndicator((r&&r.ok?'下書きを保存しました（クラウド） ':'この端末に保存しました ')+_mwNowStr());
+}
 function generateInviteUrl(chapIdx){
   if(!S.book)S.book={chapters:[],title:''};
   const c=S.book.chapters[chapIdx]||{};
-  const d={v:1,bookTitle:S.book.title||'',chapIdx,chapTitle:c.title||`第${chapIdx+1}章`,totalChaps:S.book.chapters.length};
+  const d={v:1,bookTitle:S.book.title||'',chapIdx,chapTitle:c.title||`第${chapIdx+1}章`,totalChaps:S.book.chapters.length,
+    projId:_activeTargetId()||'',           // 所属プロジェクト（招待元）のuser id
+    projName:S.book.title||'',              // 所属プロジェクトの書名
+    producerName:S.author||''};             // 招待したプロデューサー/オーナー名
   return location.href.split('?')[0]+'?invite=KWINV1'+encodeURIComponent(_invEnc(d));
 }
 function copyInviteUrl(i){
@@ -2620,6 +2908,17 @@ async function loadUserList(targetId){
   const myId=_sbUser?.id;
   const myRole=data.find(u=>u.id===myId)?.role||'member';
   const isOwner=myRole==='owner';
+  // ライターの所属（どのプロジェクト／プロデューサー配下か）を member_chapters から集約
+  const affMap={};
+  const mcRes=await _sb.from('member_chapters').select('user_id,book_title,producer_name');
+  if(mcRes&&!mcRes.error&&mcRes.data){
+    mcRes.data.forEach(row=>{
+      const label=(row.book_title||'').trim()+((row.producer_name||'').trim()?'（招待：'+row.producer_name.trim()+'さん）':'');
+      if(!label.trim())return;
+      if(!affMap[row.user_id])affMap[row.user_id]=new Set();
+      affMap[row.user_id].add(label);
+    });
+  }
   el.innerHTML=`
     <div style="font-size:11px;color:var(--sub);margin-bottom:10px;padding:6px 10px;background:var(--bg-alt)">
       あなたの権限：<b>${(_ROLE_CONFIG[myRole]||_ROLE_CONFIG.member).label}</b>
@@ -2638,8 +2937,17 @@ async function loadUserList(targetId){
         <option value="member">ライター</option>
       </select>`:'';
       const deleteBtn=isOwner&&!isMe&&r!=='owner'?`<button onclick="removeUser('${u.id}','${esc(u.name||'このユーザー')}')" style="font-size:11px;background:none;border:1px solid #fca5a5;color:#ef4444;padding:2px 8px;cursor:pointer;white-space:nowrap">削除</button>`:'';
+      const affList=affMap[u.id]?[...affMap[u.id]]:[];
+      const affLine=r==='member'
+        ? (affList.length
+            ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">所属：${affList.map(esc).join(' ／ ')}</div>`
+            : `<div style="font-size:11px;color:var(--muted);margin-top:2px">所属：未参加（招待URL未使用）</div>`)
+        : '';
       return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line-soft)">
-        <div style="flex:1;font-size:13px;font-weight:${isMe?'700':'400'};color:var(--ink)">${esc(u.name||'（名前未設定）')}${meTag}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:${isMe?'700':'400'};color:var(--ink)">${esc(u.name||'（名前未設定）')}${meTag}</div>
+          ${affLine}
+        </div>
         <div>${badge}</div>${changeBtn?`<div>${changeBtn}</div>`:''}${deleteBtn?`<div>${deleteBtn}</div>`:''}
       </div>`;
     }).join('')}
@@ -2684,14 +2992,33 @@ function renderCoInviteAdmin(){
   while(S.book.chapters.length<n)S.book.chapters.push({author:'',title:'',body:''});
   // 表示は常にS.people分のみ（超過分はストレージに残すが表示しない）
   const ch=S.book.chapters.slice(0,n);
+  const _chState=(c)=>{const st=c.status||'';const hasBody=!!(c.body||'').trim();if(st==='submitted'||(!st&&hasBody))return 'submitted';if(st==='draft')return 'draft';return 'none';};
+  const _stBadge={
+    submitted:'<span style="color:var(--ok);font-size:12px;font-weight:700;white-space:nowrap;flex-shrink:0">🟢 提出済み</span>',
+    draft:'<span style="color:#b8860b;font-size:12px;font-weight:700;white-space:nowrap;flex-shrink:0">🟡 書きかけ（未提出）</span>',
+    none:'<span style="color:var(--muted);font-size:12px;font-weight:700;white-space:nowrap;flex-shrink:0">⚪ 未着手</span>'
+  };
+  const cnt={submitted:0,draft:0,none:0};
+  ch.forEach(c=>{cnt[_chState(c)]++;});
   const received=ch.filter(c=>(c.body||'').trim()).length;
+  const pctDone=ch.length?Math.round(cnt.submitted/ch.length*100):0;
+  const progressSummary=`<div style="background:#fff;border:1px solid var(--line-soft);padding:12px 16px;margin-bottom:16px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <span style="font-size:13px;font-weight:700;color:var(--ink)">進捗：提出 ${cnt.submitted} ・ 書きかけ ${cnt.draft} ・ 未着手 ${cnt.none} ／ 全 ${ch.length} 章</span>
+      <span style="font-size:12px;color:var(--sub)">提出 ${pctDone}%</span>
+    </div>
+    <div style="height:8px;background:var(--bg-alt);border-radius:4px;overflow:hidden"><div style="height:100%;width:${pctDone}%;background:var(--ok);transition:width .3s"></div></div>
+  </div>`;
   const last=ch[ch.length-1];
-  const canDelete=ch.length>1&&!(last.body||'').trim();
+  const canDelete=ch.length>1&&!(last.body||'').trim()&&_chState(last)==='none';
   const chapRows=ch.map((c,i)=>{
+    const state=_chState(c);
     const hasBody=!!(c.body||'').trim();
     const cleanTitle=(c.title||'').replace(/^\*+$/,'').trim();
-    return `<div style="padding:10px 0 10px ${hasBody?'10px':'0'};border-bottom:1px solid var(--line-soft);${hasBody?'border-left:3px solid var(--ok);padding-left:12px;':''}">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+    const borderColor=state==='submitted'?'var(--ok)':state==='draft'?'#e8c060':'transparent';
+    const aff=c.affiliation&&(c.affiliation.producer||c.affiliation.book);
+    return `<div style="padding:10px 0 10px 12px;border-bottom:1px solid var(--line-soft);border-left:3px solid ${borderColor}">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
         <span style="background:var(--brand);color:#403129;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${i+1}</span>
         <input type="text" value="${esc(cleanTitle)}" placeholder="章タイトル（例：はじめに）"
           style="flex:1;border:none;border-bottom:1px solid var(--line-soft);padding:4px 6px;font-size:13px;background:transparent"
@@ -2699,9 +3026,12 @@ function renderCoInviteAdmin(){
         <input type="text" value="${esc(c.author||'')}" placeholder="担当者名"
           style="width:90px;border:none;border-bottom:1px solid var(--line-soft);padding:4px 6px;font-size:13px;background:transparent"
           oninput="S.book.chapters[${i}].author=this.value;save()">
-        ${hasBody?`<span style="color:var(--ok);font-size:12px;font-weight:700;white-space:nowrap;flex-shrink:0">✓ 受取済</span><span style="font-size:11px;color:var(--sub);white-space:nowrap">${(c.body||'').length.toLocaleString()}文字</span>${(c.images&&c.images.length)?`<span style="font-size:11px;background:#fffbeb;color:#92400e;padding:1px 6px;white-space:nowrap;flex-shrink:0">画像${c.images.length}件</span>`:''}
-          <button onclick="previewCoChapter(${i})" style="font-size:11px;background:var(--ok);color:#fff;border:none;padding:3px 10px;cursor:pointer;font-weight:700;flex-shrink:0">内容を確認</button>`:''}
+        ${_stBadge[state]}
+        ${hasBody?`<span style="font-size:11px;color:var(--sub);white-space:nowrap">${(c.body||'').length.toLocaleString()}文字</span>`:''}
+        ${(c.images&&c.images.length)?`<span style="font-size:11px;background:#fffbeb;color:#92400e;padding:1px 6px;white-space:nowrap;flex-shrink:0">画像${c.images.length}件</span>`:''}
+        ${hasBody?`<button onclick="previewCoChapter(${i})" style="font-size:11px;background:var(--ok);color:#fff;border:none;padding:3px 10px;cursor:pointer;font-weight:700;flex-shrink:0">内容を確認</button>`:''}
       </div>
+      ${aff?`<div style="font-size:11px;color:var(--muted);margin:0 0 6px 30px">所属：${esc(c.affiliation.book||'（書名未設定）')}${c.affiliation.producer?' ／ 招待：'+esc(c.affiliation.producer)+' さん':''}</div>`:''}
       <button id="invBtn_${i}" onclick="copyInviteUrl(${i})" style="background:var(--brand-soft);border:none;color:#403129;padding:4px 14px;font-size:12px;cursor:pointer;font-weight:700;display:inline-flex;align-items:center;gap:5px">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         招待URLをコピー
@@ -2720,6 +3050,7 @@ function renderCoInviteAdmin(){
       </div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:2px">章ごとにタイトルと担当者名を入れて「招待URLをコピー」→ LINEなどで送る</div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:12px">※ 同じ人が複数の章を書く場合は、担当者名に同じ名前を入力してください</div>
+      ${progressSummary}
       ${chapRows}
       <div style="display:flex;gap:8px;margin:14px 0 20px">
         <button onclick="addChapterSlot()" style="font-size:12px;padding:5px 14px;display:inline-flex;align-items:center;gap:4px;background:var(--ok-soft);color:var(--ok);border:none;font-weight:700;cursor:pointer">
