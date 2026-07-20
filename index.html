@@ -2730,8 +2730,11 @@ async function _mwSaveDraftNow(){
     else{msg='保存しました（クラウドへの反映待ち。数分後にもう一度この保存を押すと確実です）';kind='warn';}
   }else if(r&&r.reason==='no-user'){
     msg='ログインが切れているため、クラウドに保存できませんでした。一度ログアウトして、招待URLからログインし直してください。（今の内容はこの端末に残っています）';kind='err';
+  }else if(r&&r.reason==='no-idx'){
+    msg='担当章が設定されていません。招待URLから開き直してください。';kind='err';
   }else{
-    msg='この端末に保存しました（クラウド未接続）';kind='warn';
+    const detail=(r&&r.error&&(r.error.message||r.error.hint||r.error.code))?('：'+(r.error.message||'')+(r.error.code?'（'+r.error.code+'）':'')):'';
+    msg='クラウドに保存できませんでした'+detail+'（内容はこの端末に残っています）';kind='err';
   }
   _mwSetSaveIndicator(msg.replace(/^✓ /,'')+' '+_mwNowStr());
   _mwToast(msg,kind);
