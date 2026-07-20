@@ -900,9 +900,12 @@ async function _sbSaveChapter(opts){
   const bt=inv.projName||(S.book&&S.book.title)||'';
   if(bt)row.book_title=bt;
   if(inv.producerName)row.producer_name=inv.producerName;
+  const hadBookTitle=!!row.book_title;
+  let usedFallback=false;
   let {error}=await _sb.from('member_chapters').upsert(row,{onConflict:'book_id,user_id'});
   if(error){
-    // 追加列が無い旧スキーマ：既知の追加列を落として再試行（後方互換）
+    // 追加列が無い（未反映）スキーマ：既知の追加列を落として再試行（後方互換）
+    usedFallback=true;
     ['status','mode','images','project_id','book_title','producer_name'].forEach(k=>{delete row[k];});
     ({error}=await _sb.from('member_chapters').upsert(row,{onConflict:'book_id,user_id'}));
   }
@@ -912,7 +915,8 @@ async function _sbSaveChapter(opts){
     t.textContent='✓ クラウドに保存しました';document.body.appendChild(t);
     setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),400);},2000);
   }
-  return {ok:!error, error};
+  // bookTitleSaved: 本のタイトルが実際にクラウドへ記録できたか（未記録＝グループ分けされない）
+  return {ok:!error, error, bookTitle:bt, bookTitleSaved:(!error&&!usedFallback&&hadBookTitle)};
 }
 // 自分（ライター）の章をクラウドから読み込み、S.book.chapters とローカル下書きに反映（クロス端末復元）
 async function _sbLoadMyChapter(idx){
@@ -2713,7 +2717,18 @@ async function _mwSaveDraftNow(){
   if(body)r=await _sbSaveChapter({idx:idx,body:body,title:draft.title,author:name,status:'draft',mode:draft.mode,images:draft.images,silent:true});
   if(btn){btn.disabled=false;btn.textContent=orig;}
   _mwUpdateStatusBadge(idx);
-  _mwSetSaveIndicator((r&&r.ok?'下書きを保存しました（クラウド） ':'この端末に保存しました ')+_mwNowStr());
+  const projName=(S._inviteData&&S._inviteData.projName)||(S.book&&S.book.title)||'';
+  if(r&&r.ok){
+    if(r.bookTitleSaved){
+      _mwSetSaveIndicator('「'+projName+'」に保存しました '+_mwNowStr());
+    }else if(!projName){
+      _mwSetSaveIndicator('保存しました（⚠この本にタイトルが未設定のため、まとめ役の画面で分類されません）');
+    }else{
+      _mwSetSaveIndicator('保存しました（クラウド反映待ち。数分後にもう一度保存すると確実です） '+_mwNowStr());
+    }
+  }else{
+    _mwSetSaveIndicator('この端末に保存しました '+_mwNowStr());
+  }
 }
 function generateInviteUrl(chapIdx){
   if(!S.book)S.book={chapters:[],title:''};
