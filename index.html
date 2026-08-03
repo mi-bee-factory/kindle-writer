@@ -2207,7 +2207,7 @@ function processInviteParam(){
   _applyInviteData(d);
 }
 function _showInviteWelcome(d){
-  window._mwMode=null;window._mwHeads=[];
+  window._mwMode=null;window._mwHeads=[];window._mwChapIdx=d.chapIdx;
   const mid='inviteWelcomeModal';
   const ex=document.getElementById(mid);if(ex)ex.remove();
   const m=document.createElement('div');m.id=mid;
@@ -2333,6 +2333,7 @@ function _showInviteWelcome(d){
             <p style="font-size:12px;color:var(--sub);margin:4px 0">まだ画像がありません。本文に [画像：説明] を入れた場合はここに追加してください。</p>
           </div>
         </div>
+        <div id="mwEdgeImagePanel" style="margin-bottom:16px;background:#fff;padding:0 14px">${_chapEdgeImagePanelHtml('mw',d.chapIdx,S.book.chapters[d.chapIdx]||{})}</div>
         <button style="width:100%;padding:12px;font-size:14px;background:#fff;border:1px solid var(--line-soft);cursor:pointer;font-weight:700;margin-bottom:10px;color:var(--ink);display:flex;align-items:center;justify-content:center;gap:8px" onclick="_mwPreview(${d.chapIdx})">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/></svg>
           仕上がりをプレビューで確認する
@@ -2893,12 +2894,18 @@ function previewCoChapter(i){
         oninput="document.getElementById('coChapCount').textContent=this.value.length.toLocaleString()+'文字'"
       >${esc(c.body||'')}</textarea>
     </div>
+    <div id="coChapEdgeImagePanel" style="padding:0 20px;flex-shrink:0">${_chapEdgeImagePanelHtml('coreview',i,c)}</div>
     <div style="padding:12px 20px;border-top:1px solid var(--line-soft);flex-shrink:0;display:flex;gap:8px">
       <button id="coChapSaveBtn" style="display:none;flex:1;padding:10px;font-size:14px;font-weight:700;background:var(--ok);color:#fff;border:none;cursor:pointer" onclick="_coChapSave(${i})">保存する</button>
       <button class="btn gray" style="flex:1;font-size:14px" onclick="document.getElementById('${mid}').remove()">閉じる</button>
     </div>
   </div>`;
   document.body.appendChild(modal);
+}
+function _coChapRefreshEdgeImages(i){
+  const el=document.getElementById('coChapEdgeImagePanel');
+  const c=S.book&&S.book.chapters&&S.book.chapters[i];
+  if(el&&c)el.innerHTML=_chapEdgeImagePanelHtml('coreview',i,c);
 }
 function _coChapTab(tab,i){
   const prev=document.getElementById('coChapPrev');
@@ -3234,6 +3241,7 @@ function _renderSpecialChapters(){
         <button onclick="_previewSpecialChapter(${i})" style="font-size:12px;background:var(--ok);color:#fff;border:none;padding:4px 14px;cursor:pointer;font-weight:700">プレビュー</button>
       </div>
     </div>
+    ${_chapEdgeImagePanelHtml('special',i,c)}
   </div>`).join('');
 }
 function addSpecialChapter(type){
@@ -3754,6 +3762,51 @@ function insertFig(i,k){
 }
 function setCover(input){const f=input.files&&input.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{S.book.cover={data:String(r.result),mime:(f.type||'image/jpeg')};save();renderCompile();};r.readAsDataURL(f);}
 function delCover(){S.book.cover=null;save();renderCompile();}
+/* ---------- 章頭・章末の「見出しなし画像だけページ」 ---------- */
+function _chapArrFor(kind){return kind==='special'?(S.book.specialChapters||[]):(S.book.chapters||[]);}
+function _mwRefreshEdgeImages(){
+  const el=document.getElementById('mwEdgeImagePanel');
+  if(!el||window._mwChapIdx==null)return;
+  el.innerHTML=_chapEdgeImagePanelHtml('mw',window._mwChapIdx,S.book.chapters[window._mwChapIdx]||{});
+}
+function _chapEdgeRefresh(kind,i){
+  if(kind==='normal'){refreshImgPanel&&refreshImgPanel(i);}
+  else if(kind==='special'){renderCoInviteAdmin&&renderCoInviteAdmin();}
+  else if(kind==='mw'){_mwRefreshEdgeImages&&_mwRefreshEdgeImages();}
+  else if(kind==='coreview'){_coChapRefreshEdgeImages&&_coChapRefreshEdgeImages(i);}
+}
+function setChapterEdgeImage(kind,i,pos,input){
+  const f=input.files&&input.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{
+    const arr=_chapArrFor(kind);const c=arr[i];if(!c)return;
+    c[pos]={data:String(r.result),mime:(f.type||'image/jpeg')};
+    save();_chapEdgeRefresh(kind,i);
+  };
+  r.readAsDataURL(f);
+}
+function delChapterEdgeImage(kind,i,pos){
+  const arr=_chapArrFor(kind);const c=arr[i];if(!c)return;
+  c[pos]=null;save();_chapEdgeRefresh(kind,i);
+}
+function _chapEdgeImagePanelHtml(kind,i,c){
+  const mk=(pos,label)=>{
+    const img=c[pos];
+    const fnSet=`setChapterEdgeImage('${kind}',${i},'${pos}',this)`;
+    const fnDel=`delChapterEdgeImage('${kind}',${i},'${pos}')`;
+    return `<div style="flex:1;min-width:160px">
+      <div style="font-size:11px;color:var(--sub);font-weight:700;margin-bottom:4px">${label}（任意）</div>
+      ${img&&img.data?`<div style="display:flex;align-items:center;gap:6px">
+        <img src="${img.data}" style="height:48px;border:1px solid var(--line-soft);object-fit:cover">
+        <button class="btn gray" style="font-size:11px;padding:3px 8px" onclick="${fnDel}">外す</button>
+      </div>`:`<label class="btn gray" style="cursor:pointer;font-size:11px;padding:5px 10px;display:inline-flex;align-items:center;gap:4px">画像を選ぶ<input type="file" accept="image/*" style="display:none" onchange="${fnSet}"></label>`}
+    </div>`;
+  };
+  return `<div style="display:flex;gap:12px;flex-wrap:wrap;padding:8px 0;border-top:1px dashed var(--line-soft);margin-top:8px">
+    ${mk('frontImage','章の最初に入れる画像')}
+    ${mk('backImage','章の最後に入れる画像')}
+  </div>`;
+}
 function ctaSet(k,v){if(!S.book.cta)S.book.cta={};S.book.cta[k]=v;save();}
 function ctaTemplate(){if(!S.book.cta)S.book.cta={};const c=S.book.cta;c.enabled=true;if(!c.heading)c.heading='読者限定プレゼントのお知らせ';if(!c.linkText)c.linkText='LINEで読者特典を受け取る';c.body='最後までお読みいただき、ありがとうございました。\n\n本書で紹介した内容を、今日からすぐ実践できる「◯◯◯（特典名）」を、読者の方限定で無料プレゼントしています。\n\n受け取りは、下のボタン（公式LINE）にご登録いただくだけ。登録後すぐにお送りします。\n\nあなたの最初の一歩を、心から応援しています。';save();renderCompile();}
 function ctaImage(input){const f=input.files&&input.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{if(!S.book.cta)S.book.cta={};S.book.cta.image={data:String(r.result),mime:(f.type||'image/png')};save();renderCompile();};r.readAsDataURL(f);}
@@ -3862,6 +3915,24 @@ function inlineFmt(s){
     .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
     .replace(/\*([^*\n]+?)\*/g,'<em>$1</em>');
 }
+function _epubEdgeImageItemref(files,manifest,idPrefix,image){
+  if(!image||!image.data)return '';
+  const mm=image.mime||'image/jpeg',ext=(mm==='image/png')?'png':'jpg';
+  files.push({name:`OEBPS/images/${idPrefix}.${ext}`,bytes:b64B((image.data.split(',')[1]||''))});
+  manifest.push(`<item id="${idPrefix}-img" href="images/${idPrefix}.${ext}" media-type="${mm}"/>`);
+  files.push({name:`OEBPS/${idPrefix}.xhtml`,bytes:sB(`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title></title><style>html,body{margin:0;padding:0;}img{max-width:100%;height:auto;display:block;margin:0 auto;}</style></head><body><figure style="margin:0"><img src="images/${idPrefix}.${ext}" alt=""/></figure></body></html>`)});
+  manifest.push(`<item id="${idPrefix}" href="${idPrefix}.xhtml" media-type="application/xhtml+xml"/>`);
+  return `<itemref idref="${idPrefix}"/>`;
+}
+function _epubBuildSpecialChapterXhtml(c){
+  const heading=escXml((c.title||'').trim()||_SPECIAL_LABELS[c.type]||'');
+  const body=(c.body||'').replace(/，/g,'、').replace(/．/g,'。').split(/\n/).map(l=>{l=l.trim();
+    if(!l)return '';
+    if(/^-{3,}$/.test(l))return '<p style="margin:2.5em 0;text-indent:0">&nbsp;</p>';
+    if(l.startsWith('■'))return `<h2>${inlineFmt(escXml(l.replace(/^■\s*/,'')))}</h2>`;
+    return `<p>${inlineFmt(escXml(l))}</p>`;}).filter(x=>x).join('\n');
+  return {heading,xhtml:`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>${heading}</title><link rel="stylesheet" type="text/css" href="style.css"/></head><body><h1>${heading}</h1>\n${body}</body></html>`};
+}
 function buildEpub(){
   const ch=S.book.chapters.filter(c=>(c.body||'').trim());
   const title=S.book.title||'無題';
@@ -3894,8 +3965,27 @@ function buildEpub(){
     titlePageSpine='<itemref idref="titlepage"/>';
     navli.push(`<li><a href="titlepage.xhtml">表題紙</a></li>`);
   }
+  const specialCh=(S.book.specialChapters||[]).filter(c=>(c.body||'').trim());
+  const specialFront=specialCh.filter(c=>c.type==='hajimeni'||c.type==='prologue');
+  const specialBack=specialCh.filter(c=>!(c.type==='hajimeni'||c.type==='prologue'));
+  let spN=0;
+  const _pushSpecialChapter=(c)=>{
+    spN++;const id='sp'+spN;
+    const frontRef=_epubEdgeImageItemref(files,manifest,id+'-front',c.frontImage);
+    if(frontRef)spine.push(frontRef);
+    const {heading,xhtml}=_epubBuildSpecialChapterXhtml(c);
+    files.push({name:'OEBPS/'+id+'.xhtml',bytes:sB(xhtml)});
+    manifest.push(`<item id="${id}" href="${id}.xhtml" media-type="application/xhtml+xml"/>`);
+    spine.push(`<itemref idref="${id}"/>`);
+    navli.push(`<li><a href="${id}.xhtml">${heading}</a></li>`);
+    const backRef=_epubEdgeImageItemref(files,manifest,id+'-back',c.backImage);
+    if(backRef)spine.push(backRef);
+  };
+  specialFront.forEach(_pushSpecialChapter);
   ch.forEach((c,i)=>{
     const id='ch'+(i+1),imgs=c.images||[];
+    const frontRef=_epubEdgeImageItemref(files,manifest,id+'-front',c.frontImage);
+    if(frontRef)spine.push(frontRef);
     imgs.forEach((im,k)=>{imgN++;const ext=(im.mime==='image/png')?'png':'jpg';const fn='img'+imgN+'.'+ext;
       files.push({name:'OEBPS/images/'+fn,bytes:b64B((im.data.split(',')[1]||''))});
       manifest.push(`<item id="img${imgN}" href="images/${fn}" media-type="${im.mime}"/>`);
@@ -3917,7 +4007,11 @@ function buildEpub(){
     files.push({name:'OEBPS/'+id+'.xhtml',bytes:sB(xhtml)});
     manifest.push(`<item id="${id}" href="${id}.xhtml" media-type="application/xhtml+xml"/>`);
     spine.push(`<itemref idref="${id}"/>`);
-    navli.push(`<li><a href="${id}.xhtml">${chapH1Text}</a></li>`);});
+    navli.push(`<li><a href="${id}.xhtml">${chapH1Text}</a></li>`);
+    const backRef=_epubEdgeImageItemref(files,manifest,id+'-back',c.backImage);
+    if(backRef)spine.push(backRef);
+  });
+  specialBack.forEach(_pushSpecialChapter);
   if(ctaOn){
     let cimg='';
     if(cta.image&&cta.image.data){const cmm=cta.image.mime||'image/png',ce=(cmm==='image/png')?'png':'jpg';
@@ -5238,6 +5332,7 @@ function renderChapImgPanelHtml(i){
         ondragleave="this.classList.remove('active')"
         ondrop="chapDropImage(event,${i})">ドラッグ＆ドロップでも追加できます</div>
     </div>
+    ${_chapEdgeImagePanelHtml('normal',i,S.book.chapters[i])}
   </div>`;
 }
 
