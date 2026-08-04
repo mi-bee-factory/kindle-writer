@@ -1017,12 +1017,13 @@ async function _sbSaveChapter(opts){
   if(inv.producerName)row.producer_name=inv.producerName;
   const hadBookTitle=!!row.book_title;
   let usedFallback=false;
-  let {error}=await _sb.from('member_chapters').upsert(row,{onConflict:'book_id,user_id'});
+  // 一意制約は (book_id,user_id,chapter_index)。1人が複数章を担当しても章ごとに別行で保存される。
+  let {error}=await _sb.from('member_chapters').upsert(row,{onConflict:'book_id,user_id,chapter_index'});
   if(error){
     // 追加列が無い（未反映）スキーマ：既知の追加列を落として再試行（後方互換）
     usedFallback=true;
     ['status','mode','images','project_id','book_title','producer_name'].forEach(k=>{delete row[k];});
-    ({error}=await _sb.from('member_chapters').upsert(row,{onConflict:'book_id,user_id'}));
+    ({error}=await _sb.from('member_chapters').upsert(row,{onConflict:'book_id,user_id,chapter_index'}));
   }
   if(!error&&!opts.silent){
     const t=document.createElement('div');
