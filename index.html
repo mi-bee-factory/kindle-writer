@@ -1113,7 +1113,13 @@ async function _checkPendingSubmissions(){
     const local=S.book&&S.book.chapters&&S.book.chapters[i];
     const localTs=local&&local.cloudUpdatedAt?new Date(local.cloudUpdatedAt).getTime():0;
     const rowTs=row.updated_at?new Date(row.updated_at).getTime():0;
-    if(rowTs>localTs)pending++;
+    const rowBadge=document.getElementById('chPendingBadge_'+i);
+    if(rowTs>localTs){
+      pending++;
+      if(rowBadge)rowBadge.innerHTML=`<span style="background:#ef4444;color:#fff;border-radius:8px;font-size:10px;font-weight:800;padding:2px 7px;white-space:nowrap;animation:pulseBadge 1.4s infinite">🔴 新しい更新あり</span>`;
+    }else if(rowBadge){
+      rowBadge.innerHTML='';
+    }
   });
   if(pending>0){
     badge.innerHTML=`<span style="background:#ef4444;color:#fff;border-radius:10px;font-size:11px;font-weight:800;padding:2px 8px;display:inline-block;animation:pulseBadge 1.4s infinite">NEW ${pending}件</span>`;
@@ -3365,7 +3371,8 @@ function renderCoInviteAdmin(){
   };
   const cnt={submitted:0,draft:0,admin:0,none:0};
   ch.forEach(c=>{cnt[_chState(c)]++;});
-  const received=ch.filter(c=>(c.body||'').trim()).length;
+  // 「受取済」は提出済み・管理者作成のみ（書きかけ＝未提出はカウントしない）
+  const received=cnt.submitted+cnt.admin;
   const pctDone=ch.length?Math.round(cnt.submitted/ch.length*100):0;
   const progressSummary=`<div style="background:#fff;border:1px solid var(--line-soft);padding:12px 16px;margin-bottom:16px">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px">
@@ -3392,6 +3399,7 @@ function renderCoInviteAdmin(){
           style="width:90px;border:none;border-bottom:1px solid var(--line-soft);padding:4px 6px;font-size:13px;background:transparent"
           oninput="S.book.chapters[${i}].author=this.value;_markChapterEdited(${i},['author']);save()">
         ${_stBadge[state]}${_editBadge(c)}
+        <span id="chPendingBadge_${i}"></span>
         ${hasBody?`<span style="font-size:11px;color:var(--sub);white-space:nowrap">${(c.body||'').length.toLocaleString()}文字</span>`:''}
         ${(c.images&&c.images.length)?`<span style="font-size:11px;background:#fffbeb;color:#92400e;padding:1px 6px;white-space:nowrap;flex-shrink:0">画像${c.images.length}件</span>`:''}
         ${hasBody?`<button onclick="previewCoChapter(${i})" style="font-size:11px;background:var(--ok);color:#fff;border:none;padding:3px 10px;cursor:pointer;font-weight:700;flex-shrink:0">内容を確認</button>`:''}
