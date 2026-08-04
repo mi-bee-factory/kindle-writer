@@ -159,6 +159,8 @@
   @keyframes heroSlide{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
   @keyframes popIn{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:scale(1)}}
   @keyframes underlineGrow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+  @keyframes pulseBtn{0%,100%{filter:brightness(1)}50%{filter:brightness(1.15)}}
+  @keyframes pulseBadge{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
   .hero-content{animation:heroSlide .4s ease both}
   .hero-eyebrow{animation:fadeUp .35s .06s ease both}
   .hero-title{animation:fadeUp .35s .12s ease both}
@@ -988,6 +990,31 @@ async function fetchChaptersFromSupabase(){
   t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:10px 22px;font-size:14px;font-weight:700;z-index:10010;pointer-events:none;opacity:1;transition:opacity .4s';
   t.textContent=`✓ ${n}件を取得（提出 ${nSub}・書きかけ ${nDraft}）`;document.body.appendChild(t);
   setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),400);},2500);
+}
+async function _checkPendingSubmissions(){
+  if(!_sbUser)return;
+  const {data,error}=await _sb.from('member_chapters').select('chapter_index,updated_at').eq('book_id',BOOK_ID);
+  const badge=document.getElementById('sbFetchBadge');
+  const btn=document.getElementById('sbFetchBtn');
+  if(!badge||!btn)return;
+  if(error||!data){badge.innerHTML='';btn.style.background='';btn.style.animation='';return;}
+  let pending=0;
+  data.forEach(row=>{
+    const i=row.chapter_index||0;
+    const local=S.book&&S.book.chapters&&S.book.chapters[i];
+    const localTs=local&&local.cloudUpdatedAt?new Date(local.cloudUpdatedAt).getTime():0;
+    const rowTs=row.updated_at?new Date(row.updated_at).getTime():0;
+    if(rowTs>localTs)pending++;
+  });
+  if(pending>0){
+    badge.innerHTML=`<span style="background:#ef4444;color:#fff;border-radius:10px;font-size:11px;font-weight:800;padding:2px 8px;display:inline-block;animation:pulseBadge 1.4s infinite">NEW ${pending}件</span>`;
+    btn.style.background='#ef4444';
+    btn.style.animation='pulseBtn 1.4s infinite';
+  }else{
+    badge.innerHTML='';
+    btn.style.background='';
+    btn.style.animation='';
+  }
 }
 
 /* ---------- データ ---------- */
@@ -3182,7 +3209,10 @@ function renderCoInviteAdmin(){
         <div style="background:var(--ok-soft);padding:14px 16px;margin-bottom:14px">
           <div style="font-size:12px;font-weight:700;color:var(--ok);margin-bottom:6px">クラウドで自動受け取り</div>
           <p style="font-size:12px;color:var(--sub);margin:0 0 10px;line-height:1.6">メンバーが「クラウドに保存」すると、このボタンで最新の原稿をまとめて取り込めます。</p>
-          <button id="sbFetchBtn" class="btn ok" onclick="fetchChaptersFromSupabase()" style="font-size:13px;padding:8px 20px">メンバーの最新原稿を取り込む</button>
+          <button id="sbFetchBtn" class="btn ok" onclick="fetchChaptersFromSupabase()" style="font-size:13px;padding:8px 20px;display:inline-flex;align-items:center;gap:8px;position:relative">
+            メンバーの最新原稿を取り込む
+            <span id="sbFetchBadge"></span>
+          </button>
         </div>
       </div>
       ${received>0?`<div style="margin-top:4px;padding:14px 16px;background:var(--ok-soft)">
@@ -3213,6 +3243,7 @@ function renderCoInviteAdmin(){
       <button onclick="_sbLoadProjectData().then(ok=>{const t=document.createElement('div');t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:8px 20px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none';t.textContent=ok?'✓ クラウドから読み込みました':'データがありません';document.body.appendChild(t);setTimeout(()=>t.remove(),2000);})" style="font-size:12px;background:#fff;color:var(--ok);border:none;padding:5px 14px;cursor:pointer;font-weight:700">↓ クラウドから取得</button>
     </div>
   `;
+  _checkPendingSubmissions();
 }
 const _SPECIAL_LABELS={hajimeni:'はじめに',prologue:'プロローグ',atogaki:'あとがき',owarini:'おわりに',custom:'その他'};
 function _renderSpecialChapters(){
