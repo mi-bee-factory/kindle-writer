@@ -2556,6 +2556,11 @@ function _showInviteWelcome(d){
         <div style="font-size:11px;color:var(--sub);margin-bottom:12px">見出し欄に入力した内容は <b>■ 見出し</b> として太字で表示されます</div>
         <div id="mwHeadingList"></div>
         <button style="background:none;border:1px dashed var(--brand);color:var(--brand-dim);padding:8px 16px;font-size:13px;cursor:pointer;width:100%;font-weight:700;margin-top:4px" onclick="_mwAddHeading()">＋ 見出しを追加</button>
+        <div style="font-size:11px;color:var(--sub);padding:8px;background:#F3F2EE;margin-top:10px">
+          <div style="margin-bottom:6px;color:#403129">書き終えたら、句読点をそろえて読みやすい段落に整えられます</div>
+          <button onclick="_mwTidyAllHeadings()" style="font-size:12px;background:var(--ok);border:none;color:#fff;padding:6px 14px;cursor:pointer;font-weight:700">✨ すべての本文を読みやすく整える</button>
+          <div id="mwTidyHintB"></div>
+        </div>
       </div>
       <div id="mwPanelC" style="display:none;background:#fff;padding:16px 20px;margin-bottom:16px">
         <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px">章の本文を貼り付ける</div>
@@ -2757,16 +2762,81 @@ function _mwRenderImageList(){
 }
 function _mwInsertToolbar(taId){
   const btnStyle='font-size:12px;background:#f5a623;border:none;color:#fff;padding:6px 14px;cursor:pointer;font-weight:700;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;transition:filter .15s,transform .15s';
+  // 整えるボタンは「入力」ではなく「本文全体を書き換える」操作なので、色を分けて区別する
+  const tidyStyle='font-size:12px;background:var(--ok);border:none;color:#fff;padding:6px 14px;cursor:pointer;font-weight:700;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;transition:filter .15s,transform .15s';
   const hover='onmouseover="this.style.filter=\'brightness(1.08)\';this.style.transform=\'translateY(-1px)\'" onmouseout="this.style.filter=\'\';this.style.transform=\'\'"';
   return `<div style="font-size:11px;color:var(--sub);padding:8px;background:#F3F2EE;margin-top:6px">
-    <div style="margin-bottom:6px;color:#403129">ボタンを押すとカーソル位置に自動で入ります（自分で記号を打つ必要はありません）</div>
+    <div style="margin-bottom:6px;color:#403129">オレンジのボタンはカーソル位置に入ります（自分で記号を打つ必要はありません）。緑の「読みやすく整える」は本文全体の句読点をそろえ、文の切れ目で改行します（元に戻せます）。</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
       <button onclick="_mwInsertHeading('${taId}')" style="${btnStyle}" ${hover}>■ 見出しを追加</button>
       <button onclick="_mwInsertBold('${taId}')" style="${btnStyle}" ${hover}>太字にする</button>
       <button onclick="_mwInsertDivider('${taId}')" style="${btnStyle}" ${hover}>－ 区切りを入れる</button>
       <button onclick="_mwInsertImage('${taId}')" style="${btnStyle}" ${hover}>画像位置を挿入</button>
+      <button onclick="_mwTidyText('${taId}')" style="${tidyStyle}" ${hover} title="句読点をそろえ、文の切れ目で改行して段落に分けます">✨ 読みやすく整える</button>
     </div>
   </div>`;
+}
+// 本文を読みやすく整える（元に戻せるよう、直前の内容を1回分だけ保持する）
+const _mwTidyUndo={};
+function _mwTidyText(taId){
+  const ta=document.getElementById(taId);if(!ta)return;
+  const before=ta.value||'';
+  if(!before.trim()){alert('先に本文を入力してください。');return;}
+  const after=tidyBodyText(before);
+  if(after===before.trim()){
+    _mwFlashHint(taId,'すでに整っています');
+    return;
+  }
+  _mwTidyUndo[taId]=before;
+  ta.value=after;
+  ta.dispatchEvent(new Event('input'));
+  _mwExpandTA&&_mwExpandTA(ta);
+  _mwFlashHint(taId,'整えました',true);
+}
+function _mwUndoTidy(taId){
+  const ta=document.getElementById(taId);if(!ta||_mwTidyUndo[taId]==null)return;
+  ta.value=_mwTidyUndo[taId];
+  delete _mwTidyUndo[taId];
+  ta.dispatchEvent(new Event('input'));
+  _mwExpandTA&&_mwExpandTA(ta);
+  const h=document.getElementById('mwTidyHint_'+taId);if(h)h.remove();
+}
+// 見出しモード（B）：各セクションの本文をまとめて整える
+let _mwTidyUndoB=null;
+function _mwTidyAllHeadings(){
+  const hint=document.getElementById('mwTidyHintB');
+  const els=[];
+  (window._mwHeads||[]).forEach((h,i)=>{const el=document.getElementById('mwHB_'+i);if(el)els.push(el);});
+  if(!els.length){if(hint)hint.innerHTML='<div style="font-size:12px;color:var(--sub);margin-top:6px">先に見出しと本文を追加してください。</div>';return;}
+  const before=els.map(el=>el.value);
+  const after=before.map(v=>tidyBodyText(v));
+  const changed=after.some((v,i)=>v!==(before[i]||'').trim());
+  if(!changed){if(hint)hint.innerHTML='<div style="font-size:12px;color:var(--ok);margin-top:6px">✓ すでに整っています</div>';return;}
+  _mwTidyUndoB=before;
+  els.forEach((el,i)=>{el.value=after[i];});
+  // 内部の下書き配列にも反映してから保存を走らせる
+  _mwSyncHeadsFromDom&&_mwSyncHeadsFromDom();
+  els[0].dispatchEvent(new Event('input'));
+  if(hint)hint.innerHTML=`<div style="font-size:12px;color:var(--ok);background:var(--ok-soft);padding:6px 10px;margin-top:6px;display:flex;align-items:center;justify-content:space-between;gap:8px"><span>✓ ${els.length}か所を整えました</span><button onclick="_mwUndoTidyAllHeadings()" style="font-size:11px;background:none;border:1px solid var(--ok);color:var(--ok);padding:3px 10px;cursor:pointer;font-weight:700">元に戻す</button></div>`;
+}
+function _mwUndoTidyAllHeadings(){
+  if(!_mwTidyUndoB)return;
+  (window._mwHeads||[]).forEach((h,i)=>{const el=document.getElementById('mwHB_'+i);if(el&&_mwTidyUndoB[i]!=null)el.value=_mwTidyUndoB[i];});
+  _mwTidyUndoB=null;
+  _mwSyncHeadsFromDom&&_mwSyncHeadsFromDom();
+  const first=document.getElementById('mwHB_0');if(first)first.dispatchEvent(new Event('input'));
+  const hint=document.getElementById('mwTidyHintB');if(hint)hint.innerHTML='';
+}
+function _mwFlashHint(taId,msg,withUndo){
+  const ta=document.getElementById(taId);if(!ta)return;
+  const id='mwTidyHint_'+taId;
+  const ex=document.getElementById(id);if(ex)ex.remove();
+  const box=document.createElement('div');
+  box.id=id;
+  box.style.cssText='font-size:12px;color:var(--ok);background:var(--ok-soft);padding:6px 10px;margin-top:6px;display:flex;align-items:center;justify-content:space-between;gap:8px';
+  box.innerHTML=`<span>✓ ${esc(msg)}</span>`+(withUndo?`<button onclick="_mwUndoTidy('${taId}')" style="font-size:11px;background:none;border:1px solid var(--ok);color:var(--ok);padding:3px 10px;cursor:pointer;font-weight:700">元に戻す</button>`:'');
+  ta.parentNode.insertBefore(box,ta.nextSibling);
+  if(!withUndo)setTimeout(()=>{const e=document.getElementById(id);if(e)e.remove();},2500);
 }
 function _mwRenderHtml(text){
   if(!text)return '<p style="color:#aaa">（本文がありません）</p>';
@@ -3920,11 +3990,32 @@ function kw(){const base=(S.theme||'').replace(/[、。]/g,' ').split(/\s+/).fil
   return (base.length?base:['副業','初心者','在宅','スマホ']).join('／');}
 function toggleHookEdit(){const el=document.getElementById('hookEdit');if(el)el.style.display=document.getElementById('chkHook').checked?'block':'none';}
 function toggleCtaEdit(){const el=document.getElementById('ctaEdit');if(el)el.style.display=document.getElementById('chkCta').checked?'block':'none';}
-function runConvert(){
-  let txt=(S.body||'').trim();
+/* 句読点・記号の統一と、スマホで読みやすい改行・段落への整形。
+   管理者の「変換」画面とライターの編集画面の両方から使う共通処理。
+   見出し（■）・区切り（---）・画像タグ（[図N] [画像：…]）の行はそのまま保持する。 */
+function tidyBodyText(src){
+  let txt=(src||'').trim();
+  if(!txt)return '';
   txt=txt.replace(/，/g,'、').replace(/．/g,'。').replace(/!/g,'！').replace(/\?/g,'？')
          .replace(/、+/g,'、').replace(/。+/g,'。').replace(/[ \t]+/g,' ');
-  const read=txt.split(/\n+/).map(p=>p.trim()).filter(Boolean).map(p=>p.replace(/。/g,'。\n').trim()).join('\n\n');
+  // そのまま残す行（見出し・区切り・画像の位置指定）
+  const keepAsIs=(l)=>/^■/.test(l)||/^-{3,}$/.test(l)||/^\[図\d+\]$/.test(l)||/^\[画像[：:].+?\]$/.test(l)||/^[<＜]図/.test(l);
+  // 空行（2つ以上の改行）で段落に分ける。段落内の単なる改行は結合してから整え直すので、
+  // 何度押しても結果が変わらない（押すたびに行間が広がらない）。
+  return txt.split(/\n{2,}/).map(block=>{
+    const lines=block.split(/\n/).map(l=>l.trim()).filter(Boolean);
+    if(!lines.length)return '';
+    // 見出し・区切り・画像タグを含むブロックは、行ごとに独立した段落として扱う
+    if(lines.some(keepAsIs)){
+      return lines.map(l=>keepAsIs(l)?l:l.replace(/。(?=.)/g,'。\n').trim()).join('\n\n');
+    }
+    // 通常の段落：いったん1行に戻してから、文の切れ目で改行する
+    const joined=lines.join('');
+    return joined.replace(/。(?=.)/g,'。\n').trim();
+  }).filter(Boolean).join('\n\n');
+}
+function runConvert(){
+  const read=tidyBodyText(S.body);
   const useHook=document.getElementById('chkHook')?.checked;
   const useCta=document.getElementById('chkCta')?.checked;
   const hookTxt=(document.getElementById('hookText')?.value||'').trim()||`【この章でわかること】${S.goal||S.theme||'読み終えたら、次の一歩がはっきりします'}。`;
