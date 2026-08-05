@@ -4341,16 +4341,28 @@ function buildEpub(){
     const id='ch'+(i+1),imgs=c.images||[];
     const frontRef=_epubEdgeImageItemref(files,manifest,id+'-front',c.frontImage);
     if(frontRef)spine.push(frontRef);
-    imgs.forEach((im,k)=>{imgN++;const ext=(im.mime==='image/png')?'png':'jpg';const fn='img'+imgN+'.'+ext;
-      files.push({name:'OEBPS/images/'+fn,bytes:b64B((im.data.split(',')[1]||''))});
-      manifest.push(`<item id="img${imgN}" href="images/${fn}" media-type="${im.mime}"/>`);
-      im._tag=`<figure><img src="images/${fn}" alt="図${k+1}"/>${im.caption?`<figcaption>${escXml(im.caption)}</figcaption>`:''}</figure>`;});
+    imgs.forEach((im,k)=>{
+      if(im&&im.data){
+        // 実データを持つ画像（管理者・アップロード画面からの添付）→ そのまま埋め込む
+        imgN++;const ext=(im.mime==='image/png')?'png':'jpg';const fn='img'+imgN+'.'+ext;
+        files.push({name:'OEBPS/images/'+fn,bytes:b64B((im.data.split(',')[1]||''))});
+        manifest.push(`<item id="img${imgN}" href="images/${fn}" media-type="${im.mime}"/>`);
+        im._tag=`<figure><img src="images/${fn}" alt="図${k+1}"/>${im.caption?`<figcaption>${escXml(im.caption)}</figcaption>`:''}</figure>`;
+      }else if(im&&im.url){
+        // 招待URL経由のライターが登録したリンクのみの画像（実データが無い）→ リンクとして表示する
+        im._tag=`<p style="text-indent:0">🖼 ${escXml(im.name||'画像')}：<a href="${escXml(im.url)}">${escXml(im.url)}</a></p>`;
+      }else{
+        im._tag='';
+      }
+    });
     const placed=new Set();
     let body=(c.body||'').replace(/，/g,'、').replace(/．/g,'。').split(/\n/).map(l=>{l=l.trim();
       if(!l)return '';
       if(/^-{3,}$/.test(l))return '<p style="margin:2.5em 0;text-indent:0">&nbsp;</p>';
       const m=l.match(/^\[図(\d+)\]$/);if(m){const k=parseInt(m[1])-1;const im=imgs[k];if(im){placed.add(k);return im._tag;}return '';}
       const mf=l.match(/^[<＜]図[：:](.+?)[>＞]$|^[<＜]図[>＞]$/);if(mf){const cap=(mf[1]||'').trim();const k=cap?imgs.findIndex((im,idx)=>!placed.has(idx)&&im.caption.trim()===cap):imgs.findIndex((_,idx)=>!placed.has(idx));if(k>=0){placed.add(k);return imgs[k]._tag;}return '';}
+      // ライター画面の「画像位置を挿入」ボタンが入れるタグ：[画像：説明]
+      const mw=l.match(/^\[画像[：:](.+?)\]$/);if(mw){const desc=(mw[1]||'').trim();const k=desc?imgs.findIndex((im,idx)=>!placed.has(idx)&&(im.name||'').trim()===desc):imgs.findIndex((_,idx)=>!placed.has(idx));if(k>=0){placed.add(k);return imgs[k]._tag;}return `<p style="text-indent:0">🖼 ${escXml(desc||'画像')}（未登録）</p>`;}
       if(l.startsWith('■'))return `<h2>${inlineFmt(escXml(l.replace(/^■\s*/,'')))}</h2>`;
       return `<p>${inlineFmt(escXml(l))}</p>`;}).filter(x=>x).join('\n');
     imgs.forEach((im,k)=>{if(!placed.has(k))body+='\n'+im._tag;});
