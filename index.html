@@ -844,11 +844,13 @@ function _markChapterEdited(i,fields){
   }
 }
 /* ---------- 章の状態判定（全画面でこれを使う。個別に「本文があれば完成」と判定しないこと） ---------- */
-// 戻り値: 'submitted'（ライターが提出済み）/ 'draft'（書きかけ・未提出）/ 'admin'（管理者が作成）/ 'none'（未着手）
+// 戻り値: 'submitted'（提出済み）/ 'revise'（管理者が修正を依頼中）/ 'draft'（書きかけ・未提出）
+//         / 'admin'（管理者が作成）/ 'none'（未着手）
 function chState(c){
   c=c||{};
   const st=c.status||'';
   const hasBody=!!(c.body||'').trim();
+  if(st==='revise')return 'revise';
   if(st==='submitted')return 'submitted';
   if(st==='draft')return 'draft';
   if(st==='admin')return 'admin';
@@ -857,12 +859,14 @@ function chState(c){
   if(c.submittedAt||c.affiliation||c.cloudUpdatedAt)return 'submitted';
   return 'admin';
 }
-// 「本として仕上がっているか」＝提出済み または 管理者が作成。書きかけは含めない。
+// 「本として仕上がっているか」＝提出済み または 管理者が作成。
+// 書きかけと、修正を依頼して返事待ちのものは含めない。
 function chIsDone(c){const s=chState(c);return s==='submitted'||s==='admin';}
 // 本文が1文字でもあるか（遷移分岐・文字数表示など、状態を問わない判定に使う）
 function chHasBody(c){return !!((c&&c.body)||'').trim();}
 const CH_STATE_META={
   submitted:{icon:'🟢',label:'提出済み',color:'var(--ok)'},
+  revise:{icon:'🔁',label:'修正を依頼中（返事待ち）',color:'#c2410c'},
   draft:{icon:'🟡',label:'書きかけ（未提出）',color:'#b8860b'},
   admin:{icon:'✏️',label:'管理者が作成',color:'var(--brand-dim)'},
   none:{icon:'⚪',label:'未着手',color:'var(--muted)'}
@@ -1158,7 +1162,7 @@ async function fetchChaptersFromSupabase(){
   if(!S.book)S.book={chapters:[],title:'',subtitle:'',desc:'',keywords:'',cats:'',manuscript:''};
   const rows=_filterRowsForActiveProject(data);
   if(!rows.length){alert('このプロジェクトに紐づく原稿はまだありません。');return;}
-  let n=0,nSub=0,nDraft=0,nKept=0;
+  let n=0,nSub=0,nDraft=0,nKept=0,nWait=0,nRevised=0;
   rows.forEach(row=>{
     const i=row.chapter_index||0;
     while(S.book.chapters.length<=i)S.book.chapters.push({author:'',title:'',body:''});
@@ -1170,19 +1174,30 @@ async function fetchChaptersFromSupabase(){
     const merged=_mergeChapter(prev,{title:row.chapter_title,body:cloudBody,author:row.author_name},rowTs);
     if(prev.title&&merged.title!==row.chapter_title)nKept++;
     else if(prev.body&&merged.body!==cloudBody)nKept++;
+    // 修正を依頼した章は、ライターが依頼より後に保存し直すまで「修正依頼中」を保つ。
+    // （依頼前の古い提出を取り込んで、依頼が消えてしまうのを防ぐ）
+    const waitingRevise=prev.status==='revise'&&rowTs<=(prev.reviseRequestedAt||0);
+    const nextStatus=waitingRevise?'revise':(st||prev.status||'');
     S.book.chapters[i]={...prev,...merged,
       title:merged.title||`第${i+1}章`,
-      status:st||prev.status||'',
+      status:nextStatus,
       cloudUpdatedAt:row.updated_at||prev.cloudUpdatedAt||'',
       affiliation:{book:row.book_title||'',producer:row.producer_name||'',projId:row.project_id||''}
     };
-    if(st==='submitted')nSub++;else if(st==='draft')nDraft++;
+    // ライターが応答した（依頼より後に保存された）ら、依頼メモを片付ける
+    if(prev.status==='revise'&&!waitingRevise){
+      delete S.book.chapters[i].reviseNote;
+      delete S.book.chapters[i].reviseRequestedAt;
+      nRevised++;
+    }
+    if(waitingRevise)nWait++;
+    else if(st==='submitted')nSub++;else if(st==='draft')nDraft++;
     n++;
   });
   save();renderCoInviteAdmin();
   const t=document.createElement('div');
   t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:10px 22px;font-size:14px;font-weight:700;z-index:10010;pointer-events:none;opacity:1;transition:opacity .4s';
-  t.textContent=`✓ ${n}件を取得（提出 ${nSub}・書きかけ ${nDraft}）${nKept?`／あなたの編集 ${nKept}件を保持`:''}`;document.body.appendChild(t);
+  t.textContent=`✓ ${n}件を取得（提出 ${nSub}・書きかけ ${nDraft}${nWait?`・修正依頼中 ${nWait}`:''}${nRevised?`・修正が届いた ${nRevised}`:''}）${nKept?`／あなたの編集 ${nKept}件を保持`:''}`;document.body.appendChild(t);
   setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),400);},2800);
 }
 let _pendingCheckGen=0;
@@ -3001,6 +3016,7 @@ function _mwUpdateStatusBadge(idx){
   const c=(S.book&&S.book.chapters&&S.book.chapters[idx])||{};
   const st=chState(c);
   if(st==='submitted'){el.textContent='✓ 提出済み';el.style.color='var(--ok)';}
+  else if(st==='revise'){el.textContent='🔁 管理者から修正の依頼があります';el.style.color='#c2410c';}
   else if(st==='draft'){el.textContent='● 下書き保存済み（未提出）';el.style.color='#b8860b';}
   else if(st==='admin'){el.textContent='✏️ 管理者が作成した章';el.style.color='var(--brand-dim)';}
   else{el.textContent='まだ保存していません';el.style.color='var(--sub)';}
@@ -3014,6 +3030,15 @@ function _mwCharCount(idx){
   if(!s&&d){s=d.bodyC||d.bodyA||(d.heads||[]).map(h=>(h.h||'')+(h.b||'')).join('')||'';}
   return (s||'').replace(/\s/g,'').length;
 }
+// 修正依頼を受けて書き直している間、依頼内容を控えめに出し続けるための表示
+function _mwReviseReminderHtml(c){
+  c=c||{};
+  return `<div style="background:#fffbf5;border:1px solid #fdba74;padding:12px 16px;margin-bottom:16px">
+    <div style="font-size:13px;font-weight:700;color:#7c2d12;margin-bottom:4px">🔁 修正の依頼（作業中）</div>
+    ${c.reviseNote?`<div style="font-size:12px;color:#7c2d12;line-height:1.8;white-space:pre-wrap">${esc(c.reviseNote)}</div>`:''}
+    <div style="font-size:11px;color:var(--sub);margin-top:6px">直したら「完成して管理者に届ける」で再提出してください。</div>
+  </div>`;
+}
 // 管理者があなたの章を修正していないか確認する（招待元プロジェクトの book_settings を参照）
 async function _mwCheckAdminEdit(idx){
   const el=document.getElementById('mwAdminEditNotice');
@@ -3026,10 +3051,30 @@ async function _mwCheckAdminEdit(idx){
   if(!cloudC||!cloudC.adminEditedAt){el.innerHTML='';return;}
   const localC=S.book&&S.book.chapters&&S.book.chapters[idx];
   const seenAt=(localC&&localC.adminEditSeenAt)||0;
-  if(cloudC.adminEditedAt<=seenAt){el.innerHTML='';return;}
+  if(cloudC.adminEditedAt<=seenAt){
+    // すでに確認済み。ただし修正依頼にまだ応えていない間は、依頼内容を控えめに出し続ける
+    el.innerHTML=(localC&&chState(localC)==='revise')?_mwReviseReminderHtml(localC):'';
+    return;
+  }
   window._mwAdminEditCache=window._mwAdminEditCache||{};
   window._mwAdminEditCache[idx]=cloudC;
   const when=new Date(cloudC.adminEditedAt).toLocaleString('ja-JP');
+  // 管理者が「修正を依頼」した場合は、依頼内容を大きく出して取り込みを促す
+  if(cloudC.status==='revise'){
+    el.innerHTML=`<div style="background:#fff7ed;border:2px solid #c2410c;padding:18px 20px;margin-bottom:16px">
+      <div style="font-size:15px;font-weight:700;color:#7c2d12;margin-bottom:6px">🔁 管理者から修正の依頼があります</div>
+      ${cloudC.reviseNote?`<div style="font-size:13px;color:#7c2d12;line-height:1.8;background:#fff;border-left:4px solid #c2410c;padding:10px 12px;margin-bottom:10px;white-space:pre-wrap">${esc(cloudC.reviseNote)}</div>`:''}
+      <div style="font-size:12px;color:var(--sub);line-height:1.7;margin-bottom:12px">
+        ${when} に依頼されました。管理者が手を入れた本文があります。<br>
+        <b>まず「管理者の修正を取り込む」を押してから</b>書き直すと、管理者の直しを引き継げます。
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button style="font-size:13px;padding:9px 18px;background:#c2410c;color:#fff;border:none;cursor:pointer;font-weight:700" onclick="_mwAdoptAdminEdit(${idx})">管理者の修正を取り込む</button>
+        <button class="btn gray" style="font-size:13px;padding:9px 16px" onclick="_mwShowAdminEditDiff(${idx})">先に内容を見る</button>
+      </div>
+    </div>`;
+    return;
+  }
   el.innerHTML=`<div style="background:#fff8e6;border:1px solid var(--brand);padding:16px 20px;margin-bottom:16px">
     <div style="font-size:14px;font-weight:700;color:var(--ink);margin-bottom:4px">✏️ 管理者があなたの章に修正を入れました</div>
     <div style="font-size:12px;color:var(--sub);line-height:1.7;margin-bottom:10px">${when} に更新されています。内容を確認してください。</div>
@@ -3075,14 +3120,29 @@ function _mwAdoptAdminEdit(idx){
   if(!cloudC)return;
   if(!confirm('管理者の修正版を、あなたの編集画面に取り込みます。今書きかけの内容は上書きされます。よろしいですか？'))return;
   const c=S.book.chapters[idx];
-  c.body=cloudC.body||c.body;
+  const newBody=cloudC.body||c.body||'';
+  c.body=newBody;
   c.title=cloudC.title||c.title;
   c.adminEditSeenAt=cloudC.adminEditedAt;
+  // 下書きの生データも管理者版に差し替える（これをしないと入力欄に反映されない）
+  const mode=(c.draft&&c.draft.mode)||window._mwMode||'C';
+  c.draft={mode:mode,title:c.title||'',bodyA:mode==='A'?newBody:'',heads:[],bodyC:mode!=='A'?newBody:'',
+           images:(c.draft&&c.draft.images)||[]};
+  // 差し戻しの場合は「まだ直して出す必要がある」状態を保つ（提出済みに見せない）
+  const isRevise=cloudC.status==='revise';
+  if(isRevise){c.status='revise';c.reviseNote=cloudC.reviseNote||'';c.reviseRequestedAt=cloudC.reviseRequestedAt||Date.now();}
   save();
   const ex=document.getElementById('mwAdminEditModal');if(ex)ex.remove();
-  const el=document.getElementById('mwAdminEditNotice');if(el)el.innerHTML='';
-  _mwApplyDraftToDom&&_mwApplyDraftToDom(idx);
+  const el=document.getElementById('mwAdminEditNotice');
+  // 書き直している間も依頼内容が見えるように、控えめな表示で残す
+  if(el)el.innerHTML=isRevise?_mwReviseReminderHtml(c):'';
+  // 貼り付け／自由記述の入力欄へ実際に流し込む（見出しモードは1つの本文にまとめて表示する）
+  _mwSetMode&&_mwSetMode(mode==='A'?'A':'C',true);
+  const ta=document.getElementById(mode==='A'?'mwBodyA':'mwBody');
+  if(ta){ta.value=newBody;_mwExpandTA&&_mwExpandTA(ta);}
   const chapTitleEl=document.getElementById('mwChapTitle');if(chapTitleEl)chapTitleEl.value=c.title||'';
+  _mwRenderImageList&&_mwRenderImageList();
+  _mwUpdateStatusBadge&&_mwUpdateStatusBadge(idx);
   const t=document.createElement('div');
   t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:8px 20px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none';
   t.textContent='✓ 管理者の修正内容を取り込みました';document.body.appendChild(t);setTimeout(()=>t.remove(),2200);
@@ -3107,6 +3167,8 @@ function _mwRenderResumeHero(idx){
   const savedAt=st==='submitted'?c.submittedAt:c.draftSavedAt;
   const chip=st==='submitted'
     ? `<span style="background:var(--ok-soft);color:var(--ok);font-weight:700;padding:2px 10px;border-radius:10px">✓ 提出済み</span>`
+    : st==='revise'
+      ? `<span style="background:#fff7ed;color:#c2410c;font-weight:700;padding:2px 10px;border-radius:10px">🔁 修正の依頼あり</span>`
     : st==='admin'
       ? `<span style="background:var(--brand-soft);color:var(--brand-dim);font-weight:700;padding:2px 10px;border-radius:10px">✏️ 管理者が作成</span>`
       : `<span style="background:#fff4d6;color:#b8860b;font-weight:700;padding:2px 10px;border-radius:10px">● 下書き（未提出・まだ管理者に届いていません）</span>`;
@@ -3285,6 +3347,7 @@ function previewCoChapter(i){
       <button id="coTabPrev" onclick="_coChapTab('prev',${i})" style="flex:1;padding:9px;font-size:13px;font-weight:700;border:none;cursor:pointer;background:var(--ok);color:#fff;border-radius:0">プレビュー</button>
       <button id="coTabEdit" onclick="_coChapTab('edit',${i})" style="flex:1;padding:9px;font-size:13px;font-weight:700;border:none;cursor:pointer;background:#f5f5f3;color:var(--sub);border-radius:0">編集</button>
     </div>
+    ${_coChapNoticeHtml(i,c)}
     ${(c.images&&c.images.length)?`<div style="padding:10px 16px;background:#fffbeb;border-bottom:1px solid #f59e0b;flex-shrink:0">
       <div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/><path d="M21 15l-5-5L5 21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -3309,10 +3372,66 @@ function previewCoChapter(i){
       >${esc(c.body||'')}</textarea>
     </div>
     <div id="coChapEdgeImagePanel" style="padding:0 20px;flex-shrink:0">${_chapEdgeImagePanelHtml('coreview',i,c)}</div>
-    <div style="padding:12px 20px;border-top:1px solid var(--line-soft);flex-shrink:0;display:flex;gap:8px">
+    <div style="padding:12px 20px;border-top:1px solid var(--line-soft);flex-shrink:0;display:flex;gap:8px;flex-wrap:wrap">
       <button id="coChapSaveBtn" style="display:none;flex:1;padding:10px;font-size:14px;font-weight:700;background:var(--ok);color:#fff;border:none;cursor:pointer" onclick="_coChapSave(${i})">保存する</button>
+      <button style="flex:1;min-width:180px;padding:10px;font-size:13px;font-weight:700;background:#c2410c;color:#fff;border:none;cursor:pointer" onclick="_coRequestRevision(${i})">🔁 ライターに修正を依頼する</button>
       <button class="btn gray" style="flex:1;font-size:14px" onclick="document.getElementById('${mid}').remove()">閉じる</button>
     </div>
+  </div>`;
+  document.body.appendChild(modal);
+}
+// 管理者が章を開いたときの注意書き。ライターが書きかけの章を直しても上書きされてしまうため、
+// 先に知らせて無駄な作業を防ぐ。修正依頼中なら依頼内容を表示する。
+function _coChapNoticeHtml(i,c){
+  const st=chState(c);
+  if(st==='revise'){
+    const when=c.reviseRequestedAt?new Date(c.reviseRequestedAt).toLocaleString('ja-JP'):'';
+    return `<div style="padding:10px 16px;background:#fff7ed;border-bottom:1px solid #fdba74;flex-shrink:0;font-size:12px;line-height:1.7;color:#7c2d12">
+      <b>🔁 修正を依頼中です（ライターの返事待ち）</b>${when?`　<span style="color:#9a6b4f">${when}</span>`:''}
+      ${c.reviseNote?`<div style="margin-top:4px;padding:6px 10px;background:#fff;border-left:3px solid #c2410c">${esc(c.reviseNote)}</div>`:''}
+      <div style="margin-top:4px">ライターが再提出すると、この内容は<b>ライターの新しい原稿に置き換わります</b>。いま手を入れても残らないのでご注意ください。</div>
+    </div>`;
+  }
+  if(st==='draft'){
+    return `<div style="padding:10px 16px;background:#fffbeb;border-bottom:1px solid #f59e0b;flex-shrink:0;font-size:12px;line-height:1.7;color:#92400e">
+      <b>⚠ この章はライターがまだ書きかけです（未提出）</b>
+      <div style="margin-top:4px">いま本文を直しても、ライターが提出した時点で<b>上書きされて消えます</b>。直したい箇所がある場合は、下の「🔁 ライターに修正を依頼する」で伝える方が確実です。</div>
+    </div>`;
+  }
+  return '';
+}
+// 章をライターに差し戻す。管理者が直した本文をそのまま土台として渡すので、
+// ライターは「取り込む」ことで管理者の修正を引き継いだうえで書き直せる。
+function _coRequestRevision(i){
+  const c=S.book&&S.book.chapters&&S.book.chapters[i];
+  if(!c){alert('章データが見つかりません。');return;}
+  const prev=c.reviseNote||'';
+  const note=prompt('ライターに伝える内容を入力してください。\n（例：3つ目の見出しの説明が分かりにくいので、具体例を足してください）',prev);
+  if(note===null)return;
+  const trimmed=(note||'').trim();
+  if(!trimmed){alert('伝える内容を入力してください。');return;}
+  // 編集タブで書きかえた内容があれば、それを土台として保存してから差し戻す
+  const ta=document.getElementById('coChapEditTA');
+  if(ta&&ta.value!==(c.body||'')){c.body=ta.value;_markChapterEdited(i,['body']);}
+  c.status='revise';
+  c.reviseNote=trimmed;
+  c.reviseRequestedAt=Date.now();
+  c.adminEditedAt=Date.now(); // ライター側の通知判定に使う
+  save();
+  const ex=document.getElementById('chapPreviewModal');if(ex)ex.remove();
+  renderCoInviteAdmin&&renderCoInviteAdmin();
+  const modal=document.createElement('div');
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:10002;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  modal.innerHTML=`<div style="background:#fff;max-width:440px;width:100%;padding:28px">
+    <div style="font-size:17px;font-weight:700;margin-bottom:10px">🔁 修正を依頼しました</div>
+    <p style="font-size:13px;color:var(--sub);line-height:1.8;margin:0 0 16px">
+      第${i+1}章の担当ライターが次にこの画面を開くと、依頼内容と<b>あなたが直した本文</b>が表示されます。<br>
+      ライターが「取り込む」を押せば、あなたの修正を引き継いだ状態から書き直してもらえます。
+    </p>
+    <div style="font-size:12px;background:#fff7ed;border:1px solid #fdba74;padding:10px 12px;color:#7c2d12;line-height:1.7;margin-bottom:16px">
+      ライターに「アプリを開いて修正してください」と別途ご連絡ください（アプリからは自動で通知が飛びません）。
+    </div>
+    <button class="btn ok" style="width:100%;font-size:14px;padding:11px" onclick="this.closest('div[style*=fixed]').remove()">閉じる</button>
   </div>`;
   document.body.appendChild(modal);
 }
@@ -3528,14 +3647,14 @@ function renderCoInviteAdmin(){
   while(S.book.chapters.length<n)S.book.chapters.push({author:'',title:'',body:''});
   // 表示は常にS.people分のみ（超過分はストレージに残すが表示しない）
   const ch=S.book.chapters.slice(0,n);
-  const cnt={submitted:0,draft:0,admin:0,none:0};
+  const cnt={submitted:0,revise:0,draft:0,admin:0,none:0};
   ch.forEach(c=>{cnt[chState(c)]++;});
-  // 「受取済」は提出済み・管理者作成のみ（書きかけ＝未提出はカウントしない）
+  // 「受取済」は提出済み・管理者作成のみ（書きかけ・修正依頼中はカウントしない）
   const received=cnt.submitted+cnt.admin;
   const pctDone=ch.length?Math.round(cnt.submitted/ch.length*100):0;
   const progressSummary=`<div style="background:#fff;border:1px solid var(--line-soft);padding:12px 16px;margin-bottom:16px">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-      <span style="font-size:13px;font-weight:700;color:var(--ink)">進捗：提出 ${cnt.submitted} ・ 書きかけ ${cnt.draft}${cnt.admin?` ・ 管理者作成 ${cnt.admin}`:''} ・ 未着手 ${cnt.none} ／ 全 ${ch.length} 章</span>
+      <span style="font-size:13px;font-weight:700;color:var(--ink)">進捗：提出 ${cnt.submitted}${cnt.revise?` ・ <span style="color:#c2410c">修正依頼中 ${cnt.revise}</span>`:''} ・ 書きかけ ${cnt.draft}${cnt.admin?` ・ 管理者作成 ${cnt.admin}`:''} ・ 未着手 ${cnt.none} ／ 全 ${ch.length} 章</span>
       <span style="font-size:12px;color:var(--sub)">提出 ${pctDone}%</span>
     </div>
     <div style="height:8px;background:var(--bg-alt);border-radius:4px;overflow:hidden"><div style="height:100%;width:${pctDone}%;background:var(--ok);transition:width .3s"></div></div>
@@ -3546,7 +3665,7 @@ function renderCoInviteAdmin(){
     const state=chState(c);
     const hasBody=chHasBody(c);
     const cleanTitle=(c.title||'').replace(/^\*+$/,'').trim();
-    const borderColor=state==='submitted'?'var(--ok)':state==='draft'?'#e8c060':state==='admin'?'var(--brand)':'transparent';
+    const borderColor=state==='submitted'?'var(--ok)':state==='revise'?'#c2410c':state==='draft'?'#e8c060':state==='admin'?'var(--brand)':'transparent';
     const aff=c.affiliation&&(c.affiliation.producer||c.affiliation.book);
     return `<div style="padding:10px 0 10px 12px;border-bottom:1px solid var(--line-soft);border-left:3px solid ${borderColor}">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
@@ -4503,12 +4622,12 @@ function buildEpub(){
 }
 // 未提出（書きかけ）の章があれば書き出し前に知らせる。章は除外せず、気づかないまま本にしてしまうのを防ぐ。
 function _confirmDraftChaptersBeforeExport(){
-  const drafts=(S.book&&S.book.chapters||[])
-    .map((c,i)=>({c,i}))
-    .filter(x=>chHasBody(x.c)&&chState(x.c)==='draft');
-  if(!drafts.length)return true;
-  const list=drafts.map(x=>`第${x.i+1}章「${(x.c.title||'').replace(/^\*+$/,'').trim()||'無題'}」`).join('\n');
-  return confirm(`次の章はまだ「書きかけ（未提出）」です。\n\n${list}\n\nこのまま書き出すと、未提出の原稿も本に含まれます。続けますか？`);
+  const pend=(S.book&&S.book.chapters||[])
+    .map((c,i)=>({c,i,st:chState(c)}))
+    .filter(x=>chHasBody(x.c)&&(x.st==='draft'||x.st==='revise'));
+  if(!pend.length)return true;
+  const list=pend.map(x=>`第${x.i+1}章「${(x.c.title||'').replace(/^\*+$/,'').trim()||'無題'}」（${x.st==='revise'?'修正を依頼中':'書きかけ・未提出'}）`).join('\n');
+  return confirm(`次の章はまだ確定していません。\n\n${list}\n\nこのまま書き出すと、これらの原稿も本に含まれます。続けますか？`);
 }
 function exportEpub(){
   if(!S.book.chapters.some(c=>(c.body||'').trim())){alert('章の本文がありません。');return;}
