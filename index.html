@@ -3699,6 +3699,15 @@ function renderCoInviteAdmin(){
           style="width:100%;border:none;border-bottom:1px solid var(--line-soft);padding:6px 0;font-size:14px;box-sizing:border-box;background:transparent"
           oninput="S.book.title=this.value;save()">
       </div>
+      <div style="background:#fbfaf5;border:1px solid var(--line-soft);padding:10px 14px;margin-bottom:14px">
+        <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px;color:var(--ink)">
+          <input type="checkbox" ${S.book.chapNumbering!==false?'checked':''} style="margin-top:2px;flex-shrink:0"
+            onchange="S.book.chapNumbering=this.checked;save();renderCoInviteAdmin()">
+          <span><b>章タイトルに「第◯章」を付ける</b>
+            <span style="display:block;font-size:11px;color:var(--sub);line-height:1.7;margin-top:2px">本の中で各章の扉に「第1章」＋章タイトルの2段で表示します。「はじめに」「あとがき」など番号を付けない章は、まとめ画面で種類を変更してください。</span>
+          </span>
+        </label>
+      </div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:2px">章ごとにタイトルと担当者名を入れて「招待URLをコピー」→ LINEなどで送る</div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:12px">※ 同じ人が複数の章を書く場合は、担当者名に同じ名前を入力してください</div>
       ${progressSummary}
@@ -4247,7 +4256,7 @@ function dl(name,text,mime){const b=new Blob([text],{type:(mime||'text/plain')+'
 /* 結合原稿を「Kindleの型」(見出し・目次・改ページ)のHTMLに整形 */
 function buildBookHTML(){
   const ch=S.book.chapters.filter(c=>(c.body||'').trim());
-  const chapHead=(c,i)=>(c.chapterType&&c.chapterType!=='custom')?getChapH1(c,calcNIdx(ch,i)):(c.title||`第${i+1}章`);
+  const chapHead=(c,i)=>(_effChapterType(c)!=='custom')?getChapH1(c,calcNIdx(ch,i)):(c.title||`第${i+1}章`);
   const toc=ch.map((c,i)=>`<li><a href="#ch${i+1}">${esc(chapHead(c,i))}</a></li>`).join('');
   const body=ch.map((c,i)=>{
     const inner=(c.body||'').split(/\n/).map(l=>{l=l.trim();if(!l)return '';
@@ -4507,7 +4516,15 @@ function buildEpub(){
     {name:'META-INF/container.xml',bytes:sB('<?xml version="1.0"?>\n<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>')}];
   const manifest=['<item id="css" href="style.css" media-type="text/css"/>','<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>'];
   const spine=[],navli=[];let imgN=0;
-  files.push({name:'OEBPS/style.css',bytes:sB('body{margin:1em;text-align:justify;}h1{font-size:1.5em;margin:1.2em 0;font-weight:700;}h2{font-size:1.1em;margin:1.6em 0 .5em;font-weight:700;border-left:3px solid #333;padding-left:0.6em;}p{text-indent:1em;margin:.6em 0;}h1+p,h2+p{text-indent:0;}strong,b{font-weight:700;}em,i{font-style:italic;}img{max-width:100%;height:auto;}figure{margin:1.2em 0;text-align:center;}figcaption{font-size:.85em;color:#555;text-indent:0;}')});
+  files.push({name:'OEBPS/style.css',bytes:sB('body{margin:1em;text-align:justify;}'
+    +'h1{font-size:1.5em;margin:1.6em 0 1.4em;font-weight:700;text-align:center;line-height:1.55;}'
+    +'h1 .ch-no{display:block;font-size:.6em;font-weight:400;letter-spacing:.2em;color:#666;margin-bottom:.9em;}'
+    +'h1 .ch-ttl{display:block;}'
+    +'.ch-author{text-indent:0;text-align:center;font-size:.85em;color:#555;margin:-.6em 0 2.4em;}'
+    +'h2{font-size:1.1em;margin:1.8em 0 .5em;font-weight:700;border-left:3px solid #333;padding-left:0.6em;}'
+    +'p{text-indent:1em;margin:.6em 0;}h1+p,h2+p{text-indent:0;}'
+    +'strong,b{font-weight:700;}em,i{font-style:italic;}img{max-width:100%;height:auto;}'
+    +'figure{margin:1.2em 0;text-align:center;}figcaption{font-size:.85em;color:#555;text-indent:0;}')});
   let coverSpine='',coverMeta='';
   if(S.book.cover&&S.book.cover.data){
     const cm=S.book.cover.mime||'image/jpeg',cext=(cm==='image/png')?'png':'jpg';
@@ -4580,7 +4597,7 @@ function buildEpub(){
     const chapNIdx=calcNIdx(ch,i);
     const chapH1Text=escXml(getChapH1(c,chapNIdx));// TOC用テキスト
     const chapH1Body=getChapH1Xml(c,chapNIdx,escXml);// body用（br付き）
-    const xhtml=`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>${chapH1Text}</title><link rel="stylesheet" type="text/css" href="style.css"/></head><body><h1>${chapH1Body}</h1>${(S.coauthor&&c.author)?`<p>著：${escXml(c.author)}</p>`:''}\n${body}</body></html>`;
+    const xhtml=`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>${chapH1Text}</title><link rel="stylesheet" type="text/css" href="style.css"/></head><body><h1>${chapH1Body}</h1>${(S.coauthor&&c.author)?`<p class="ch-author">著：${escXml(c.author)}</p>`:''}\n${body}</body></html>`;
     files.push({name:'OEBPS/'+id+'.xhtml',bytes:sB(xhtml)});
     manifest.push(`<item id="${id}" href="${id}.xhtml" media-type="application/xhtml+xml"/>`);
     spine.push(`<itemref idref="${id}"/>`);
@@ -5331,6 +5348,14 @@ function _chapPrefix(type,nIdx){
     default:return null;
   }
 }
+// 章の実際の種類。共著（合同出版）で「第◯章を付ける」設定のときは、
+// 種類が決まっていない章を通し番号つきの章として扱う。
+function _effChapterType(c){
+  const t=(c&&c.chapterType)||'custom';
+  if(t!=='custom')return t;
+  if(S.coauthor&&S.book&&S.book.chapNumbering!==false)return 'numbered';
+  return 'custom';
+}
 function _chapSubtitle(rawTitle,prefix){
   // 旧フォーマット「第1章　副題」の場合は副題だけ返す（二重防止）
   if(!prefix)return rawTitle;
@@ -5341,7 +5366,7 @@ function _chapSubtitle(rawTitle,prefix){
 }
 function stripMd(s){return(s||'').replace(/\*\*(.+?)\*\*/g,'$1').replace(/\*(.+?)\*/g,'$1').trim();}
 function getChapH1(c,nIdx){
-  const type=c.chapterType||'custom';
+  const type=_effChapterType(c);
   const rawTitle=stripMd(c.title||'');
   const prefix=_chapPrefix(type,nIdx);
   if(!prefix)return rawTitle||'（無題）';
@@ -5352,16 +5377,20 @@ function _addTildeBr(str){
   // 「 〜」または「　〜」の前で改行（副題・本文タイトル用）
   return str.replace(/[ 　][〜～]/g,m=>'<br/>〜');
 }
+// 章扉ページの見出し。「第◯章」は小さめのラベル、章タイトル（副題）を一番大きく出す。
 function getChapH1Xml(c,nIdx,escFn){
-  const type=c.chapterType||'custom';
+  const type=_effChapterType(c);
   const rawTitle=(c.title||'').trim();
   const prefix=_chapPrefix(type,nIdx);
-  if(!prefix)return _addTildeBr(inlineFmt(escFn(rawTitle||'（無題）')));
+  const ttl=(t)=>`<span class="ch-ttl">${_addTildeBr(inlineFmt(escFn(t)))}</span>`;
+  if(!prefix)return ttl(rawTitle||'（無題）');
   const subtitle=_chapSubtitle(rawTitle,prefix);
-  return subtitle?`${escFn(prefix)}<br/>${_addTildeBr(inlineFmt(escFn(subtitle)))}`:escFn(prefix);
+  // 「はじめに」「あとがき」など副題を持たない章は、その語自体を大きく出す
+  if(!subtitle)return ttl(prefix);
+  return `<span class="ch-no">${escFn(prefix)}</span>`+ttl(subtitle);
 }
 function calcNIdx(chapters,upToIdx){
-  let n=0;for(let i=0;i<=upToIdx;i++){if((chapters[i].chapterType||'custom')==='numbered')n++;}return n;
+  let n=0;for(let i=0;i<=upToIdx;i++){if(_effChapterType(chapters[i])==='numbered')n++;}return n;
 }
 function setChapterType(i,type){
   S.uploadChapters[i].chapterType=type;save();
@@ -5731,7 +5760,7 @@ function renderChapterDashboard(){
       const cardBg=isCurrent?'var(--brand-soft)':'#fff';
       const numColor=isDone?'var(--ok)':isDraft?'#b8860b':isCurrent?'var(--brand)':'var(--sub)';
       const numBorder=isDone?'var(--ok)':isDraft?'#e8c060':isCurrent?'var(--brand)':'var(--line-soft)';
-      const chTitle=esc((c.chapterType&&c.chapterType!=='custom')?getChapH1(c,calcNIdx(ch,i)):(c.title||`第${i+1}章`));
+      const chTitle=esc((_effChapterType(c)!=='custom')?getChapH1(c,calcNIdx(ch,i)):(c.title||`第${i+1}章`));
       const chars=(c.body||'').replace(/\s/g,'').length.toLocaleString();
       const statusLine=isDone
         ?`<span style="font-size:12px;color:var(--ok);display:flex;align-items:center;gap:3px;margin-top:1px"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>${chars}字 ${isFromUpload?'アップロード済み':'完成'}</span>`
