@@ -2866,6 +2866,17 @@ function _mwRenderHtml(text){
     return `<p style="margin:0 0 8px;line-height:1.9;color:#1a1a2e">${html}</p>`;
   }).join('');
 }
+// 保存前の「いま入力欄にある内容」でプレビューするための一時的な章データを作る
+function _mwPreviewChapter(chapIdx,body){
+  const saved=(S.book&&S.book.chapters&&S.book.chapters[chapIdx])||{};
+  const titleEl=document.getElementById('mwChapTitle');
+  const nameEl=document.getElementById('mwName');
+  return {...saved,
+    title:(titleEl?titleEl.value.trim():'')||saved.title||'',
+    author:(nameEl?nameEl.value.trim():'')||saved.author||'',
+    body:body,
+    images:(window._mwImages||saved.images||[])};
+}
 function _mwPreview(chapIdx){
   const body=_mwGetBody();
   if(!body){alert('本文を入力してください');return;}
@@ -2875,11 +2886,12 @@ function _mwPreview(chapIdx){
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
   modal.innerHTML=`<div style="background:#fff;max-width:640px;width:100%;max-height:84vh;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,.4)">
     <div style="padding:16px 22px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
-      <div style="font-size:15px;font-weight:700;color:var(--ink)">プレビュー：${esc(chapTitle)}</div>
+      <div style="font-size:15px;font-weight:700;color:var(--ink)">プレビュー：${inlineFmt(esc(chapTitle))}</div>
       <div style="font-size:11px;color:var(--sub)">${body.length.toLocaleString()}文字</div>
     </div>
-    <div style="overflow-y:auto;padding:22px 26px;flex:1;font-family:serif;font-size:14px;line-height:1.9">
-      ${_mwRenderHtml(body)}
+    <div style="overflow-y:auto;padding:22px 26px;flex:1;font-size:14px">
+      <div style="font-size:11px;color:var(--sub);background:#f5f5f3;padding:5px 10px;margin:-6px 0 14px;text-align:center">本になったときの見え方（EPUBと同じ表示）</div>
+      ${_epubPreviewHtml(_mwPreviewChapter(chapIdx,body),calcNIdx((S.book&&S.book.chapters)||[],chapIdx))}
     </div>
     <div style="padding:12px 22px;border-top:1px solid var(--line-soft);flex-shrink:0">
       <button class="btn gray" style="width:100%;font-size:14px" onclick="_dismissModal('${mid}')">閉じて編集に戻る</button>
@@ -3338,7 +3350,7 @@ function previewCoChapter(i){
     <div style="padding:16px 20px;border-bottom:1px solid var(--line-soft);display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-shrink:0">
       <div>
         <div style="font-size:11px;color:var(--sub);font-weight:700;margin-bottom:2px">第${i+1}章</div>
-        <div style="font-size:17px;font-weight:700;color:var(--ink)">${esc(cleanTitle)}</div>
+        <div style="font-size:17px;font-weight:700;color:var(--ink)">${inlineFmt(esc(cleanTitle))}</div>
         ${c.author?`<div style="font-size:12px;color:var(--sub);margin-top:2px">担当：${esc(c.author)}</div>`:''}
       </div>
       <span id="coChapCount" style="font-size:12px;color:var(--sub);white-space:nowrap;flex-shrink:0;margin-top:2px">${(c.body||'').length.toLocaleString()}文字</span>
@@ -3361,8 +3373,9 @@ function previewCoChapter(i){
         </div>`).join('')}
       </div>
     </div>`:''}
-    <div id="coChapPrev" style="overflow-y:auto;padding:20px 24px;flex:1;font-family:serif;font-size:14px;line-height:1.9">
-      ${_mwRenderHtml(c.body||'')}
+    <div id="coChapPrev" style="overflow-y:auto;padding:20px 24px;flex:1;font-size:14px">
+      <div style="font-size:11px;color:var(--sub);background:#f5f5f3;padding:5px 10px;margin:-4px 0 14px;text-align:center">本になったときの見え方（EPUBと同じ表示）</div>
+      ${_epubPreviewHtml(c,calcNIdx(S.book.chapters,i))}
     </div>
     <div id="coChapEdit" style="display:none;flex:1;flex-direction:column;min-height:0">
       ${_mwInsertToolbar('coChapEditTA')}
@@ -4489,6 +4502,72 @@ function inlineFmt(s){
     .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
     .replace(/\*([^*\n]+?)\*/g,'<em>$1</em>');
 }
+// 見出し行の判定。「■」でも Markdown の「#」でも見出しとして扱う（書き手の書き癖に合わせる）。
+// 見出しなら見出し文字を、そうでなければ null を返す。EPUBとプレビューで必ず同じ判定を使う。
+function _headingText(l){
+  if(/^■/.test(l))return l.replace(/^■[\s　]*/,'').trim();
+  const m=l.match(/^#{1,4}[\s　]+(.+)$/);
+  if(m)return m[1].trim();
+  return null;
+}
+/* ---------- EPUBと同じ見た目のプレビュー ----------
+   本文の変換規則（見出し・区切り・図・太字）はEPUB書き出しと揃えてある。
+   CSSも buildEpub() の style.css と同じ値を使っているので、見え方が一致する。 */
+const EPUB_PREVIEW_CSS=`<style>
+.epubPrev{font-family:serif;line-height:1.9;text-align:justify;color:#1a1a2e}
+.epubPrev h1{font-size:1.5em;margin:1.4em 0 1.2em;font-weight:700;text-align:center;line-height:1.55}
+.epubPrev h1 .ch-no{display:block;font-size:.6em;font-weight:400;letter-spacing:.2em;color:#666;margin-bottom:.9em}
+.epubPrev h1 .ch-ttl{display:block}
+.epubPrev .ch-author{text-indent:0;text-align:center;font-size:.85em;color:#555;margin:-.6em 0 2.4em}
+.epubPrev h2{font-size:1.1em;margin:1.8em 0 .5em;font-weight:700;border-left:3px solid #333;padding-left:.6em;text-indent:0}
+.epubPrev p{text-indent:1em;margin:.6em 0}
+.epubPrev h1+p,.epubPrev h2+p{text-indent:0}
+.epubPrev img{max-width:100%;height:auto}
+.epubPrev figure{margin:1.2em 0;text-align:center}
+.epubPrev figcaption{font-size:.85em;color:#555;text-indent:0}
+.epubPrev .sep{margin:2.5em 0;text-indent:0}
+</style>`;
+function _epubPreviewImgTag(im){
+  if(!im)return '';
+  if(im.data)return `<figure><img src="${esc(im.data)}" alt=""/>${im.caption?`<figcaption>${esc(im.caption)}</figcaption>`:''}</figure>`;
+  if(im.url)return `<p style="text-indent:0">🖼 ${esc(im.name||'画像')}：<a href="${esc(im.url)}" target="_blank" rel="noopener">${esc(im.url)}</a></p>`;
+  return '';
+}
+function _epubPreviewBodyHtml(c){
+  c=c||{};
+  const imgs=c.images||[];
+  const placed=new Set();
+  const lines=(c.body||'').replace(/，/g,'、').replace(/．/g,'。').split(/\n/).map(l=>{
+    l=l.trim();
+    if(!l)return '';
+    if(/^-{3,}$/.test(l))return '<p class="sep">&nbsp;</p>';
+    let m=l.match(/^\[図(\d+)\]$/);
+    if(m){const k=parseInt(m[1])-1;if(imgs[k]){placed.add(k);return _epubPreviewImgTag(imgs[k]);}return '';}
+    m=l.match(/^\[画像[：:](.+?)\]$/);
+    if(m){
+      const desc=(m[1]||'').trim();
+      const k=desc?imgs.findIndex((im,idx)=>!placed.has(idx)&&(im.name||'').trim()===desc):imgs.findIndex((_,idx)=>!placed.has(idx));
+      if(k>=0){placed.add(k);return _epubPreviewImgTag(imgs[k]);}
+      return `<p style="text-indent:0">🖼 ${esc(desc||'画像')}（未登録）</p>`;
+    }
+    const h=_headingText(l);
+    if(h!==null)return `<h2>${inlineFmt(esc(h))}</h2>`;
+    return `<p>${inlineFmt(esc(l))}</p>`;
+  }).filter(x=>x).join('');
+  // 本文中で位置指定されなかった画像は章末にまとめる（EPUBと同じ）
+  const rest=imgs.map((im,k)=>placed.has(k)?'':_epubPreviewImgTag(im)).join('');
+  return lines+rest||'<p style="color:#aaa;text-indent:0">（本文がありません）</p>';
+}
+// 章まるごと（章タイトル＋著者＋本文）をEPUBと同じ見た目で描く
+function _epubPreviewHtml(c,nIdx){
+  c=c||{};
+  const head=getChapH1Xml(c,(nIdx==null?1:nIdx),esc);
+  return EPUB_PREVIEW_CSS+`<div class="epubPrev">
+    <h1>${head}</h1>
+    ${(S.coauthor&&c.author)?`<p class="ch-author">著：${esc(c.author)}</p>`:''}
+    ${_epubPreviewBodyHtml(c)}
+  </div>`;
+}
 function _epubEdgeImageItemref(files,manifest,idPrefix,image){
   if(!image||!image.data)return '';
   const mm=image.mime||'image/jpeg',ext=(mm==='image/png')?'png':'jpg';
@@ -4503,9 +4582,10 @@ function _epubBuildSpecialChapterXhtml(c){
   const body=(c.body||'').replace(/，/g,'、').replace(/．/g,'。').split(/\n/).map(l=>{l=l.trim();
     if(!l)return '';
     if(/^-{3,}$/.test(l))return '<p style="margin:2.5em 0;text-indent:0">&nbsp;</p>';
-    if(l.startsWith('■'))return `<h2>${inlineFmt(escXml(l.replace(/^■\s*/,'')))}</h2>`;
+    const hd=_headingText(l);
+    if(hd!==null)return `<h2>${inlineFmt(escXml(hd))}</h2>`;
     return `<p>${inlineFmt(escXml(l))}</p>`;}).filter(x=>x).join('\n');
-  return {heading,xhtml:`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>${heading}</title><link rel="stylesheet" type="text/css" href="style.css"/></head><body><h1>${heading}</h1>\n${body}</body></html>`};
+  return {heading,xhtml:`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>${heading}</title><link rel="stylesheet" type="text/css" href="style.css"/></head><body><h1><span class="ch-ttl">${heading}</span></h1>\n${body}</body></html>`};
 }
 function buildEpub(){
   const ch=S.book.chapters.filter(c=>(c.body||'').trim());
@@ -4590,9 +4670,11 @@ function buildEpub(){
       const mf=l.match(/^[<＜]図[：:](.+?)[>＞]$|^[<＜]図[>＞]$/);if(mf){const cap=(mf[1]||'').trim();const k=cap?imgs.findIndex((im,idx)=>!placed.has(idx)&&im.caption.trim()===cap):imgs.findIndex((_,idx)=>!placed.has(idx));if(k>=0){placed.add(k);return imgs[k]._tag;}return '';}
       // ライター画面の「画像位置を挿入」ボタンが入れるタグ：[画像：説明]
       const mw=l.match(/^\[画像[：:](.+?)\]$/);if(mw){const desc=(mw[1]||'').trim();const k=desc?imgs.findIndex((im,idx)=>!placed.has(idx)&&(im.name||'').trim()===desc):imgs.findIndex((_,idx)=>!placed.has(idx));if(k>=0){placed.add(k);return imgs[k]._tag;}return `<p style="text-indent:0">🖼 ${escXml(desc||'画像')}（未登録）</p>`;}
-      if(l.startsWith('■'))return `<h2>${inlineFmt(escXml(l.replace(/^■\s*/,'')))}</h2>`;
+      const hd=_headingText(l);
+      if(hd!==null)return `<h2>${inlineFmt(escXml(hd))}</h2>`;
       return `<p>${inlineFmt(escXml(l))}</p>`;}).filter(x=>x).join('\n');
     imgs.forEach((im,k)=>{if(!placed.has(k))body+='\n'+im._tag;});
+    imgs.forEach(im=>{delete im._tag;}); // 組み立て用の一時データを保存データに残さない
     if(ctaOn&&cta.perChapter&&(cta.url||'').trim())body+=`\n<hr/>\n<p style="text-indent:0">▶ ${escXml(cta.linkText||'LINEで読者特典を受け取る')}：<a href="${escXml(cta.url)}">${escXml(cta.url)}</a></p>`;
     const chapNIdx=calcNIdx(ch,i);
     const chapH1Text=escXml(getChapH1(c,chapNIdx));// TOC用テキスト
