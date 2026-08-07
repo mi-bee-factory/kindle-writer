@@ -822,6 +822,7 @@ function _mergeChapter(prev,incoming,incomingTs){
     else if(prev[field]===undefined&&hasIn){out[field]=inVal;}
   };
   pick('title','titleUpdatedAt');
+  pick('subtitle','subtitleUpdatedAt');
   pick('body','bodyUpdatedAt');
   pick('author','authorUpdatedAt');
   return out;
@@ -833,6 +834,7 @@ function _markChapterEdited(i,fields){
   const now=Date.now();
   (fields||[]).forEach(f=>{
     if(f==='title')c.titleUpdatedAt=now;
+    else if(f==='subtitle')c.subtitleUpdatedAt=now;
     else if(f==='body')c.bodyUpdatedAt=now;
     else if(f==='author')c.authorUpdatedAt=now;
   });
@@ -1083,6 +1085,7 @@ async function _sbSaveChapter(opts){
   if(opts.status)row.status=opts.status;
   if(opts.mode)row.mode=opts.mode;
   if(opts.images!=null)row.images=opts.images;
+  if(opts.subtitle!=null)row.chapter_subtitle=opts.subtitle;
   const inv=S._inviteData||{};
   if(inv.projId)row.project_id=inv.projId;
   const bt=inv.projName||(S.book&&S.book.title)||'';
@@ -1095,7 +1098,7 @@ async function _sbSaveChapter(opts){
   if(error){
     // 追加列が無い（未反映）スキーマ：既知の追加列を落として再試行（後方互換）
     usedFallback=true;
-    ['status','mode','images','project_id','book_title','producer_name'].forEach(k=>{delete row[k];});
+    ['status','mode','images','project_id','book_title','producer_name','chapter_subtitle'].forEach(k=>{delete row[k];});
     ({error}=await _sb.from('member_chapters').upsert(row,{onConflict:'book_id,user_id,chapter_index'}));
   }
   if(!error&&!opts.silent){
@@ -1122,7 +1125,7 @@ async function _sbLoadMyChapter(idx){
   const rowTs=row.updated_at?new Date(row.updated_at).getTime():0;
   // ローカルの編集が新しければ残す（この端末で書いた下書きをクラウドの古い値で潰さない）
   const localNewer=(prev.bodyUpdatedAt||0)>rowTs;
-  const merged=_mergeChapter(prev,{title:row.chapter_title,body:cloudBody,author:row.author_name},rowTs);
+  const merged=_mergeChapter(prev,{title:row.chapter_title,subtitle:row.chapter_subtitle,body:cloudBody,author:row.author_name},rowTs);
   S.book.chapters[idx]=merged;
   const c=S.book.chapters[idx];
   // ローカルの方が新しい場合は、ローカルの status（下書き中など）を優先する
@@ -1171,7 +1174,7 @@ async function fetchChaptersFromSupabase(){
     const st=row.status||(cloudBody?'submitted':'');
     const rowTs=row.updated_at?new Date(row.updated_at).getTime():0;
     // タイトル・本文・担当者名は「更新が新しい方」を採用（管理者の編集を守る）
-    const merged=_mergeChapter(prev,{title:row.chapter_title,body:cloudBody,author:row.author_name},rowTs);
+    const merged=_mergeChapter(prev,{title:row.chapter_title,subtitle:row.chapter_subtitle,body:cloudBody,author:row.author_name},rowTs);
     if(prev.title&&merged.title!==row.chapter_title)nKept++;
     else if(prev.body&&merged.body!==cloudBody)nKept++;
     // 修正を依頼した章は、ライターが依頼より後に保存し直すまで「修正依頼中」を保つ。
@@ -2512,6 +2515,10 @@ function _showInviteWelcome(d){
         <label style="font-size:12px;font-weight:700;color:var(--sub);display:block;margin-bottom:6px">章タイトル（変更できます）</label>
         <input id="mwChapTitle" type="text" placeholder="例：はじめに" value="${esc(d.chapTitle)}"
           style="width:100%;border:1px solid var(--line-soft);padding:8px 10px;font-size:14px;box-sizing:border-box">
+        <label style="font-size:12px;font-weight:700;color:var(--sub);display:block;margin:10px 0 6px">サブタイトル<span style="font-weight:400;color:var(--muted)">（任意・無ければ空のままでOK）</span></label>
+        <input id="mwChapSubtitle" type="text" placeholder="例：〜好きを仕事にするまで〜" value="${esc((S.book&&S.book.chapters&&S.book.chapters[d.chapIdx]&&S.book.chapters[d.chapIdx].subtitle)||'')}"
+          style="width:100%;border:1px solid var(--line-soft);padding:8px 10px;font-size:13px;box-sizing:border-box;color:var(--sub)">
+        <div style="font-size:11px;color:var(--muted);margin-top:5px;line-height:1.7">入れると、本の章扉で章タイトルの下に少し小さく表示されます。空のままなら何も出ません。</div>
       </div>
       <div id="mwStatusBar" style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff;padding:10px 20px;margin-bottom:12px;font-size:12px;flex-wrap:wrap">
         <span id="mwStatusBadge" style="font-weight:700;color:var(--sub)">まだ保存していません</span>
@@ -2870,9 +2877,11 @@ function _mwRenderHtml(text){
 function _mwPreviewChapter(chapIdx,body){
   const saved=(S.book&&S.book.chapters&&S.book.chapters[chapIdx])||{};
   const titleEl=document.getElementById('mwChapTitle');
+  const subEl=document.getElementById('mwChapSubtitle');
   const nameEl=document.getElementById('mwName');
   return {...saved,
     title:(titleEl?titleEl.value.trim():'')||saved.title||'',
+    subtitle:subEl?subEl.value.trim():(saved.subtitle||''),
     author:(nameEl?nameEl.value.trim():'')||saved.author||'',
     body:body,
     images:(window._mwImages||saved.images||[])};
@@ -2912,6 +2921,8 @@ async function _mwSubmit(chapIdx){
   while(S.book.chapters.length<=chapIdx)S.book.chapters.push({author:'',title:'',body:''});
   const chapTitleEl=document.getElementById('mwChapTitle');
   const chapTitleInput=(chapTitleEl&&chapTitleEl.value.trim())||'';
+  const chapSubEl=document.getElementById('mwChapSubtitle');
+  const chapSubInput=chapSubEl?chapSubEl.value.trim():null; // 空文字も「消した」として扱うため null と区別する
   // 履歴退避（最新3件・ローカルのみ・上書き事故の保険）
   const prevBody=S.book.chapters[chapIdx].body||'';
   if(prevBody&&prevBody!==body){
@@ -2921,12 +2932,13 @@ async function _mwSubmit(chapIdx){
   S.book.chapters[chapIdx].body=body;S.book.chapters[chapIdx].author=name;
   S.book.chapters[chapIdx].bodyUpdatedAt=_nowTs;S.book.chapters[chapIdx].authorUpdatedAt=_nowTs;
   if(chapTitleInput){S.book.chapters[chapIdx].title=chapTitleInput;S.book.chapters[chapIdx].titleUpdatedAt=_nowTs;}
+  if(chapSubInput!==null){S.book.chapters[chapIdx].subtitle=chapSubInput;S.book.chapters[chapIdx].subtitleUpdatedAt=_nowTs;}
   S.book.chapters[chapIdx].status='submitted';
   S.book.chapters[chapIdx].submittedAt=_nowTs;
   S.book.chapters[chapIdx].images=(window._mwImages||[]).map(x=>({name:x.name||'',url:x.url||''}));
   S.book.chapters[chapIdx].draft=_mwCollectDraft();
   save();
-  await _sbSaveChapter({idx:chapIdx,body:body,title:(chapTitleInput||S.book.chapters[chapIdx].title||''),author:name,status:'submitted',mode:window._mwMode||'',images:S.book.chapters[chapIdx].images,silent:true});
+  await _sbSaveChapter({idx:chapIdx,body:body,title:(chapTitleInput||S.book.chapters[chapIdx].title||''),subtitle:S.book.chapters[chapIdx].subtitle||'',author:name,status:'submitted',mode:window._mwMode||'',images:S.book.chapters[chapIdx].images,silent:true});
   _mwUpdateStatusBadge(chapIdx);
   const chapTitle=((chapTitleInput||S.book.chapters[chapIdx].title||'').replace(/^\*+$/,'').trim())||`第${chapIdx+1}章`;
   const mid2='chapSubmitModal';const ex2=document.getElementById(mid2);if(ex2)ex2.remove();
@@ -2956,7 +2968,8 @@ function _mwActiveChapIdx(){return (S._inviteData&&S._inviteData.chapIdx!=null)?
 function _mwCollectDraft(){
   _mwSyncHeadsFromDom();
   const titleEl=document.getElementById('mwChapTitle');
-  const draft={mode:window._mwMode||'',title:titleEl?titleEl.value:'',bodyA:'',heads:[],bodyC:'',images:(window._mwImages||[]).map(x=>({name:x.name||'',url:x.url||''}))};
+  const subEl=document.getElementById('mwChapSubtitle');
+  const draft={mode:window._mwMode||'',title:titleEl?titleEl.value:'',subtitle:subEl?subEl.value:'',bodyA:'',heads:[],bodyC:'',images:(window._mwImages||[]).map(x=>({name:x.name||'',url:x.url||''}))};
   const aEl=document.getElementById('mwBodyA');if(aEl)draft.bodyA=aEl.value;
   (window._mwHeads||[]).forEach((h,i)=>{draft.heads.push({h:h||'',b:(window._mwHeadBodies||[])[i]||''});});
   const cEl=document.getElementById('mwBody');if(cEl)draft.bodyC=cEl.value;
@@ -2967,6 +2980,7 @@ function _mwSaveDraftLocal(){
   if(!S.book)S.book={chapters:[],title:''};
   while(S.book.chapters.length<=idx)S.book.chapters.push({author:'',title:'',body:''});
   const draft=_mwCollectDraft();
+  const subEl=document.getElementById('mwChapSubtitle');
   S.book.chapters[idx].draft=draft;
   const hasContent=!!(draft.bodyA||draft.bodyC||(draft.heads||[]).some(h=>h.h||h.b));
   // 本文に手が入っている＝下書き（提出済みを編集したら差し戻し扱いで下書きに戻す）
@@ -2977,6 +2991,8 @@ function _mwSaveDraftLocal(){
     // この端末で編集した時刻を記録し、クラウドの古い値に負けないようにする
     S.book.chapters[idx].bodyUpdatedAt=now;
     if(draft.title)S.book.chapters[idx].titleUpdatedAt=now;
+    // サブタイトルは空にした場合も「消した」として反映する
+    if(subEl){S.book.chapters[idx].subtitle=draft.subtitle.trim();S.book.chapters[idx].subtitleUpdatedAt=now;}
   }
   save();
   _mwUpdateStatusBadge(idx);
@@ -2987,7 +3003,7 @@ async function _mwCloudDraftSave(){
   const body=_mwGetBody();if(!body)return; // 空なら送らない
   const draft=_mwCollectDraft();
   const nameEl=document.getElementById('mwName');
-  const r=await _sbSaveChapter({idx:idx,body:body,title:draft.title,author:(nameEl?nameEl.value.trim():''),status:'draft',mode:draft.mode,images:draft.images,silent:true});
+  const r=await _sbSaveChapter({idx:idx,body:body,title:draft.title,subtitle:(draft.subtitle||'').trim(),author:(nameEl?nameEl.value.trim():''),status:'draft',mode:draft.mode,images:draft.images,silent:true});
   if(r&&r.ok){
     if(!S.book)S.book={chapters:[],title:''};while(S.book.chapters.length<=idx)S.book.chapters.push({author:'',title:'',body:''});
     S.book.chapters[idx].status='draft'; // 自動保存＝下書き（提出済みを編集したら差し戻し）
@@ -3018,6 +3034,8 @@ function _mwApplyDraftToDom(idx){
   const c=(S.book&&S.book.chapters&&S.book.chapters[idx])||null;
   const d=c&&c.draft;if(!d)return;
   const titleEl=document.getElementById('mwChapTitle');if(titleEl&&d.title)titleEl.value=d.title;
+  const subEl=document.getElementById('mwChapSubtitle');
+  if(subEl){const sv=(d.subtitle!=null)?d.subtitle:(c.subtitle||'');if(sv)subEl.value=sv;}
   if(d.mode==='A'){const a=document.getElementById('mwBodyA');if(a)a.value=d.bodyA||'';}
   if(d.mode==='B'){_mwRenderHeadings();}
   if(d.mode==='C'){const cc=document.getElementById('mwBody');if(cc)cc.value=d.bodyC||'';}
@@ -3694,6 +3712,12 @@ function renderCoInviteAdmin(){
         ${hasBody?`<span style="font-size:11px;color:var(--sub);white-space:nowrap">${(c.body||'').length.toLocaleString()}文字</span>`:''}
         ${(c.images&&c.images.length)?`<span style="font-size:11px;background:#fffbeb;color:#92400e;padding:1px 6px;white-space:nowrap;flex-shrink:0">画像${c.images.length}件</span>`:''}
         ${hasBody?`<button onclick="previewCoChapter(${i})" style="font-size:11px;background:var(--ok);color:#fff;border:none;padding:3px 10px;cursor:pointer;font-weight:700;flex-shrink:0">内容を確認</button>`:''}
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin:0 0 6px 30px">
+        <span style="font-size:11px;color:var(--muted);white-space:nowrap;flex-shrink:0">サブタイトル</span>
+        <input type="text" value="${esc(c.subtitle||'')}" placeholder="（任意）章タイトルの下に小さく入ります"
+          style="flex:1;border:none;border-bottom:1px dashed var(--line-soft);padding:3px 6px;font-size:12px;background:transparent;color:var(--sub)"
+          oninput="S.book.chapters[${i}].subtitle=this.value;_markChapterEdited(${i},['subtitle']);save()">
       </div>
       ${aff?`<div style="font-size:11px;color:var(--muted);margin:0 0 6px 30px">所属：${esc(c.affiliation.book||'（書名未設定）')}${c.affiliation.producer?' ／ 招待：'+esc(c.affiliation.producer)+' さん':''}</div>`:''}
       <button id="invBtn_${i}" onclick="copyInviteUrl(${i})" style="background:var(--brand-soft);border:none;color:#403129;padding:4px 14px;font-size:12px;cursor:pointer;font-weight:700;display:inline-flex;align-items:center;gap:5px">
@@ -4518,6 +4542,7 @@ const EPUB_PREVIEW_CSS=`<style>
 .epubPrev h1{font-size:1.5em;margin:1.4em 0 1.2em;font-weight:700;text-align:center;line-height:1.55}
 .epubPrev h1 .ch-no{display:block;font-size:.6em;font-weight:400;letter-spacing:.2em;color:#666;margin-bottom:.9em}
 .epubPrev h1 .ch-ttl{display:block}
+.epubPrev h1 .ch-sub{display:block;font-size:.62em;font-weight:400;color:#444;margin-top:.9em;line-height:1.7}
 .epubPrev .ch-author{text-indent:0;text-align:center;font-size:.85em;color:#555;margin:-.6em 0 2.4em}
 .epubPrev h2{font-size:1.1em;margin:1.8em 0 .5em;font-weight:700;border-left:3px solid #333;padding-left:.6em;text-indent:0}
 .epubPrev p{text-indent:1em;margin:.6em 0}
@@ -4600,6 +4625,7 @@ function buildEpub(){
     +'h1{font-size:1.5em;margin:1.6em 0 1.4em;font-weight:700;text-align:center;line-height:1.55;}'
     +'h1 .ch-no{display:block;font-size:.6em;font-weight:400;letter-spacing:.2em;color:#666;margin-bottom:.9em;}'
     +'h1 .ch-ttl{display:block;}'
+    +'h1 .ch-sub{display:block;font-size:.62em;font-weight:400;color:#444;margin-top:.9em;line-height:1.7;}'
     +'.ch-author{text-indent:0;text-align:center;font-size:.85em;color:#555;margin:-.6em 0 2.4em;}'
     +'h2{font-size:1.1em;margin:1.8em 0 .5em;font-weight:700;border-left:3px solid #333;padding-left:0.6em;}'
     +'p{text-indent:1em;margin:.6em 0;}h1+p,h2+p{text-indent:0;}'
@@ -5459,17 +5485,24 @@ function _addTildeBr(str){
   // 「 〜」または「　〜」の前で改行（副題・本文タイトル用）
   return str.replace(/[ 　][〜～]/g,m=>'<br/>〜');
 }
-// 章扉ページの見出し。「第◯章」は小さめのラベル、章タイトル（副題）を一番大きく出す。
+// 章扉ページの見出しを組み立てる。3段構成で、無い段は自動的に省略される。
+//   第◯章       … 小さめのラベル（章番号をつけない設定・種類の章では出ない）
+//   章タイトル    … 一番大きい見出し
+//   サブタイトル  … あるときだけ、章タイトルの下に少し小さく出す
 function getChapH1Xml(c,nIdx,escFn){
+  c=c||{};
   const type=_effChapterType(c);
   const rawTitle=(c.title||'').trim();
   const prefix=_chapPrefix(type,nIdx);
+  const sub=(c.subtitle||'').trim();
   const ttl=(t)=>`<span class="ch-ttl">${_addTildeBr(inlineFmt(escFn(t)))}</span>`;
-  if(!prefix)return ttl(rawTitle||'（無題）');
-  const subtitle=_chapSubtitle(rawTitle,prefix);
-  // 「はじめに」「あとがき」など副題を持たない章は、その語自体を大きく出す
-  if(!subtitle)return ttl(prefix);
-  return `<span class="ch-no">${escFn(prefix)}</span>`+ttl(subtitle);
+  const subLine=sub?`<span class="ch-sub">${_addTildeBr(inlineFmt(escFn(sub)))}</span>`:'';
+  if(!prefix)return ttl(rawTitle||'（無題）')+subLine;
+  // 旧データ対策：タイトルが「第1章　◯◯」の形なら、番号部分を取り除いて本文側の題にする
+  const mainTitle=_chapSubtitle(rawTitle,prefix);
+  // 「はじめに」「あとがき」など題を持たない章は、その語自体を大きく出す
+  if(!mainTitle)return ttl(prefix)+subLine;
+  return `<span class="ch-no">${escFn(prefix)}</span>`+ttl(mainTitle)+subLine;
 }
 function calcNIdx(chapters,upToIdx){
   let n=0;for(let i=0;i<=upToIdx;i++){if(_effChapterType(chapters[i])==='numbered')n++;}return n;
