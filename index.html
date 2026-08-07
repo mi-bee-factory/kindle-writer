@@ -4172,13 +4172,42 @@ function tidyBodyText(src){
     if(!lines.length)return '';
     // 見出し・区切り・画像タグを含むブロックは、行ごとに独立した段落として扱う
     if(lines.some(keepAsIs)){
-      return lines.map(l=>keepAsIs(l)?l:l.replace(/。(?=.)/g,'。\n').trim()).join('\n\n');
+      return lines.map(l=>keepAsIs(l)?l:_splitJaSentences(l).trim()).join('\n\n');
     }
     // 通常の段落：いったん1行に戻してから、文の切れ目で改行する
-    const joined=lines.join('');
-    return joined.replace(/。(?=.)/g,'。\n').trim();
+    return _splitJaSentences(lines.join('')).trim();
   }).filter(Boolean).join('\n\n');
 }
+/* 日本語の文の切れ目で改行を入れる。
+   かぎかっこ（「」『』（）など）の中では改行しない。
+   会話文「〜です。」は閉じかっこまで含めて1行にし、そのあとで改行する。 */
+const _JA_BRACKETS={'「':'」','『':'』','（':'）','(':')','【':'】','〈':'〉','《':'》','［':'］','[':']','〔':'〕','｛':'｝','{':'}','”':'”','“':'”'};
+function _splitJaSentences(s){
+  s=s||'';
+  const stack=[];
+  let out='';
+  for(let i=0;i<s.length;i++){
+    const ch=s[i];
+    out+=ch;
+    // 閉じかっこが先（「」の入れ子や同じ記号の開閉に対応するため）
+    if(stack.length&&ch===stack[stack.length-1]){
+      stack.pop();
+      // かっこの直前が文末なら、閉じたあとで改行する（例：「〜です。」／とお伝えしました。）
+      // ただし直後が句点や別の閉じかっこなら、それらを行末に付けてから改行する
+      if(!stack.length&&/[。！？]/.test(s[i-1]||'')&&i<s.length-1&&!_isJaClosing(s[i+1]))out+='\n';
+      continue;
+    }
+    if(_JA_BRACKETS[ch]){stack.push(_JA_BRACKETS[ch]);continue;}
+    if(ch==='。'&&!stack.length){
+      const next=s[i+1];
+      if(next===undefined)continue;                 // 文末なら改行を足さない
+      if(_isJaClosing(next))continue;               // 直後が閉じかっこ等ならまだ改行しない
+      out+='\n';
+    }
+  }
+  return out;
+}
+function _isJaClosing(ch){return '」』）)】〉》］]〕｝}”’"\'。、！？'.indexOf(ch)>=0;}
 function runConvert(){
   const read=tidyBodyText(S.body);
   const useHook=document.getElementById('chkHook')?.checked;
