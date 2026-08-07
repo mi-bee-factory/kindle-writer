@@ -2679,6 +2679,7 @@ function _mwRenderHeadings(){
         oninput="if(window._mwHeads)window._mwHeads[${i}]=this.value">
       <textarea id="mwHB_${i}" placeholder="この見出しの本文..."
         style="width:100%;min-height:120px;border:1px solid var(--line-soft);padding:8px 10px;font-size:14px;line-height:1.7;box-sizing:border-box;resize:vertical;font-family:inherit">${esc(bodies[i]||'')}</textarea>
+      ${_mwInsertToolbar('mwHB_'+i,{compact:true})}
     </div>
   `).join('');
 }
@@ -2754,6 +2755,35 @@ function _mwInsertBold(taId){
   ta.dispatchEvent(new Event('input'));
 }
 function _mwInsertDivider(taId){_mwInsertAtCursor(taId,'---');}
+/* 本文の途中にリンクを差し込む。
+   文章を選んでいればそれを表示文字に使い、選んでいなければ文言から尋ねる。
+   （_mwInsertAtCursor は前後に改行を入れてしまうので使わない） */
+function _mwInsertLink(taId){
+  const ta=document.getElementById(taId);if(!ta)return;
+  const s=ta.selectionStart,e=ta.selectionEnd;
+  const sel=ta.value.substring(s,e).trim();
+  let text=sel;
+  if(!text){
+    text=(prompt('本文に表示する文字を入れてください。\n（例：こちらをタップ）','こちらをタップ')||'').trim();
+    if(!text)return;
+  }
+  let url=(prompt('リンク先のURLを貼り付けてください。\n（例：https://lin.ee/911aEwV）','')||'').trim();
+  if(!url)return;
+  // http/https 以外の種類（javascript: など）が指定されていたら受け付けない
+  if(/^[A-Za-z][A-Za-z0-9+.-]*:/.test(url)&&!/^https?:\/\//i.test(url)){
+    alert('このアドレスは使えません。\nhttps:// から始まるアドレスを貼り付けてください。');return;
+  }
+  if(!/^https?:\/\//i.test(url))url='https://'+url.replace(/^\/+/,''); // 「example.com」だけでも動くように補う
+  if(!/^https?:\/\/[A-Za-z0-9]/.test(url)){alert('URLの形が正しくないようです。\nhttps:// から始まるアドレスを貼り付けてください。');return;}
+  // 表示文字に | や ] が入るとマーカーが壊れるので、全角に置き換えておく
+  text=text.replace(/\|/g,'｜').replace(/\]/g,'］');
+  const tag='[リンク：'+text+'|'+url+']';
+  ta.value=ta.value.substring(0,s)+tag+ta.value.substring(e);
+  const pos=s+tag.length;
+  ta.selectionStart=ta.selectionEnd=pos;
+  ta.focus();
+  ta.dispatchEvent(new Event('input'));
+}
 function _mwAddImage(){
   if(!window._mwImages)window._mwImages=[];
   window._mwImages.push({name:'',url:''});
@@ -2782,19 +2812,22 @@ function _mwRenderImageList(){
     <button onclick="_mwRemoveImage(${i})" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:18px;line-height:1;padding:0 4px;flex-shrink:0">×</button>
   </div>`).join('');
 }
-function _mwInsertToolbar(taId){
+// opts.compact: 「読みやすく整える」を出さない（見出しごとに書く画面では一括ボタンが別にあるため）
+function _mwInsertToolbar(taId,opts){
+  opts=opts||{};
   const btnStyle='font-size:12px;background:#f5a623;border:none;color:#fff;padding:6px 14px;cursor:pointer;font-weight:700;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;transition:filter .15s,transform .15s';
   // 整えるボタンは「入力」ではなく「本文全体を書き換える」操作なので、色を分けて区別する
   const tidyStyle='font-size:12px;background:var(--ok);border:none;color:#fff;padding:6px 14px;cursor:pointer;font-weight:700;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;transition:filter .15s,transform .15s';
   const hover='onmouseover="this.style.filter=\'brightness(1.08)\';this.style.transform=\'translateY(-1px)\'" onmouseout="this.style.filter=\'\';this.style.transform=\'\'"';
   return `<div style="font-size:11px;color:var(--sub);padding:8px;background:#F3F2EE;margin-top:6px">
-    <div style="margin-bottom:6px;color:#403129">オレンジのボタンはカーソル位置に入ります（自分で記号を打つ必要はありません）。緑の「読みやすく整える」は本文全体の句読点をそろえ、文の切れ目で改行します（元に戻せます）。</div>
+    <div style="margin-bottom:6px;color:#403129">オレンジのボタンはカーソル位置に入ります（自分で記号を打つ必要はありません）。${opts.compact?'':'緑の「読みやすく整える」は本文全体の句読点をそろえ、文の切れ目で改行します（元に戻せます）。'}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
       <button onclick="_mwInsertHeading('${taId}')" style="${btnStyle}" ${hover}>■ 見出しを追加</button>
       <button onclick="_mwInsertBold('${taId}')" style="${btnStyle}" ${hover}>太字にする</button>
       <button onclick="_mwInsertDivider('${taId}')" style="${btnStyle}" ${hover}>－ 区切りを入れる</button>
       <button onclick="_mwInsertImage('${taId}')" style="${btnStyle}" ${hover}>画像位置を挿入</button>
-      <button onclick="_mwTidyText('${taId}')" style="${tidyStyle}" ${hover} title="句読点をそろえ、文の切れ目で改行して段落に分けます">✨ 読みやすく整える</button>
+      <button onclick="_mwInsertLink('${taId}')" style="${btnStyle}" ${hover} title="「こちらをタップ」のような文字にリンクを付けます">🔗 リンクを入れる</button>
+      ${opts.compact?'':`<button onclick="_mwTidyText('${taId}')" style="${tidyStyle}" ${hover} title="句読点をそろえ、文の切れ目で改行して段落に分けます">✨ 読みやすく整える</button>`}
     </div>
   </div>`;
 }
@@ -2869,8 +2902,7 @@ function _mwRenderHtml(text){
     }
     if(/^---+$/.test(line.trim()))return '<div style="height:20px"></div>';
     if(!line.trim())return '<div style="height:8px"></div>';
-    const html=esc(line).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\*(.+?)\*/g,'<i>$1</i>');
-    return `<p style="margin:0 0 8px;line-height:1.9;color:#1a1a2e">${html}</p>`;
+    return `<p style="margin:0 0 8px;line-height:1.9;color:#1a1a2e">${bodyFmt(esc(line))}</p>`;
   }).join('');
 }
 // 保存前の「いま入力欄にある内容」でプレビューするための一時的な章データを作る
@@ -4165,18 +4197,23 @@ function tidyBodyText(src){
   txt=txt.replace(/(https?:\/\/[^\s　]+)/g,(u)=>u.replace(/？/g,'?').replace(/！/g,'!').replace(/＆/g,'&').replace(/＝/g,'='));
   // 以前の版で分断された小数（１。５倍）をつなぎ直す
   txt=txt.replace(/([0-9０-９])。[\s　]*\n?[\s　]*([0-9０-９])/g,'$1．$2');
-  // URL・メールアドレスは記号を全角に変えるとリンクが壊れるので、いったん退避しておく
+  // 記号の変換や文の分割で壊れると困るものを、まとめていったん退避しておく
   const holds=[];
-  txt=txt.replace(/(https?:\/\/[^\s　]+|[\w.+-]+@[\w-]+\.[\w.-]+)/g,(m)=>{
-    holds.push(m);return '\uE000'+(holds.length-1)+'\uE001';
-  });
+  const stash=(m)=>{holds.push(m);return '\uE000'+(holds.length-1)+'\uE001';};
+  // リンクのマーカーは全体をひとかたまりで守る（表示文字に「。」が入っても行が分断されない）
+  txt=txt.replace(/\[リンク[：:][^\]|]+\|https?:\/\/[^\s　\]]+\]/g,stash);
+  // URL・メールアドレスは記号を全角に変えるとリンクが壊れる
+  txt=txt.replace(/(https?:\/\/[^\s　]+|[\w.+-]+@[\w-]+\.[\w.-]+)/g,stash);
   // 「．」は句点に直すが、数字にはさまれている場合は小数点なのでそのまま残す（１．５倍）
   const _isNum=(c)=>!!c&&/[0-9０-９]/.test(c);
   txt=txt.replace(/．/g,(m,off,str)=>(_isNum(str[off-1])&&_isNum(str[off+1]))?'．':'。');
   txt=txt.replace(/，/g,'、').replace(/!/g,'！').replace(/\?/g,'？')
          .replace(/、+/g,'、').replace(/。+/g,'。').replace(/[ \t]+/g,' ');
-  // そのまま残す行（見出し・区切り・画像の位置指定）
-  const keepAsIs=(l)=>/^■/.test(l)||/^#{1,4}[\s　]/.test(l)||/^-{3,}$/.test(l)||/^\[図\d+\]$/.test(l)||/^\[画像[：:].+?\]$/.test(l)||/^[<＜]図/.test(l);
+  // 退避済みのリンクだけの行かどうか（退避後は目印の文字に置き換わっているため中身で判定する）
+  const _stashRe=new RegExp('^\\uE000(\\d+)\\uE001$');
+  const _isStashedLink=(l)=>{const m=l.match(_stashRe);return !!m&&/^\[リンク/.test(holds[+m[1]]||'');};
+  // そのまま残す行（見出し・区切り・画像の位置指定・単独のリンク）
+  const keepAsIs=(l)=>/^■/.test(l)||/^#{1,4}[\s　]/.test(l)||/^-{3,}$/.test(l)||/^\[図\d+\]$/.test(l)||/^\[画像[：:].+?\]$/.test(l)||/^[<＜]図/.test(l)||/^\[リンク[：:].+?\]$/.test(l)||_isStashedLink(l);
   // 箇条書きの行。前後とつなげず、1行のまま残す（番号が本文に飲み込まれるのを防ぐ）
   const isListLine=(l)=>/^([0-9０-９]{1,3}|[一二三四五六七八九十]{1,3}|[①-⑳])[。．.、）)][\s　]*(?![0-9０-９])\S/.test(l)
                       ||/^[・･※◯○●▶▪✓][\s　]*\S/.test(l)
@@ -4320,7 +4357,8 @@ function mergeBook(){
   const ch=S.book.chapters.filter(c=>(c.body||'').trim());
   if(!ch.length){document.getElementById('mergePreview').innerHTML='<div class="hint">本文が入った章がありません。</div>';return;}
   const toc=ch.map((c,i)=>`${i+1}. ${c.title||'（無題）'}${c.author?'（'+c.author+'）':''}`).join('\n');
-  const body=ch.map((c,i)=>`第${i+1}章　${c.title||''}\n${c.author?'（著：'+c.author+'）\n':''}\n${(c.body||'').trim()}`).join('\n\n＊　＊　＊\n\n');
+  // テキストにはリンクを埋め込めないので、マーカーは「表示文字（URL）」の形に開く
+  const body=ch.map((c,i)=>`第${i+1}章　${c.title||''}\n${c.author?'（著：'+c.author+'）\n':''}\n${linkMarkToPlain((c.body||'').trim())}`).join('\n\n＊　＊　＊\n\n');
   S.book.manuscript=`${S.book.title||'（タイトル未定）'}\n${S.book.subtitle||''}\n\n― 目次 ―\n${toc}\n\n========================\n\n${body}`;
   save();
   const total=ch.reduce((s,c)=>s+(c.body||'').replace(/\s/g,'').length,0);
@@ -4352,8 +4390,9 @@ function buildBookHTML(){
   const toc=ch.map((c,i)=>`<li><a href="#ch${i+1}">${esc(chapHead(c,i))}</a></li>`).join('');
   const body=ch.map((c,i)=>{
     const inner=(c.body||'').split(/\n/).map(l=>{l=l.trim();if(!l)return '';
-      if(l.startsWith('■'))return `<h2>${esc(l.replace(/^■\s*/,''))}</h2>`;
-      return `<p>${esc(l)}</p>`;}).filter(Boolean).join('\n');
+      const hd=_headingText(l);
+      if(hd!==null)return `<h2>${bodyFmt(esc(hd))}</h2>`;
+      return `<p>${bodyFmt(esc(l))}</p>`;}).filter(Boolean).join('\n');
     return `<h1 id="ch${i+1}">${esc(chapHead(c,i))}</h1>\n${c.author?`<p class="author">著：${esc(c.author)}</p>`:''}\n${inner}`;
   }).join('\n');
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>${esc(S.book.title||'無題')}</title>
@@ -4581,6 +4620,37 @@ function inlineFmt(s){
     .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
     .replace(/\*([^*\n]+?)\*/g,'<em>$1</em>');
 }
+/* ---------- 本文中のリンク ----------
+   2通りの書き方に対応する（どちらも最終的に <a href> になる）。
+     1) [リンク：表示文字|URL]  … ツールバーのボタンが入れる形。表示文字を自由に決められる
+     2) 素のURLをそのまま貼る    … 何も覚えなくてよい保険
+   安全のため https:// http:// で始まるものだけリンクにする（javascript: 等は素通り）。
+   引数はエスケープ済み文字列を受け取る（inlineFmt と同じ前提）。 */
+const LINK_MARK_RE=/\[リンク[：:]([^\]|]+)\|(https?:\/\/[^\s　\]]+)\]/g;
+function _linkTag(url,text){return '<a href="'+url+'">'+text+'</a>';}
+function _linkify(s){
+  s=s||'';
+  const keep=[];
+  // ① マーカーを先に処理して退避する（次の自動リンク化で二重に包まれるのを防ぐ）
+  s=s.replace(LINK_MARK_RE,(m,text,url)=>{
+    keep.push(_linkTag(url,(text||'').trim()||url));
+    return '\uE010'+(keep.length-1)+'\uE011';
+  });
+  // ② 素のURLを自動でリンクにする。直前が " や = のもの（既に属性値）は対象外。
+  //    日本語はURLに使えないので半角の記号・英数字だけを拾う（「…com。次の文」を巻き込まない）
+  s=s.replace(/(^|[^"'=\w])(https?:\/\/[A-Za-z0-9\-._~:\/?#@!$&*+,;=%[\]()]+)/g,(m,pre,url)=>{
+    // 文末に付いた句読点・閉じかっこはリンクから外す
+    const body=url.replace(/[.,!?;:)\]]+$/,'');
+    if(!/^https?:\/\/[A-Za-z0-9]/.test(body))return m;
+    return pre+_linkTag(body,body)+url.slice(body.length);
+  });
+  // ③ 退避したマーカーを戻す
+  return s.replace(/\uE010(\d+)\uE011/g,(m,i)=>keep[+i]!=null?keep[+i]:m);
+}
+// 本文用の整形。章タイトルには使わない（タイトルは inlineFmt のまま）
+function bodyFmt(s){return _linkify(inlineFmt(s));}
+// HTMLにしない書き出し（テキスト・原稿結合）用。マーカーを「表示（URL）」の形に開く
+function linkMarkToPlain(s){return (s||'').replace(LINK_MARK_RE,(m,text,url)=>((text||'').trim()||url)+'（'+url+'）');}
 // 見出し行の判定。「■」でも Markdown の「#」でも見出しとして扱う（書き手の書き癖に合わせる）。
 // 見出しなら見出し文字を、そうでなければ null を返す。EPUBとプレビューで必ず同じ判定を使う。
 function _headingText(l){
@@ -4631,8 +4701,8 @@ function _epubPreviewBodyHtml(c){
       return `<p style="text-indent:0">🖼 ${esc(desc||'画像')}（未登録）</p>`;
     }
     const h=_headingText(l);
-    if(h!==null)return `<h2>${inlineFmt(esc(h))}</h2>`;
-    return `<p>${inlineFmt(esc(l))}</p>`;
+    if(h!==null)return `<h2>${bodyFmt(esc(h))}</h2>`;
+    return `<p>${bodyFmt(esc(l))}</p>`;
   }).filter(x=>x).join('');
   // 本文中で位置指定されなかった画像は章末にまとめる（EPUBと同じ）
   const rest=imgs.map((im,k)=>placed.has(k)?'':_epubPreviewImgTag(im)).join('');
@@ -4663,8 +4733,8 @@ function _epubBuildSpecialChapterXhtml(c){
     if(!l)return '';
     if(/^-{3,}$/.test(l))return '<p style="margin:2.5em 0;text-indent:0">&nbsp;</p>';
     const hd=_headingText(l);
-    if(hd!==null)return `<h2>${inlineFmt(escXml(hd))}</h2>`;
-    return `<p>${inlineFmt(escXml(l))}</p>`;}).filter(x=>x).join('\n');
+    if(hd!==null)return `<h2>${bodyFmt(escXml(hd))}</h2>`;
+    return `<p>${bodyFmt(escXml(l))}</p>`;}).filter(x=>x).join('\n');
   return {heading,xhtml:`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>${heading}</title><link rel="stylesheet" type="text/css" href="style.css"/></head><body><h1><span class="ch-ttl">${heading}</span></h1>\n${body}</body></html>`};
 }
 function buildEpub(){
@@ -4701,7 +4771,7 @@ function buildEpub(){
   const fmTitle=title,fmSub=S.book.subtitle||'',fmAuthor=S.uploadAuthor||(ch.length>0&&ch[0].author)||'';
   const fmYear=new Date().getFullYear();
   if(!fm.titlePageSkip){
-    const _parseBody=(txt,indent)=>( txt||'').split(/\n/).map(l=>{l=l.trim();if(!l)return'';if(l.startsWith('■'))return`<h2>${inlineFmt(escXml(l.replace(/^■\s*/,'')))}</h2>`;return`<p${indent?'':' style="text-indent:0"'}>${inlineFmt(escXml(l))}</p>`;}).filter(x=>x).join('\n');
+    const _parseBody=(txt,indent)=>( txt||'').split(/\n/).map(l=>{l=l.trim();if(!l)return'';if(l.startsWith('■'))return`<h2>${bodyFmt(escXml(l.replace(/^■\s*/,'')))}</h2>`;return`<p${indent?'':' style="text-indent:0"'}>${bodyFmt(escXml(l))}</p>`;}).filter(x=>x).join('\n');
     const tpBody=_parseBody(fm.titlePageBody||_fmAutoTp(),true);
     files.push({name:'OEBPS/titlepage.xhtml',bytes:sB(`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>${escXml(fmTitle)}</title><link rel="stylesheet" type="text/css" href="style.css"/><style>body{text-align:center;}p{text-indent:0;margin:.8em 0;}h1,h2{text-align:center;}</style></head><body style="padding-top:20%">${tpBody}</body></html>`)});
     manifest.push('<item id="titlepage" href="titlepage.xhtml" media-type="application/xhtml+xml"/>');
@@ -4752,8 +4822,8 @@ function buildEpub(){
       // ライター画面の「画像位置を挿入」ボタンが入れるタグ：[画像：説明]
       const mw=l.match(/^\[画像[：:](.+?)\]$/);if(mw){const desc=(mw[1]||'').trim();const k=desc?imgs.findIndex((im,idx)=>!placed.has(idx)&&(im.name||'').trim()===desc):imgs.findIndex((_,idx)=>!placed.has(idx));if(k>=0){placed.add(k);return imgs[k]._tag;}return `<p style="text-indent:0">🖼 ${escXml(desc||'画像')}（未登録）</p>`;}
       const hd=_headingText(l);
-      if(hd!==null)return `<h2>${inlineFmt(escXml(hd))}</h2>`;
-      return `<p>${inlineFmt(escXml(l))}</p>`;}).filter(x=>x).join('\n');
+      if(hd!==null)return `<h2>${bodyFmt(escXml(hd))}</h2>`;
+      return `<p>${bodyFmt(escXml(l))}</p>`;}).filter(x=>x).join('\n');
     imgs.forEach((im,k)=>{if(!placed.has(k))body+='\n'+im._tag;});
     imgs.forEach(im=>{delete im._tag;}); // 組み立て用の一時データを保存データに残さない
     if(ctaOn&&cta.perChapter&&(cta.url||'').trim())body+=`\n<hr/>\n<p style="text-indent:0">▶ ${escXml(cta.linkText||'LINEで読者特典を受け取る')}：<a href="${escXml(cta.url)}">${escXml(cta.url)}</a></p>`;
@@ -4786,7 +4856,7 @@ function buildEpub(){
   // 奥付
   let colophonSpine='';
   if(!fm.colophonSkip){
-    const coBody=(fm.colophonBody||_fmAutoCo()).split(/\n/).map(l=>{l=l.trim();if(!l)return'';if(l.startsWith('■'))return`<h2>${inlineFmt(escXml(l.replace(/^■\s*/,'')))}</h2>`;return`<p style="text-indent:0">${inlineFmt(escXml(l))}</p>`;}).filter(x=>x).join('\n');
+    const coBody=(fm.colophonBody||_fmAutoCo()).split(/\n/).map(l=>{l=l.trim();if(!l)return'';if(l.startsWith('■'))return`<h2>${bodyFmt(escXml(l.replace(/^■\s*/,'')))}</h2>`;return`<p style="text-indent:0">${bodyFmt(escXml(l))}</p>`;}).filter(x=>x).join('\n');
     files.push({name:'OEBPS/colophon.xhtml',bytes:sB(`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>奥付</title><link rel="stylesheet" type="text/css" href="style.css"/><style>body{font-size:.9em;line-height:2.2;}p{text-indent:0;}hr{border:none;border-top:1px solid #aaa;margin:1em 0;}</style></head><body style="padding-top:60%"><hr/>${coBody}</body></html>`)});
     manifest.push('<item id="colophon" href="colophon.xhtml" media-type="application/xhtml+xml"/>');
     colophonSpine='<itemref idref="colophon"/>';
@@ -5602,8 +5672,8 @@ function previewChapter(i){
   const bodyHtml=(c.body||'').split(/\n/).map(l=>{
     l=l.trim();if(!l)return'';
     if(/^-{3,}$/.test(l))return'<div style="margin:2.5em 0"></div>';
-    if(l.startsWith('■'))return`<h2 style="font-size:1.05em;margin:1.8em 0 .5em;font-weight:900;font-family:'Noto Sans JP','Hiragino Kaku Gothic Pro','Yu Gothic',sans-serif;border-left:3px solid #333;padding-left:10px;letter-spacing:.02em">${inlineFmt(esc(l.replace(/^■\s*/,'')))}</h2>`;
-    return`<p style="text-indent:1em;margin:.4em 0;line-height:2">${inlineFmt(esc(l))}</p>`;
+    if(l.startsWith('■'))return`<h2 style="font-size:1.05em;margin:1.8em 0 .5em;font-weight:900;font-family:'Noto Sans JP','Hiragino Kaku Gothic Pro','Yu Gothic',sans-serif;border-left:3px solid #333;padding-left:10px;letter-spacing:.02em">${bodyFmt(esc(l.replace(/^■\s*/,'')))}</h2>`;
+    return`<p style="text-indent:1em;margin:.4em 0;line-height:2">${bodyFmt(esc(l))}</p>`;
   }).filter(x=>x).join('');
   const mid='chapPreviewModal';
   const ex=document.getElementById(mid);if(ex)ex.remove();
@@ -5642,8 +5712,8 @@ function previewTitlePage(){
   const body=fm.titlePageBody||_fmAutoTp();
   const bodyHtml=body.split(/\n/).map(l=>{
     l=l.trim();if(!l)return'';
-    if(l.startsWith('■'))return`<h2 style="font-size:1.1em;font-weight:700;border-left:3px solid #333;padding-left:10px;text-align:left;margin:1.4em 0 .5em;font-family:'Noto Sans JP','Hiragino Kaku Gothic Pro','Yu Gothic',sans-serif">${inlineFmt(esc(l.replace(/^■\s*/,'')))}</h2>`;
-    return`<p style="text-indent:0;margin:.8em 0;line-height:1.8">${inlineFmt(esc(l))}</p>`;
+    if(l.startsWith('■'))return`<h2 style="font-size:1.1em;font-weight:700;border-left:3px solid #333;padding-left:10px;text-align:left;margin:1.4em 0 .5em;font-family:'Noto Sans JP','Hiragino Kaku Gothic Pro','Yu Gothic',sans-serif">${bodyFmt(esc(l.replace(/^■\s*/,'')))}</h2>`;
+    return`<p style="text-indent:0;margin:.8em 0;line-height:1.8">${bodyFmt(esc(l))}</p>`;
   }).filter(x=>x).join('');
   _fmPreviewModal('表題紙プレビュー',bodyHtml,'center');
 }
@@ -5652,8 +5722,8 @@ function previewColophon(){
   const body=fm.colophonBody||_fmAutoCo();
   const bodyHtml=body.split(/\n/).map(l=>{
     l=l.trim();if(!l)return'';
-    if(l.startsWith('■'))return`<h2 style="font-size:1em;font-weight:700;border-left:3px solid #333;padding-left:10px;margin:1.4em 0 .5em;font-family:'Noto Sans JP','Hiragino Kaku Gothic Pro','Yu Gothic',sans-serif">${inlineFmt(esc(l.replace(/^■\s*/,'')))}</h2>`;
-    return`<p style="text-indent:0;margin:.5em 0;line-height:2.2;font-size:.9em">${inlineFmt(esc(l))}</p>`;
+    if(l.startsWith('■'))return`<h2 style="font-size:1em;font-weight:700;border-left:3px solid #333;padding-left:10px;margin:1.4em 0 .5em;font-family:'Noto Sans JP','Hiragino Kaku Gothic Pro','Yu Gothic',sans-serif">${bodyFmt(esc(l.replace(/^■\s*/,'')))}</h2>`;
+    return`<p style="text-indent:0;margin:.5em 0;line-height:2.2;font-size:.9em">${bodyFmt(esc(l))}</p>`;
   }).filter(x=>x).join('');
   _fmPreviewModal('奥付プレビュー','<hr style="border:none;border-top:1px solid #aaa;margin:1em 0">'+bodyHtml,'left');
 }
