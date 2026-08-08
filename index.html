@@ -1190,6 +1190,22 @@ async function fetchChaptersFromSupabase(){
     const rowTs=row.updated_at?new Date(row.updated_at).getTime():0;
     // タイトル・本文・担当者名は「更新が新しい方」を採用（管理者の編集を守る）
     const merged=_mergeChapter(prev,{title:row.chapter_title,subtitle:row.chapter_subtitle,body:cloudBody,author:row.author_name},rowTs);
+    // 上のタイムスタンプ比較は「行全体で1つの時刻」しか見ないため、ライターが本文だけ保存し直しても
+    // 見かけ上は「新しい保存」になり、その行に入っている“変わっていないタイトル”で
+    // 管理者が付けたタイトルを黙って上書きしてしまう。これを防ぐため、
+    // 「前回取り込んだときのクラウド側の値」と比べて、実際に変わっていた項目だけを反映する。
+    const seen=prev._cloudSeen||{};
+    ['title','subtitle','author'].forEach(f=>{
+      const cloudVal=({title:row.chapter_title,subtitle:row.chapter_subtitle,author:row.author_name}[f])||'';
+      if(f in seen){
+        if(cloudVal===seen[f])merged[f]=prev[f]; // 前回と同じ＝ライターは触っていない→管理者の値を守る
+      }else if(prev[f]){
+        // まだ一度もこの章を取り込んだことが無いが、管理者がこの端末で既に値を入れている場合は、
+        // それを「意図して入力したもの」として優先する（取り込んだ瞬間に消えるのを防ぐ）
+        merged[f]=prev[f];
+      }
+    });
+    merged._cloudSeen={title:row.chapter_title||'',subtitle:row.chapter_subtitle||'',author:row.author_name||''};
     merged.images=_mergeChapterImages(prev.images,row.images);
     if(prev.title&&merged.title!==row.chapter_title)nKept++;
     else if(prev.body&&merged.body!==cloudBody)nKept++;
