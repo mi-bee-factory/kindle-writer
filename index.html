@@ -4428,11 +4428,24 @@ function exportPlan(){
 }
 
 /* ---------- 図（画像）の追加 ---------- */
+/* ライターが本文に入れた [画像：◯◯] のうち、まだ実ファイルが用意されていない名前を1つ返す。
+   管理者が画像をアップロードしたとき、その名前を自動で見出しに入れて手入力を省くために使う。 */
+function _nextUnmatchedImgLabel(i){
+  const c=(S.book&&S.book.chapters&&S.book.chapters[i])||{};
+  const imgs=c.images||[];
+  const wanted=[...String(c.body||'').matchAll(/\[画像[：:](.+?)\]/g)].map(m=>(m[1]||'').trim()).filter(Boolean);
+  const ready=imgs.filter(im=>im&&im.data).map(im=>((im.name||im.caption)||'').trim());
+  for(const w of wanted){
+    const need=wanted.filter(x=>x===w).length;
+    if(ready.filter(x=>x===w).length<need)return w;
+  }
+  return '';
+}
 function addImage(i,input){
   const arr=Array.prototype.slice.call(input.files||[]).filter(f=>f.type&&f.type.indexOf('image')===0);
   if(!arr.length)return;let done=0;
   arr.forEach(f=>{const r=new FileReader();r.onload=()=>{const c=S.book.chapters[i];if(!c.images)c.images=[];
-    c.images.push({data:String(r.result),mime:(f.type||'image/jpeg'),caption:''});done++;if(done===arr.length){_markChapterEdited(i,[]);save();refreshImgPanel(i);}};r.readAsDataURL(f);});}
+    c.images.push({data:String(r.result),mime:(f.type||'image/jpeg'),caption:_nextUnmatchedImgLabel(i)});done++;if(done===arr.length){_markChapterEdited(i,[]);save();refreshImgPanel(i);}};r.readAsDataURL(f);});}
 function pasteImage(e,i){
   e.preventDefault();
   const cd=e.clipboardData||window.clipboardData; if(!cd)return;
@@ -4441,7 +4454,7 @@ function pasteImage(e,i){
   for(const f of (cd.files||[])){ if(f.type&&f.type.indexOf('image')===0)blobs.push(f); }
   if(!blobs.length){const z=document.getElementById('pz'+i);if(z)z.textContent='⚠ 画像が見つかりません。画像をコピー／スクショしてから、ここでCtrl+Vしてください';return;}
   blobs.forEach(f=>{const r=new FileReader();r.onload=()=>{const c=S.book.chapters[i];if(!c.images)c.images=[];
-    c.images.push({data:String(r.result),mime:(f.type||'image/png'),caption:''});_markChapterEdited(i,[]);save();refreshImgPanel(i);};r.readAsDataURL(f);});
+    c.images.push({data:String(r.result),mime:(f.type||'image/png'),caption:_nextUnmatchedImgLabel(i)});_markChapterEdited(i,[]);save();refreshImgPanel(i);};r.readAsDataURL(f);});
 }
 function delImage(i,k){S.book.chapters[i].images.splice(k,1);_markChapterEdited(i,[]);save();refreshImgPanel(i);}
 /* 本文のカーソル位置を覚えておく（「本文に入れる」ボタン用） */
@@ -4650,6 +4663,35 @@ function _linkify(s){
 function bodyFmt(s){return _linkify(inlineFmt(s));}
 // HTMLにしない書き出し（テキスト・原稿結合）用。マーカーを「表示（URL）」の形に開く
 function linkMarkToPlain(s){return (s||'').replace(LINK_MARK_RE,(m,text,url)=>((text||'').trim()||url)+'（'+url+'）');}
+/* 本文の [画像：名前] と、登録されている画像を結びつける。
+   ライターは「名前＋共有リンク」で登録し、管理者は画像ファイル（＋キャプション）で登録するため、
+   どちらの呼び方でも一致させる。同じ名前が両方にある場合は、本に埋め込める実ファイルを優先する。
+   これにより管理者は「同じ名前でファイルを追加する」だけでよく、本文の書き換えは不要。 */
+function _findChapImage(imgs,desc,placed){
+  imgs=imgs||[];
+  const label=(im)=>((im&&(im.name||im.caption))||'').trim();
+  const free=(idx)=>!placed.has(idx);
+  if(desc){
+    let k=imgs.findIndex((im,idx)=>free(idx)&&im&&im.data&&label(im)===desc); // 実ファイルを優先
+    if(k<0)k=imgs.findIndex((im,idx)=>free(idx)&&label(im)===desc);           // 無ければリンク
+    return k;
+  }
+  let k=imgs.findIndex((im,idx)=>free(idx)&&im&&im.data);
+  if(k<0)k=imgs.findIndex((im,idx)=>free(idx));
+  return k;
+}
+/* 本文で位置指定されなかった画像のうち、章末にまとめて出すものを返す。
+   同じ名前の実ファイルが既に本文中へ置かれているなら、ライターが登録した
+   受け渡し用のリンクは役目を終えているので出さない（二重表示を防ぐ）。 */
+function _leftoverChapImages(imgs,placed){
+  imgs=imgs||[];
+  const label=(im)=>((im&&(im.name||im.caption))||'').trim();
+  const done=new Set();
+  imgs.forEach((im,idx)=>{if(placed.has(idx)&&im&&im.data)done.add(label(im));});
+  return imgs.map((im,idx)=>({im,idx}))
+    .filter(x=>!placed.has(x.idx))
+    .filter(x=>!(x.im&&!x.im.data&&x.im.url&&done.has(label(x.im))));
+}
 // 見出し行の判定。「■」でも Markdown の「#」でも見出しとして扱う（書き手の書き癖に合わせる）。
 // 見出しなら見出し文字を、そうでなければ null を返す。EPUBとプレビューで必ず同じ判定を使う。
 function _headingText(l){
@@ -4695,7 +4737,7 @@ function _epubPreviewBodyHtml(c){
     m=l.match(/^\[画像[：:](.+?)\]$/);
     if(m){
       const desc=(m[1]||'').trim();
-      const k=desc?imgs.findIndex((im,idx)=>!placed.has(idx)&&(im.name||'').trim()===desc):imgs.findIndex((_,idx)=>!placed.has(idx));
+      const k=_findChapImage(imgs,desc,placed);
       if(k>=0){placed.add(k);return _epubPreviewImgTag(imgs[k]);}
       return `<p style="text-indent:0">🖼 ${esc(desc||'画像')}（未登録）</p>`;
     }
@@ -4704,7 +4746,7 @@ function _epubPreviewBodyHtml(c){
     return `<p>${bodyFmt(esc(l))}</p>`;
   }).filter(x=>x).join('');
   // 本文中で位置指定されなかった画像は章末にまとめる（EPUBと同じ）
-  const rest=imgs.map((im,k)=>placed.has(k)?'':_epubPreviewImgTag(im)).join('');
+  const rest=_leftoverChapImages(imgs,placed).map(x=>_epubPreviewImgTag(x.im)).join('');
   return lines+rest||'<p style="color:#aaa;text-indent:0">（本文がありません）</p>';
 }
 // 章まるごと（章タイトル＋著者＋本文）をEPUBと同じ見た目で描く
@@ -4819,11 +4861,11 @@ function buildEpub(){
       const m=l.match(/^\[図(\d+)\]$/);if(m){const k=parseInt(m[1])-1;const im=imgs[k];if(im){placed.add(k);return im._tag;}return '';}
       const mf=l.match(/^[<＜]図[：:](.+?)[>＞]$|^[<＜]図[>＞]$/);if(mf){const cap=(mf[1]||'').trim();const k=cap?imgs.findIndex((im,idx)=>!placed.has(idx)&&im.caption.trim()===cap):imgs.findIndex((_,idx)=>!placed.has(idx));if(k>=0){placed.add(k);return imgs[k]._tag;}return '';}
       // ライター画面の「画像位置を挿入」ボタンが入れるタグ：[画像：説明]
-      const mw=l.match(/^\[画像[：:](.+?)\]$/);if(mw){const desc=(mw[1]||'').trim();const k=desc?imgs.findIndex((im,idx)=>!placed.has(idx)&&(im.name||'').trim()===desc):imgs.findIndex((_,idx)=>!placed.has(idx));if(k>=0){placed.add(k);return imgs[k]._tag;}return `<p style="text-indent:0">🖼 ${escXml(desc||'画像')}（未登録）</p>`;}
+      const mw=l.match(/^\[画像[：:](.+?)\]$/);if(mw){const desc=(mw[1]||'').trim();const k=_findChapImage(imgs,desc,placed);if(k>=0){placed.add(k);return imgs[k]._tag;}return `<p style="text-indent:0">🖼 ${escXml(desc||'画像')}（未登録）</p>`;}
       const hd=_headingText(l);
       if(hd!==null)return `<h2>${bodyFmt(escXml(hd))}</h2>`;
       return `<p>${bodyFmt(escXml(l))}</p>`;}).filter(x=>x).join('\n');
-    imgs.forEach((im,k)=>{if(!placed.has(k))body+='\n'+im._tag;});
+    _leftoverChapImages(imgs,placed).forEach(x=>{body+='\n'+x.im._tag;});
     imgs.forEach(im=>{delete im._tag;}); // 組み立て用の一時データを保存データに残さない
     if(ctaOn&&cta.perChapter&&(cta.url||'').trim())body+=`\n<hr/>\n<p style="text-indent:0">▶ ${escXml(cta.linkText||'LINEで読者特典を受け取る')}：<a href="${escXml(cta.url)}">${escXml(cta.url)}</a></p>`;
     const chapNIdx=calcNIdx(ch,i);
@@ -5169,7 +5211,7 @@ async function pasteFromClipboard(i){
       if(!type)continue;
       const blob=await it.getType(type);
       const data=await new Promise(res=>{const r=new FileReader();r.onload=()=>res(String(r.result));r.readAsDataURL(blob);});
-      const c=S.book.chapters[i];if(!c.images)c.images=[];c.images.push({data,mime:type,caption:''});added++;
+      const c=S.book.chapters[i];if(!c.images)c.images=[];c.images.push({data,mime:type,caption:_nextUnmatchedImgLabel(i)});added++;
     }
     if(added){save();refreshImgPanel(i);}
     else alert('クリップボードに画像がありません。\nWin+Shift+S でスクショを撮ってから、もう一度このボタンを押してください。');
@@ -5184,7 +5226,7 @@ function dropImage(e,i){
   const imgs=Array.prototype.slice.call(fs).filter(f=>f.type&&f.type.indexOf('image')===0);
   if(!imgs.length){const z=document.getElementById('pz'+i);if(z)z.textContent='⚠ 画像ファイルではありません';return;}
   let done=0;imgs.forEach(f=>{const r=new FileReader();r.onload=()=>{const c=S.book.chapters[i];if(!c.images)c.images=[];
-    c.images.push({data:String(r.result),mime:(f.type||'image/png'),caption:''});done++;if(done===imgs.length){save();refreshImgPanel(i);}};r.readAsDataURL(f);});
+    c.images.push({data:String(r.result),mime:(f.type||'image/png'),caption:_nextUnmatchedImgLabel(i)});done++;if(done===imgs.length){save();refreshImgPanel(i);}};r.readAsDataURL(f);});
 }
 /* 編集できる枠での Ctrl+V 用 */
 function pasteZone(e,i){
@@ -5195,7 +5237,7 @@ function pasteZone(e,i){
   if(!blobs.length) return; // 画像でなければ普通の貼り付けに任せる
   e.preventDefault();
   let done=0;blobs.forEach(f=>{const r=new FileReader();r.onload=()=>{const c=S.book.chapters[i];if(!c.images)c.images=[];
-    c.images.push({data:String(r.result),mime:(f.type||'image/png'),caption:''});done++;if(done===blobs.length){save();refreshImgPanel(i);}};r.readAsDataURL(f);});
+    c.images.push({data:String(r.result),mime:(f.type||'image/png'),caption:_nextUnmatchedImgLabel(i)});done++;if(done===blobs.length){save();refreshImgPanel(i);}};r.readAsDataURL(f);});
 }
 
 
@@ -6230,7 +6272,7 @@ function chapDropImage(event,i){
   let done=0;
   files.forEach(f=>{const r=new FileReader();r.onload=()=>{
     const c=S.book.chapters[i];if(!c.images)c.images=[];
-    c.images.push({data:String(r.result),mime:(f.type||'image/jpeg'),caption:''});
+    c.images.push({data:String(r.result),mime:(f.type||'image/jpeg'),caption:_nextUnmatchedImgLabel(i)});
     done++;if(done===files.length){save();refreshImgPanel(i);}
   };r.readAsDataURL(f);});
 }
