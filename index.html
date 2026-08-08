@@ -6237,6 +6237,7 @@ function renderChapImgPanelHtml(i){
   return `<div style="padding:14px;background:#fafafa;border:1px solid var(--line);margin-top:4px">
     <b style="font-size:14px;display:flex;align-items:center;gap:5px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/><path d="M3 14l5-5 5 5" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M13 12l3-3 5 5" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/></svg>この章の図（任意）</b>
     <p class="muted small" style="margin:4px 0 10px">本文中に <code style="background:#f0f0f2;padding:1px 6px">[図1]</code> と書くと、EPUB出力時にその位置に画像が挿入されます</p>
+    ${_pendingImgListHtml(i)}
     ${thumbs}
     <div class="row" style="margin-top:8px;align-items:center">
       <label class="btn ghost" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;margin:0">
@@ -6251,6 +6252,32 @@ function renderChapImgPanelHtml(i){
   </div>`;
 }
 
+/* ライターが本文に入れた [画像：◯◯] のうち、まだ画像ファイルが用意されていないものを一覧で出す。
+   「どれが足りないのか」「次にアップロードした画像にどの説明が付くのか」がその場で分かるようにする。 */
+function _pendingImgListHtml(i){
+  const c=(S.book&&S.book.chapters&&S.book.chapters[i])||{};
+  const imgs=c.images||[];
+  const wanted=[...String(c.body||'').matchAll(/\[画像[：:](.+?)\]/g)].map(m=>(m[1]||'').trim()).filter(Boolean);
+  if(!wanted.length)return '';
+  const label=(im)=>((im&&(im.name||im.caption))||'').trim();
+  const used=[];
+  const pending=[];
+  wanted.forEach(w=>{
+    // 同じ説明が複数回出てくる場合も1件ずつ数える
+    const have=imgs.filter((im,idx)=>im&&im.data&&label(im)===w&&!used.includes(idx));
+    if(have.length){used.push(imgs.indexOf(have[0]));}
+    else pending.push(w);
+  });
+  if(!pending.length){
+    return `<div style="font-size:12px;color:var(--ok);background:var(--ok-soft);padding:8px 12px;margin:0 0 10px;font-weight:700">✓ 本文で指定された画像 ${wanted.length}件は、すべて用意できています</div>`;
+  }
+  const rows=pending.map((w,n)=>`<li style="margin:0 0 4px">${n===0?'<b>次にアップロードするとここに入ります：</b><br>':''}<span style="color:#7c2d12">${esc(w)}</span></li>`).join('');
+  return `<div style="font-size:12px;background:#fff7ed;border:1px solid #fdba74;padding:10px 12px;margin:0 0 10px;color:#7c2d12;line-height:1.8">
+    <b>🖼 まだ画像が入っていない箇所が ${pending.length}件 あります</b>
+    <div style="margin-top:4px">ライターが本文で位置を指定しています。<b>本文に出てくる順に</b>画像を追加すると、説明文が自動で付きます。</div>
+    <ol style="margin:8px 0 0;padding-left:20px">${rows}</ol>
+  </div>`;
+}
 function refreshImgPanel(i){
   const compileEl=document.getElementById('compile');
   if(compileEl&&!compileEl.classList.contains('hide')){renderCompile();return;}
