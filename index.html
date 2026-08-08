@@ -1190,6 +1190,7 @@ async function fetchChaptersFromSupabase(){
     const rowTs=row.updated_at?new Date(row.updated_at).getTime():0;
     // タイトル・本文・担当者名は「更新が新しい方」を採用（管理者の編集を守る）
     const merged=_mergeChapter(prev,{title:row.chapter_title,subtitle:row.chapter_subtitle,body:cloudBody,author:row.author_name},rowTs);
+    merged.images=_mergeChapterImages(prev.images,row.images);
     if(prev.title&&merged.title!==row.chapter_title)nKept++;
     else if(prev.body&&merged.body!==cloudBody)nKept++;
     // 修正を依頼した章は、ライターが依頼より後に保存し直すまで「修正依頼中」を保つ。
@@ -4529,6 +4530,22 @@ function _readImageCompressed(file,cb){
     img.src=src;
   };
   fr.readAsDataURL(file);
+}
+/* 「取り込む」実行時に、クラウド（ライターの提出）の画像とこの端末の画像を突き合わせる。
+   名前が同じなら実ファイルを持つ方を残す。管理者がこの端末で直接アップロードした
+   画像（クラウドには無い名前）は消さずに残す。 */
+function _mergeChapterImages(localImgs,cloudImgs){
+  localImgs=localImgs||[];cloudImgs=cloudImgs||[];
+  const label=(im)=>((im&&(im.name||im.caption))||'').trim();
+  const out=[...localImgs];
+  cloudImgs.forEach(ci=>{
+    const key=label(ci);
+    const idx=key?out.findIndex(im=>label(im)===key):-1;
+    if(idx<0){out.push(ci);return;}
+    // 同じ名前が既にあるなら、実データを持つ方を優先して残す
+    if(ci&&ci.data&&!(out[idx]&&out[idx].data))out[idx]=ci;
+  });
+  return out;
 }
 /* ライターが本文に入れた [画像：◯◯] のうち、まだ実ファイルが用意されていない名前を1つ返す。
    管理者が画像をアップロードしたとき、その名前を自動で見出しに入れて手入力を省くために使う。 */
