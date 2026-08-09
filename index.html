@@ -3029,6 +3029,10 @@ async function _mwSubmit(chapIdx){
   if(!window._mwMode){alert('書き方を選んでください');return;}
   const body=_mwGetBody();
   if(!body){alert('本文を入力してください');return;}
+  // 直前の入力で仕込まれた「自動保存（下書き）」タイマーが、この提出の後に遅れて発火すると
+  // status:'draft' で上書きされ、提出したはずが黙って下書きに戻ってしまう。それを防ぐため先に止める。
+  if(_mwDraftTimer){clearTimeout(_mwDraftTimer);_mwDraftTimer=null;}
+  if(_mwCloudTimer){clearTimeout(_mwCloudTimer);_mwCloudTimer=null;}
   S.memberName=name;S.author=name;
   if(!S.book)S.book={chapters:[],title:''};
   while(S.book.chapters.length<=chapIdx)S.book.chapters.push({author:'',title:'',body:''});
