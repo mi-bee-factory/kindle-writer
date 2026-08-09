@@ -1110,8 +1110,15 @@ async function _sbSaveChapter(opts){
   let usedFallback=false;
   // 一意制約は (book_id,user_id,chapter_index)。1人が複数章を担当しても章ごとに別行で保存される。
   let {error}=await _sb.from('member_chapters').upsert(row,{onConflict:'book_id,user_id,chapter_index'});
+  if(error&&/chapter_subtitle/i.test(error.message||'')){
+    // サブタイトル列だけがまだ無いスキーマ：それだけ落として再試行する。
+    // status・images 等はここでは絶対に落とさない（提出済み・添付画像が保存されなくなるため）。
+    delete row.chapter_subtitle;
+    ({error}=await _sb.from('member_chapters').upsert(row,{onConflict:'book_id,user_id,chapter_index'}));
+  }
   if(error){
-    // 追加列が無い（未反映）スキーマ：既知の追加列を落として再試行（後方互換）
+    // それでも失敗する＝もっと古いスキーマ。既知の追加列を落として再試行（後方互換）。
+    // ここまで来て status が落ちる場合は、呼び出し元に usedFallback で知らせる。
     usedFallback=true;
     ['status','mode','images','project_id','book_title','producer_name','chapter_subtitle'].forEach(k=>{delete row[k];});
     ({error}=await _sb.from('member_chapters').upsert(row,{onConflict:'book_id,user_id,chapter_index'}));
