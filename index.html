@@ -3277,6 +3277,7 @@ function _mwAdoptAdminEdit(idx){
   const newBody=cloudC.body||c.body||'';
   c.body=newBody;
   c.title=cloudC.title||c.title;
+  if(cloudC.subtitle!=null)c.subtitle=cloudC.subtitle; // 空文字への変更も「消した」として反映する
   c.adminEditSeenAt=cloudC.adminEditedAt;
   // 下書きの生データも管理者版に差し替える（これをしないと入力欄に反映されない）
   const mode=(c.draft&&c.draft.mode)||window._mwMode||'C';
@@ -3295,6 +3296,7 @@ function _mwAdoptAdminEdit(idx){
   const ta=document.getElementById(mode==='A'?'mwBodyA':'mwBody');
   if(ta){ta.value=newBody;_mwExpandTA&&_mwExpandTA(ta);}
   const chapTitleEl=document.getElementById('mwChapTitle');if(chapTitleEl)chapTitleEl.value=c.title||'';
+  const chapSubEl=document.getElementById('mwChapSubtitle');if(chapSubEl)chapSubEl.value=c.subtitle||'';
   _mwRenderImageList&&_mwRenderImageList();
   _mwUpdateStatusBadge&&_mwUpdateStatusBadge(idx);
   const t=document.createElement('div');
