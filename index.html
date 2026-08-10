@@ -3549,26 +3549,35 @@ function _coChapNoticeHtml(i,c){
   }
   return '';
 }
-// 添付画像の一覧。実ファイル（本に埋め込める）とリンクのみ（要ダウンロード）を区別して見せる。
+// 添付画像の一覧。本文で実際に使われているか／リンクのみで本当にダウンロードが要るのかを区別して見せる。
 // 数が多いと画面を占領するので、既定は畳んでおく。
 function _coChapImgListHtml(i,c){
   const imgs=c.images||[];
   if(!imgs.length)return '';
+  const placed=_chapPlacedImageIdx(i);
   const real=imgs.filter(im=>im&&im.data).length;
-  const linkOnly=imgs.length-real;
-  const summary=real&&linkOnly?`画像 ${imgs.length}件（埋め込み済み${real}・要ダウンロード${linkOnly}）`
-    :real?`画像 ${imgs.length}件（すべて埋め込み済み）`:`画像 ${imgs.length}件（すべてリンクのみ・ダウンロードが必要）`;
+  const needDownload=imgs.filter((im,idx)=>im&&!im.data&&placed.has(idx)).length; // 本文で使われているのに実ファイルが無いもの
+  const unused=imgs.filter((im,idx)=>im&&!im.data&&!placed.has(idx)).length; // 本文で使われていない空き殻
+  const parts=[`埋め込み済み${real}`];
+  if(needDownload)parts.push(`要ダウンロード${needDownload}`);
+  if(unused)parts.push(`未使用${unused}`);
+  const summary=`画像 ${imgs.length}件（${parts.join('・')}）`;
   return `<details style="border-bottom:1px solid var(--line-soft);flex-shrink:0">
     <summary style="padding:7px 16px;background:#fafafa;font-size:12px;font-weight:700;color:var(--ink);cursor:pointer;list-style:none">🖼 ${summary}</summary>
     <div style="padding:4px 16px 10px;display:flex;flex-direction:column;gap:5px">
-      ${imgs.map((img,idx)=>`<div style="display:flex;align-items:center;gap:8px;font-size:12px">
+      ${imgs.map((img,idx)=>{
+        const isPlaced=placed.has(idx);
+        let status;
+        if(img.data)status=`<span style="color:var(--ok);font-weight:700;white-space:nowrap;font-size:11px">✓ 埋め込み済み${isPlaced?'':'（本文未使用）'}</span>`;
+        else if(isPlaced&&img.url)status=`<a href="${esc(img.url)}" target="_blank" rel="noopener" style="color:#c2410c;font-weight:700;white-space:nowrap;text-decoration:none;border:1px solid #c2410c;padding:2px 8px;font-size:11px">↓ ダウンロード</a>`;
+        else status=`<span style="color:#aaa;font-size:11px">未使用（削除してOK）</span>`;
+        return `<div style="display:flex;align-items:center;gap:8px;font-size:12px">
         <span style="color:var(--sub);font-weight:600;flex-shrink:0">[${idx+1}]</span>
         <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#403129">${esc(img.name||img.caption||'画像'+(idx+1))}</span>
-        ${img.data?'<span style="color:var(--ok);font-weight:700;white-space:nowrap;font-size:11px">✓ 埋め込み済み</span>'
-          :img.url?`<a href="${esc(img.url)}" target="_blank" rel="noopener" style="color:#c2410c;font-weight:700;white-space:nowrap;text-decoration:none;border:1px solid #c2410c;padding:2px 8px;font-size:11px">↓ ダウンロード</a>`
-          :'<span style="color:#aaa;font-size:11px">リンクなし</span>'}
-      </div>`).join('')}
-      ${linkOnly?`<div style="font-size:11px;color:var(--sub);margin-top:4px;line-height:1.6">「↓ ダウンロード」の画像は、まとめ画面の「画像ファイルを選ぶ」で追加すると本に絵として入ります。</div>`:''}
+        ${status}
+      </div>`;}).join('')}
+      ${needDownload?`<div style="font-size:11px;color:var(--sub);margin-top:4px;line-height:1.6">「↓ ダウンロード」は本文で使われている写真です。まとめ画面の「画像ファイルを選ぶ」で追加すると本に絵として入ります。</div>`:''}
+      ${unused?`<div style="font-size:11px;color:var(--sub);margin-top:4px;line-height:1.6">「未使用」は本文のどこからも参照されていない空き殻です。まとめ画面の「この章の図」パネルにある「まとめて削除」で消せます。</div>`:''}
     </div>
   </details>`;
 }
