@@ -4417,9 +4417,23 @@ function styleOf(t){const polite=(t.match(/(です|ます)/g)||[]).length;const 
 function mergeBook(){
   const ch=S.book.chapters.filter(c=>(c.body||'').trim());
   if(!ch.length){document.getElementById('mergePreview').innerHTML='<div class="hint">本文が入った章がありません。</div>';return;}
-  const toc=ch.map((c,i)=>`${i+1}. ${c.title||'（無題）'}${c.author?'（'+c.author+'）':''}`).join('\n');
+  // 特別章（はじめに・あとがきなど）も、実際のEPUB出力と同じ並び順で見せる
+  const specialCh=(S.book.specialChapters||[]).filter(c=>(c.body||'').trim());
+  const specialFront=specialCh.filter(c=>c.type==='hajimeni'||c.type==='prologue');
+  const specialBack=specialCh.filter(c=>!(c.type==='hajimeni'||c.type==='prologue'));
+  const spLabel=c=>(c.title||'').trim()||_SPECIAL_LABELS[c.type]||'';
+  const toc=[
+    ...specialFront.map(c=>spLabel(c)),
+    ...ch.map((c,i)=>`${i+1}. ${c.title||'（無題）'}${c.author?'（'+c.author+'）':''}`),
+    ...specialBack.map(c=>spLabel(c))
+  ].join('\n');
   // テキストにはリンクを埋め込めないので、マーカーは「表示文字（URL）」の形に開く
-  const body=ch.map((c,i)=>`第${i+1}章　${c.title||''}\n${c.author?'（著：'+c.author+'）\n':''}\n${linkMarkToPlain((c.body||'').trim())}`).join('\n\n＊　＊　＊\n\n');
+  const spBody=c=>`${spLabel(c)}\n\n${linkMarkToPlain((c.body||'').trim())}`;
+  const body=[
+    ...specialFront.map(spBody),
+    ...ch.map((c,i)=>`第${i+1}章　${c.title||''}\n${c.author?'（著：'+c.author+'）\n':''}\n${linkMarkToPlain((c.body||'').trim())}`),
+    ...specialBack.map(spBody)
+  ].join('\n\n＊　＊　＊\n\n');
   S.book.manuscript=`${S.book.title||'（タイトル未定）'}\n${S.book.subtitle||''}\n\n― 目次 ―\n${toc}\n\n========================\n\n${body}`;
   save();
   const total=ch.reduce((s,c)=>s+(c.body||'').replace(/\s/g,'').length,0);
