@@ -3518,8 +3518,8 @@ function previewCoChapter(i){
         oninput="document.getElementById('coChapCount').textContent=this.value.length.toLocaleString()+'文字'"
       >${esc(c.body||'')}</textarea>
       <div id="coChapImgPanel" style="padding:0 20px 12px">${renderChapImgPanelHtml(i)}</div>
+      <div id="coChapEdgeImagePanel" style="padding:0 20px 12px">${_chapEdgeImagePanelHtml('coreview',i,c)}</div>
     </div>
-    <div id="coChapEdgeImagePanel" style="padding:0 20px;flex-shrink:0">${_chapEdgeImagePanelHtml('coreview',i,c)}</div>
     <div style="padding:12px 20px;border-top:1px solid var(--line-soft);flex-shrink:0;display:flex;gap:8px;flex-wrap:wrap">
       <button id="coChapSaveBtn" style="display:none;flex:1;padding:10px;font-size:14px;font-weight:700;background:var(--ok);color:#fff;border:none;cursor:pointer" onclick="_coChapSave(${i})">保存する</button>
       <button style="flex:1;min-width:180px;padding:10px;font-size:13px;font-weight:700;background:#c2410c;color:#fff;border:none;cursor:pointer" onclick="_coRequestRevision(${i})">🔁 ライターに修正を依頼する</button>
