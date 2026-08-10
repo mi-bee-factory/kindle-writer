@@ -3511,12 +3511,13 @@ function previewCoChapter(i){
       <div style="font-size:11px;color:var(--sub);background:#f5f5f3;padding:5px 10px;margin:-4px 0 14px;text-align:center">本になったときの見え方（EPUBと同じ表示）</div>
       ${_epubPreviewHtml(c,calcNIdx(S.book.chapters,i))}
     </div>
-    <div id="coChapEdit" style="display:none;flex:1;flex-direction:column;min-height:0">
+    <div id="coChapEdit" style="display:none;flex:1;flex-direction:column;min-height:0;overflow-y:auto">
       ${_mwInsertToolbar('coChapEditTA')}
       <textarea id="coChapEditTA" ondblclick="_mwExpandTA(this)"
-        style="flex:1;width:100%;border:none;padding:16px 20px;font-size:14px;line-height:1.9;resize:none;font-family:inherit;box-sizing:border-box;min-height:300px;outline:none"
+        style="width:100%;border:none;padding:16px 20px;font-size:14px;line-height:1.9;resize:vertical;font-family:inherit;box-sizing:border-box;min-height:220px;outline:none"
         oninput="document.getElementById('coChapCount').textContent=this.value.length.toLocaleString()+'文字'"
       >${esc(c.body||'')}</textarea>
+      <div id="coChapImgPanel" style="padding:0 20px 12px">${renderChapImgPanelHtml(i)}</div>
     </div>
     <div id="coChapEdgeImagePanel" style="padding:0 20px;flex-shrink:0">${_chapEdgeImagePanelHtml('coreview',i,c)}</div>
     <div style="padding:12px 20px;border-top:1px solid var(--line-soft);flex-shrink:0;display:flex;gap:8px;flex-wrap:wrap">
@@ -6602,6 +6603,9 @@ function _unusedLinkImgNoticeHtml(i){
   </div>`;
 }
 function refreshImgPanel(i){
+  // 「内容を確認」モーダルの編集タブが開いていれば、そちらを優先して更新する
+  const coEl=document.getElementById('coChapImgPanel');
+  if(coEl){coEl.innerHTML=renderChapImgPanelHtml(i!==undefined?i:S.currentChap);return;}
   const compileEl=document.getElementById('compile');
   if(compileEl&&!compileEl.classList.contains('hide')){renderCompile();return;}
   const el=document.getElementById('chapImgPanel');
