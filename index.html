@@ -4848,22 +4848,44 @@ function _findChapImage(imgs,desc,placed){
   if(k<0)k=imgs.findIndex((im,idx)=>free(idx));
   return k;
 }
-/* 実ファイルはあるのに、本文のどこにも [図N] [画像：説明] で位置指定されていない写真を返す。
-   EPUB/プレビューには表示されない（意図的に配置した写真だけを出す方針）ので、
-   気づけるようにまとめ画面へ「未配置」として知らせるために使う。 */
-function _unplacedChapImages(i){
+/* 本文の [図N] [画像：説明] タグが実際にどの画像を指しているかを、位置指定として使う判定と揃えて集計する。 */
+function _chapPlacedImageIdx(i){
   const c=(S.book&&S.book.chapters&&S.book.chapters[i])||{};
   const imgs=c.images||[];
   const body=String(c.body||'');
   const placed=new Set();
   [...body.matchAll(/\[図(\d+)\]/g)].forEach(m=>placed.add(parseInt(m[1])-1));
-  const label=(im)=>((im&&(im.name||im.caption))||'').trim();
   [...body.matchAll(/\[画像[：:](.+?)\]/g)].forEach(m=>{
     const desc=(m[1]||'').trim();
     const k=_findChapImage(imgs,desc,placed);
     if(k>=0)placed.add(k);
   });
+  return placed;
+}
+/* 実ファイルはあるのに、本文のどこにも位置指定されていない写真を返す。
+   EPUB/プレビューには表示されない（意図的に配置した写真だけを出す方針）ので、
+   気づけるようにまとめ画面へ「未配置」として知らせるために使う。 */
+function _unplacedChapImages(i){
+  const c=(S.book&&S.book.chapters&&S.book.chapters[i])||{};
+  const imgs=c.images||[];
+  const placed=_chapPlacedImageIdx(i);
   return imgs.map((im,idx)=>({im,idx})).filter(x=>x.im&&x.im.data&&!placed.has(x.idx));
+}
+/* 実ファイルが無い（リンクのみ、または空）の登録で、かつ本文のどこからも参照されていないもの。
+   EPUBには一切影響しない完全な空き殻なので、まとめて消せるようにする。 */
+function _unusedLinkOnlyImages(i){
+  const c=(S.book&&S.book.chapters&&S.book.chapters[i])||{};
+  const imgs=c.images||[];
+  const placed=_chapPlacedImageIdx(i);
+  return imgs.map((im,idx)=>({im,idx})).filter(x=>x.im&&!x.im.data&&!placed.has(x.idx));
+}
+function cleanUnusedLinkImages(i){
+  const c=S.book&&S.book.chapters&&S.book.chapters[i];if(!c)return;
+  const drop=new Set(_unusedLinkOnlyImages(i).map(x=>x.idx));
+  if(!drop.size)return;
+  if(!confirm(`本文で使われていないリンクだけの画像を ${drop.size}件 削除します。よろしいですか？`))return;
+  c.images=(c.images||[]).filter((im,idx)=>!drop.has(idx));
+  _markChapterEdited(i,[]);save();refreshImgPanel(i);
 }
 // 見出し行の判定。「■」でも Markdown の「#」でも見出しとして扱う（書き手の書き癖に合わせる）。
 // 見出しなら見出し文字を、そうでなければ null を返す。EPUBとプレビューで必ず同じ判定を使う。
@@ -6433,6 +6455,7 @@ function renderChapImgPanelHtml(i){
     <p class="muted small" style="margin:4px 0 10px">本文中に <code style="background:#f0f0f2;padding:1px 6px">[図1]</code> と書くと、EPUB出力時にその位置に画像が挿入されます</p>
     ${_pendingImgListHtml(i)}
     ${_unplacedImgNoticeHtml(i)}
+    ${_unusedLinkImgNoticeHtml(i)}
     ${thumbs}
     <div class="row" style="margin-top:8px;align-items:center">
       <label class="btn ghost" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;margin:0">
@@ -6483,6 +6506,15 @@ function _unplacedImgNoticeHtml(i){
     <b>📌 本文に配置されていない写真が ${list.length}件 あります（EPUBには出ません）</b>
     <div style="margin-top:4px">${esc(names)}</div>
     <div style="margin-top:4px">下の写真の「[図N] をコピー → 本文に貼る」で、入れたい場所に貼り付けてください。</div>
+  </div>`;
+}
+/* 実ファイルが無く本文でも使われていない空き殻の画像登録を、まとめて消せるように知らせる。 */
+function _unusedLinkImgNoticeHtml(i){
+  const list=_unusedLinkOnlyImages(i);
+  if(!list.length)return '';
+  return `<div style="font-size:12px;background:#f5f5f3;border:1px solid var(--line);padding:8px 12px;margin:0 0 10px;color:var(--sub);line-height:1.7;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+    <span>🗑 使われていないリンクだけの画像登録が ${list.length}件 あります（EPUBには影響しません）</span>
+    <button class="btn gray" style="font-size:12px;padding:4px 12px;flex-shrink:0" onclick="cleanUnusedLinkImages(${i})">まとめて削除</button>
   </div>`;
 }
 function refreshImgPanel(i){
