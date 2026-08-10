@@ -2869,6 +2869,7 @@ function _mwRemoveImage(i){
 function _mwSetImageField(i,key,val){
   if(!window._mwImages||!window._mwImages[i])return;
   window._mwImages[i][key]=val;
+  if(key==='size')_mwRenderImageList(); // ボタンの選択状態をすぐ反映する
   if(_mwDraftTimer)clearTimeout(_mwDraftTimer);
   _mwDraftTimer=setTimeout(_mwSaveDraftLocal,500);
 }
@@ -2905,6 +2906,7 @@ function _mwRenderImageList(){
           : `<input type="url" placeholder="共有リンク（画像ファイルが無いときだけ）" value="${esc(img.url||'')}"
               style="width:100%;border:1px solid var(--line-soft);padding:4px 8px;font-size:12px;box-sizing:border-box"
               oninput="_mwSetImageField(${i},'url',this.value)">`}
+        ${has?_imgSizePickerHtml(img.size,v=>`_mwSetImageField(${i},'size','${v}')`):''}
       </div>
       <button onclick="_mwRemoveImage(${i})" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:18px;line-height:1;padding:0 4px;flex-shrink:0">×</button>
     </div>`;
@@ -4882,9 +4884,27 @@ const EPUB_PREVIEW_CSS=`<style>
 .epubPrev figcaption{font-size:.85em;color:#555;text-indent:0}
 .epubPrev .sep{margin:2.5em 0;text-indent:0}
 </style>`;
+// 画像の表示サイズ。ライター・管理者どちらの画面でも同じ選択肢を使う。
+const IMG_SIZE_META={l:{label:'大（画面いっぱい）',pct:100},m:{label:'中',pct:70},s:{label:'小',pct:45}};
+function _imgSizePct(im){return (IMG_SIZE_META[im&&im.size]||IMG_SIZE_META.l).pct;}
+// 画像の表示サイズを選ぶ小さなボタン列。onClickExpr(v) が各サイズの onclick 用JS文字列を返す。
+function _imgSizePickerHtml(current,onClickExpr){
+  current=current||'l';
+  return `<div style="display:flex;gap:4px;margin-top:4px;align-items:center">
+    <span style="font-size:10px;color:var(--sub)">表示サイズ：</span>
+    ${Object.keys(IMG_SIZE_META).map(k=>{
+      const on=k===current;
+      return `<button onclick="${esc(onClickExpr(k))}" style="font-size:10px;padding:2px 8px;border:1px solid ${on?'var(--ok)':'var(--line-soft)'};background:${on?'var(--ok)':'#fff'};color:${on?'#fff':'var(--sub)'};cursor:pointer;font-weight:${on?'700':'400'}">${IMG_SIZE_META[k].label.replace(/（.*）/,'')}</button>`;
+    }).join('')}
+  </div>`;
+}
 function _epubPreviewImgTag(im){
   if(!im)return '';
-  if(im.data)return `<figure><img src="${esc(im.data)}" alt=""/>${im.caption?`<figcaption>${esc(im.caption)}</figcaption>`:''}</figure>`;
+  if(im.data){
+    const pct=_imgSizePct(im);
+    const style=pct<100?` style="max-width:${pct}%;margin-left:auto;margin-right:auto"`:'';
+    return `<figure${style}><img src="${esc(im.data)}" alt=""/>${im.caption?`<figcaption>${esc(im.caption)}</figcaption>`:''}</figure>`;
+  }
   if(im.url)return `<p style="text-indent:0">🖼 ${esc(im.name||'画像')}：<a href="${esc(im.url)}" target="_blank" rel="noopener">${esc(im.url)}</a></p>`;
   return '';
 }
@@ -5010,7 +5030,9 @@ function buildEpub(){
         imgN++;const ext=(im.mime==='image/png')?'png':'jpg';const fn='img'+imgN+'.'+ext;
         files.push({name:'OEBPS/images/'+fn,bytes:b64B((im.data.split(',')[1]||''))});
         manifest.push(`<item id="img${imgN}" href="images/${fn}" media-type="${im.mime}"/>`);
-        im._tag=`<figure><img src="images/${fn}" alt="図${k+1}"/>${im.caption?`<figcaption>${escXml(im.caption)}</figcaption>`:''}</figure>`;
+        const pct=_imgSizePct(im);
+        const figStyle=pct<100?` style="max-width:${pct}%;margin-left:auto;margin-right:auto"`:'';
+        im._tag=`<figure${figStyle}><img src="images/${fn}" alt="図${k+1}"/>${im.caption?`<figcaption>${escXml(im.caption)}</figcaption>`:''}</figure>`;
       }else if(im&&im.url){
         // 招待URL経由のライターが登録したリンクのみの画像（実データが無い）→ リンクとして表示する
         im._tag=`<p style="text-indent:0">🖼 ${escXml(im.name||'画像')}：<a href="${escXml(im.url)}">${escXml(im.url)}</a></p>`;
@@ -6395,6 +6417,7 @@ function renderChapImgPanelHtml(i){
       <div style="flex:1;min-width:0">
         <input type="text" style="margin:0 0 6px;padding:6px 10px;font-size:13px" placeholder="キャプション（任意）" value="${esc(img.caption||'')}" oninput="updateImgCaption(${i},${k},this.value)">
         <button class="btn ghost" style="padding:3px 10px;font-size:12px" onclick="copyText('[図${k+1}]');this.textContent='コピーしました';setTimeout(()=>this.textContent='[図${k+1}] をコピー → 本文に貼る',1800)">[図${k+1}] をコピー → 本文に貼る</button>
+        ${_imgSizePickerHtml(img.size,v=>`updateImgSize(${i},${k},'${v}')`)}
       </div>
       <button class="btn gray" style="padding:4px 8px;font-size:13px;color:#e03131;flex-shrink:0;align-self:flex-start" onclick="delImage(${i},${k})">×</button>
     </div>`).join('')
@@ -6454,6 +6477,13 @@ function updateImgCaption(i,k,val){
   if(!S.book.chapters[i]||!S.book.chapters[i].images[k])return;
   S.book.chapters[i].images[k].caption=val;
   save();
+}
+
+function updateImgSize(i,k,val){
+  if(!S.book.chapters[i]||!S.book.chapters[i].images[k])return;
+  S.book.chapters[i].images[k].size=val;
+  save();
+  refreshImgPanel(i);
 }
 
 function chapDropImage(event,i){
