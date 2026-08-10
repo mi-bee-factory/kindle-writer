@@ -3517,7 +3517,7 @@ function previewCoChapter(i){
         style="width:100%;border:none;padding:16px 20px;font-size:14px;line-height:1.9;resize:vertical;font-family:inherit;box-sizing:border-box;min-height:220px;outline:none"
         oninput="document.getElementById('coChapCount').textContent=this.value.length.toLocaleString()+'文字'"
       >${esc(c.body||'')}</textarea>
-      <div id="coChapImgPanel" style="padding:0 20px 12px">${renderChapImgPanelHtml(i)}</div>
+      <details style="margin:0 20px 12px"><summary style="font-size:12px;font-weight:700;color:var(--sub);cursor:pointer;padding:6px 0">📷 写真の追加・編集はこちら</summary><div id="coChapImgPanel">${renderChapImgPanelHtml(i)}</div></details>
       <div id="coChapEdgeImagePanel" style="padding:0 20px 12px">${_chapEdgeImagePanelHtml('coreview',i,c)}</div>
     </div>
     <div style="padding:12px 20px;border-top:1px solid var(--line-soft);flex-shrink:0;display:flex;gap:8px;flex-wrap:wrap">
