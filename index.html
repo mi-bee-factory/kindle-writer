@@ -4664,7 +4664,7 @@ function addImage(i,input){
   const arr=Array.prototype.slice.call(input.files||[]).filter(f=>f.type&&f.type.indexOf('image')===0);
   if(!arr.length)return;let done=0;
   arr.forEach(f=>{const r=new FileReader();r.onload=()=>{const c=S.book.chapters[i];if(!c.images)c.images=[];
-    c.images.push({data:String(r.result),mime:(f.type||'image/jpeg'),caption:_nextUnmatchedImgLabel(i)});done++;if(done===arr.length){_markChapterEdited(i,[]);save();refreshImgPanel(i);}};r.readAsDataURL(f);});}
+    c.images.push({data:String(r.result),mime:(f.type||'image/jpeg'),name:_nextUnmatchedImgLabel(i)});done++;if(done===arr.length){_markChapterEdited(i,[]);save();refreshImgPanel(i);}};r.readAsDataURL(f);});}
 function pasteImage(e,i){
   e.preventDefault();
   const cd=e.clipboardData||window.clipboardData; if(!cd)return;
@@ -4673,7 +4673,7 @@ function pasteImage(e,i){
   for(const f of (cd.files||[])){ if(f.type&&f.type.indexOf('image')===0)blobs.push(f); }
   if(!blobs.length){const z=document.getElementById('pz'+i);if(z)z.textContent='⚠ 画像が見つかりません。画像をコピー／スクショしてから、ここでCtrl+Vしてください';return;}
   blobs.forEach(f=>{const r=new FileReader();r.onload=()=>{const c=S.book.chapters[i];if(!c.images)c.images=[];
-    c.images.push({data:String(r.result),mime:(f.type||'image/png'),caption:_nextUnmatchedImgLabel(i)});_markChapterEdited(i,[]);save();refreshImgPanel(i);};r.readAsDataURL(f);});
+    c.images.push({data:String(r.result),mime:(f.type||'image/png'),name:_nextUnmatchedImgLabel(i)});_markChapterEdited(i,[]);save();refreshImgPanel(i);};r.readAsDataURL(f);});
 }
 function delImage(i,k){S.book.chapters[i].images.splice(k,1);_markChapterEdited(i,[]);save();refreshImgPanel(i);}
 /* 本文のカーソル位置を覚えておく（「本文に入れる」ボタン用） */
@@ -5268,7 +5268,7 @@ function renderCompile(){
         </div>
         <textarea class="pastezone" id="pz${i}" onclick="_activeChap=${i};markActive(${i})" onpaste="pasteZone(event,${i})" ondragover="event.preventDefault()" ondrop="dropImage(event,${i})" placeholder="（または）画像ファイルをここにドラッグ＆ドロップ／クリックしてCtrl+V"></textarea>
         <div class="muted small" style="margin-top:4px">本文に [図1] [図2] と書くと、その位置に指定サイズで入ります（書かなければEPUBには入りません）</div>
-        ${(()=>{const placedSet=_chapPlacedImageIdx(i);return (c.images||[]).map((im,k)=>{const placed=placedSet.has(k);return `<div class="row" style="align-items:center;margin-top:6px;gap:6px"><span class="btn gray" style="cursor:default;padding:2px 8px;font-weight:bold">図${k+1}</span><img src="${im.data||''}" style="height:42px;border:1px solid var(--line-soft)"><input type="text" style="flex:1" value="${esc(im.caption||'')}" oninput="S.book.chapters[${i}].images[${k}].caption=this.value;save()" placeholder="図${k+1}の説明（任意）"><input type="text" style="flex:1" value="${esc(im.url||'')}" oninput="updateImgUrl(${i},${k},this.value)" placeholder="タップ時に開くURL（任意）"><button class="btn ok" onclick="insertFig(${i},${k})" title="本文のカーソル位置に図を入れます">⬇ 本文に入れる</button><button class="btn gray" onclick="delImage(${i},${k})">×</button></div><div class="small" style="margin:2px 0 0 52px;color:${placed?'var(--ok)':'#999'}">${placed?'✓ 本文に配置済み':'（未配置・EPUBには入りません）'}</div>`;}).join('');})()}
+        ${(()=>{const placedSet=_chapPlacedImageIdx(i);return (c.images||[]).map((im,k)=>{const placed=placedSet.has(k);return `<div class="row" style="align-items:center;margin-top:6px;gap:6px"><span class="btn gray" style="cursor:default;padding:2px 8px;font-weight:bold">図${k+1}</span><img src="${im.data||''}" style="height:42px;border:1px solid var(--line-soft)"><input type="text" style="flex:1" value="${esc(im.name||'')}" oninput="updateImgName(${i},${k},this.value)" placeholder="識別名（[画像：◯◯]と一致）"><input type="text" style="flex:1" value="${esc(im.caption||'')}" oninput="S.book.chapters[${i}].images[${k}].caption=this.value;save()" placeholder="図${k+1}の説明（任意・表示用）"><input type="text" style="flex:1" value="${esc(im.url||'')}" oninput="updateImgUrl(${i},${k},this.value)" placeholder="タップ時に開くURL（任意）"><button class="btn ok" onclick="insertFig(${i},${k})" title="本文のカーソル位置に図を入れます">⬇ 本文に入れる</button><button class="btn gray" onclick="delImage(${i},${k})">×</button></div><div class="small" style="margin:2px 0 0 52px;color:${placed?'var(--ok)':'#999'}">${placed?'✓ 本文に配置済み':'（未配置・EPUBには入りません）'}</div>`;}).join('');})()}
         <label class="f" style="margin-top:10px;display:flex;align-items:center;gap:5px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/><path d="M3 14l5-5 5 5" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M13 12l3-3 5 5" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/></svg>章の前後に入れる画像（表紙・特典など）</label>
         ${_chapEdgeImagePanelHtml('normal',i,c)}
       </div>`).join('')}</div>
@@ -5508,7 +5508,7 @@ async function pasteFromClipboard(i){
       if(!type)continue;
       const blob=await it.getType(type);
       const data=await new Promise(res=>{const r=new FileReader();r.onload=()=>res(String(r.result));r.readAsDataURL(blob);});
-      const c=S.book.chapters[i];if(!c.images)c.images=[];c.images.push({data,mime:type,caption:_nextUnmatchedImgLabel(i)});added++;
+      const c=S.book.chapters[i];if(!c.images)c.images=[];c.images.push({data,mime:type,name:_nextUnmatchedImgLabel(i)});added++;
     }
     if(added){save();refreshImgPanel(i);}
     else alert('クリップボードに画像がありません。\nWin+Shift+S でスクショを撮ってから、もう一度このボタンを押してください。');
@@ -5523,7 +5523,7 @@ function dropImage(e,i){
   const imgs=Array.prototype.slice.call(fs).filter(f=>f.type&&f.type.indexOf('image')===0);
   if(!imgs.length){const z=document.getElementById('pz'+i);if(z)z.textContent='⚠ 画像ファイルではありません';return;}
   let done=0;imgs.forEach(f=>{const r=new FileReader();r.onload=()=>{const c=S.book.chapters[i];if(!c.images)c.images=[];
-    c.images.push({data:String(r.result),mime:(f.type||'image/png'),caption:_nextUnmatchedImgLabel(i)});done++;if(done===imgs.length){save();refreshImgPanel(i);}};r.readAsDataURL(f);});
+    c.images.push({data:String(r.result),mime:(f.type||'image/png'),name:_nextUnmatchedImgLabel(i)});done++;if(done===imgs.length){save();refreshImgPanel(i);}};r.readAsDataURL(f);});
 }
 /* 編集できる枠での Ctrl+V 用 */
 function pasteZone(e,i){
@@ -5534,7 +5534,7 @@ function pasteZone(e,i){
   if(!blobs.length) return; // 画像でなければ普通の貼り付けに任せる
   e.preventDefault();
   let done=0;blobs.forEach(f=>{const r=new FileReader();r.onload=()=>{const c=S.book.chapters[i];if(!c.images)c.images=[];
-    c.images.push({data:String(r.result),mime:(f.type||'image/png'),caption:_nextUnmatchedImgLabel(i)});done++;if(done===blobs.length){save();refreshImgPanel(i);}};r.readAsDataURL(f);});
+    c.images.push({data:String(r.result),mime:(f.type||'image/png'),name:_nextUnmatchedImgLabel(i)});done++;if(done===blobs.length){save();refreshImgPanel(i);}};r.readAsDataURL(f);});
 }
 
 
@@ -6525,7 +6525,8 @@ function renderChapImgPanelHtml(i){
         <span style="font-size:11px;font-weight:700;color:var(--brand-dim);background:var(--brand-soft);padding:1px 7px;margin-top:3px;display:inline-block">図${k+1}</span>
       </div>
       <div style="flex:1;min-width:0">
-        <input type="text" style="margin:0 0 6px;padding:6px 10px;font-size:13px" placeholder="キャプション（任意）" value="${esc(img.caption||'')}" oninput="updateImgCaption(${i},${k},this.value)">
+        <input type="text" style="margin:0 0 6px;padding:6px 10px;font-size:13px" placeholder="識別名（本文の [画像：◯◯] に書いた文字と一致させる）" value="${esc(img.name||'')}" oninput="updateImgName(${i},${k},this.value)">
+        <input type="text" style="margin:0 0 6px;padding:6px 10px;font-size:13px" placeholder="キャプション（任意・本の中に表示される説明文）" value="${esc(img.caption||'')}" oninput="updateImgCaption(${i},${k},this.value)">
         <input type="text" style="margin:0 0 6px;padding:6px 10px;font-size:13px" placeholder="タップ時に開くURL（任意・QRコード画像等）" value="${esc(img.url||'')}" oninput="updateImgUrl(${i},${k},this.value)">
         <button class="btn ghost" style="padding:3px 10px;font-size:12px" onclick="copyText('[図${k+1}]');this.textContent='コピーしました';setTimeout(()=>this.textContent='[図${k+1}] をコピー → 本文に貼る',1800)">[図${k+1}] をコピー → 本文に貼る</button>
         ${_imgSizePickerHtml(img.size,v=>`updateImgSize(${i},${k},'${v}')`)}
@@ -6613,6 +6614,12 @@ function updateImgCaption(i,k,val){
   save();
 }
 
+function updateImgName(i,k,val){
+  if(!S.book.chapters[i]||!S.book.chapters[i].images[k])return;
+  S.book.chapters[i].images[k].name=val;
+  save();
+}
+
 function updateImgUrl(i,k,val){
   if(!S.book.chapters[i]||!S.book.chapters[i].images[k])return;
   S.book.chapters[i].images[k].url=(val||'').trim();
@@ -6634,7 +6641,7 @@ function chapDropImage(event,i){
   let done=0;
   files.forEach(f=>{const r=new FileReader();r.onload=()=>{
     const c=S.book.chapters[i];if(!c.images)c.images=[];
-    c.images.push({data:String(r.result),mime:(f.type||'image/jpeg'),caption:_nextUnmatchedImgLabel(i)});
+    c.images.push({data:String(r.result),mime:(f.type||'image/jpeg'),name:_nextUnmatchedImgLabel(i)});
     done++;if(done===files.length){save();refreshImgPanel(i);}
   };r.readAsDataURL(f);});
 }
