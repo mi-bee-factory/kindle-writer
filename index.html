@@ -4457,7 +4457,7 @@ function _previewWholeBook(){
     const body=(c.body||'').replace(/，/g,'、').replace(/．/g,'。').split(/\n/).map(l=>{l=l.trim();if(!l)return'';
       const hd=_headingText(l);if(hd!==null)return `<h2>${bodyFmt(esc(hd))}</h2>`;
       return `<p>${bodyFmt(esc(l))}</p>`;}).filter(x=>x).join('');
-    return `<div class="epubPrev" style="border-bottom:8px solid #eee;padding-bottom:20px;margin-bottom:20px"><h1>${esc(heading)}</h1>${body}</div>`;};
+    return `<div class="epubPrev" style="border-bottom:8px solid #eee;padding-bottom:20px;margin-bottom:20px">${_epubPreviewEdgeImageHtml(c.frontImage)}<h1>${esc(heading)}</h1>${body}${_epubPreviewEdgeImageHtml(c.backImage)}</div>`;};
   const chHtml=(c,i)=>`<div style="border-bottom:8px solid #eee;padding-bottom:20px;margin-bottom:20px">${_epubPreviewHtml(c,calcNIdx(ch,i))}</div>`;
   const parts=[...specialFront.map(spHtml), ...ch.map(chHtml), ...specialBack.map(spHtml)];
   const mid='wholeBookPreviewModal';const ex=document.getElementById(mid);if(ex)ex.remove();
@@ -4955,13 +4955,23 @@ function _epubPreviewBodyHtml(c){
   return lines||'<p style="color:#aaa;text-indent:0">（本文がありません）</p>';
 }
 // 章まるごと（章タイトル＋著者＋本文）をEPUBと同じ見た目で描く
+// 章の前後（表紙・特典など）画像のプレビュー用タグ。実際のEPUB出力（_epubEdgeImageItemref）と見た目を揃える。
+function _epubPreviewEdgeImageHtml(image){
+  if(!image||!image.data)return '';
+  const imgTag=`<img src="${esc(image.data)}" alt=""/>`;
+  const url=(image.url||'').trim();
+  const linked=/^https?:\/\//.test(url)?`<a href="${esc(url)}">${imgTag}</a>`:imgTag;
+  return `<figure style="margin:1.2em 0">${linked}</figure>`;
+}
 function _epubPreviewHtml(c,nIdx){
   c=c||{};
   const head=getChapH1Xml(c,(nIdx==null?1:nIdx),esc);
   return EPUB_PREVIEW_CSS+`<div class="epubPrev">
+    ${_epubPreviewEdgeImageHtml(c.frontImage)}
     <h1>${head}</h1>
     ${(S.coauthor&&c.author)?`<p class="ch-author">著：${esc(c.author)}</p>`:''}
     ${_epubPreviewBodyHtml(c)}
+    ${_epubPreviewEdgeImageHtml(c.backImage)}
   </div>`;
 }
 function _epubEdgeImageItemref(files,manifest,idPrefix,image){
