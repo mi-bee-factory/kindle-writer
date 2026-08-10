@@ -4868,7 +4868,7 @@ function inlineFmt(s){
    安全のため https:// http:// で始まるものだけリンクにする（javascript: 等は素通り）。
    引数はエスケープ済み文字列を受け取る（inlineFmt と同じ前提）。 */
 const LINK_MARK_RE=/\[リンク[：:]([^\]|]+)\|(https?:\/\/[^\s　\]]+)\]/g;
-function _linkTag(url,text){return '<a href="'+url+'">'+text+'</a>';}
+function _linkTag(url,text){return '<a href="'+url+'" target="_blank" rel="noopener">'+text+'</a>';}
 function _linkify(s){
   s=s||'';
   const keep=[];
