@@ -3501,14 +3501,26 @@ function previewCoChapter(i){
       </div>
       <span id="coChapCount" style="font-size:12px;color:var(--sub);white-space:nowrap;flex-shrink:0;margin-top:2px">${(c.body||'').length.toLocaleString()}文字</span>
     </div>
+    <div style="display:flex;border-bottom:1px solid var(--line-soft);flex-shrink:0">
+      <button id="coTabPrev" onclick="_coChapTab('prev',${i})" style="flex:1;padding:9px;font-size:13px;font-weight:700;border:none;cursor:pointer;background:var(--ok);color:#fff;border-radius:0">プレビュー</button>
+      <button id="coTabEdit" onclick="_coChapTab('edit',${i})" style="flex:1;padding:9px;font-size:13px;font-weight:700;border:none;cursor:pointer;background:#f5f5f3;color:var(--sub);border-radius:0">編集</button>
+    </div>
     ${_coChapNoticeHtml(i,c)}
     ${_coChapImgListHtml(i,c)}
     <div id="coChapPrev" style="overflow-y:auto;padding:20px 24px;flex:1;font-size:14px">
       <div style="font-size:11px;color:var(--sub);background:#f5f5f3;padding:5px 10px;margin:-4px 0 14px;text-align:center">本になったときの見え方（EPUBと同じ表示）</div>
       ${_epubPreviewHtml(c,calcNIdx(S.book.chapters,i))}
     </div>
-    <div style="padding:8px 20px 0;flex-shrink:0;font-size:11px;color:var(--sub)">編集はここではできません。直したい場合は「まとめ画面」の章編集カードで直接直すか、下のボタンでライターに差し戻してください。</div>
+    <div id="coChapEdit" style="display:none;flex:1;flex-direction:column;min-height:0">
+      ${_mwInsertToolbar('coChapEditTA')}
+      <textarea id="coChapEditTA" ondblclick="_mwExpandTA(this)"
+        style="flex:1;width:100%;border:none;padding:16px 20px;font-size:14px;line-height:1.9;resize:none;font-family:inherit;box-sizing:border-box;min-height:300px;outline:none"
+        oninput="document.getElementById('coChapCount').textContent=this.value.length.toLocaleString()+'文字'"
+      >${esc(c.body||'')}</textarea>
+    </div>
+    <div id="coChapEdgeImagePanel" style="padding:0 20px;flex-shrink:0">${_chapEdgeImagePanelHtml('coreview',i,c)}</div>
     <div style="padding:12px 20px;border-top:1px solid var(--line-soft);flex-shrink:0;display:flex;gap:8px;flex-wrap:wrap">
+      <button id="coChapSaveBtn" style="display:none;flex:1;padding:10px;font-size:14px;font-weight:700;background:var(--ok);color:#fff;border:none;cursor:pointer" onclick="_coChapSave(${i})">保存する</button>
       <button style="flex:1;min-width:180px;padding:10px;font-size:13px;font-weight:700;background:#c2410c;color:#fff;border:none;cursor:pointer" onclick="_coRequestRevision(${i})">🔁 ライターに修正を依頼する</button>
       <button class="btn gray" style="flex:1;font-size:14px" onclick="document.getElementById('${mid}').remove()">閉じる</button>
     </div>
@@ -3579,6 +3591,9 @@ function _coRequestRevision(i){
   if(note===null)return;
   const trimmed=(note||'').trim();
   if(!trimmed){alert('伝える内容を入力してください。');return;}
+  // 編集タブで書きかえた内容があれば、それを土台として保存してから差し戻す
+  const ta=document.getElementById('coChapEditTA');
+  if(ta&&ta.value!==(c.body||'')){c.body=ta.value;_markChapterEdited(i,['body']);}
   c.status='revise';
   c.reviseNote=trimmed;
   c.reviseRequestedAt=Date.now();
@@ -3600,6 +3615,57 @@ function _coRequestRevision(i){
     <button class="btn ok" style="width:100%;font-size:14px;padding:11px" onclick="this.closest('div[style*=fixed]').remove()">閉じる</button>
   </div>`;
   document.body.appendChild(modal);
+}
+function _coChapRefreshEdgeImages(i){
+  const el=document.getElementById('coChapEdgeImagePanel');
+  const c=S.book&&S.book.chapters&&S.book.chapters[i];
+  if(el&&c)el.innerHTML=_chapEdgeImagePanelHtml('coreview',i,c);
+}
+function _coChapTab(tab,i){
+  const prev=document.getElementById('coChapPrev');
+  const edit=document.getElementById('coChapEdit');
+  const tabP=document.getElementById('coTabPrev');
+  const tabE=document.getElementById('coTabEdit');
+  const saveBtn=document.getElementById('coChapSaveBtn');
+  if(tab==='prev'){
+    // プレビュー: 編集中のテキストを反映しつつ、EPUBと同じ見た目（章タイトル・サブタイトル込み）で出す
+    const ta=document.getElementById('coChapEditTA');
+    if(prev){
+      const c=(S.book&&S.book.chapters&&S.book.chapters[i])||{};
+      const shown=ta?{...c,body:ta.value}:c;
+      prev.innerHTML=`<div style="font-size:11px;color:var(--sub);background:#f5f5f3;padding:5px 10px;margin:-4px 0 14px;text-align:center">本になったときの見え方（EPUBと同じ表示）</div>`
+        +_epubPreviewHtml(shown,calcNIdx((S.book&&S.book.chapters)||[],i));
+    }
+    if(prev)prev.style.display='block';
+    if(edit)edit.style.display='none';
+    if(tabP){tabP.style.background='var(--ok)';tabP.style.color='#fff';}
+    if(tabE){tabE.style.background='#f5f5f3';tabE.style.color='var(--sub)';}
+    if(saveBtn)saveBtn.style.display='none';
+  }else{
+    if(prev)prev.style.display='none';
+    if(edit){edit.style.display='flex';edit.style.flexDirection='column';}
+    if(tabP){tabP.style.background='#f5f5f3';tabP.style.color='var(--sub)';}
+    if(tabE){tabE.style.background='var(--ok)';tabE.style.color='#fff';}
+    if(saveBtn)saveBtn.style.display='block';
+  }
+}
+function _coChapSave(i){
+  const ta=document.getElementById('coChapEditTA');
+  if(!ta)return;
+  S.book.chapters[i].body=ta.value;
+  _markChapterEdited(i,['body']);
+  save();
+  // プレビュータブに戻してモーダルヘッダーの文字数も更新
+  _coChapTab('prev',i);
+  const countEl=document.getElementById('coChapCount');
+  if(countEl)countEl.textContent=ta.value.length.toLocaleString()+'文字';
+  // 管理者ダッシュボードの文字数表示も更新
+  renderCoInviteAdmin&&renderCoInviteAdmin();
+  const toast=document.createElement('div');
+  toast.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:10px 20px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none;opacity:1;transition:opacity .4s';
+  toast.textContent='✓ 保存しました';
+  document.body.appendChild(toast);
+  setTimeout(()=>{toast.style.opacity='0';setTimeout(()=>toast.remove(),400);},1800);
 }
 function adminReceiveChapterFile(input){
   const f=input.files&&input.files[0];if(!f)return;
@@ -4640,6 +4706,7 @@ function _chapEdgeRefresh(kind,i){
   if(kind==='normal'){refreshImgPanel&&refreshImgPanel(i);}
   else if(kind==='special'){renderCoInviteAdmin&&renderCoInviteAdmin();}
   else if(kind==='mw'){_mwRefreshEdgeImages&&_mwRefreshEdgeImages();}
+  else if(kind==='coreview'){_coChapRefreshEdgeImages&&_coChapRefreshEdgeImages(i);}
 }
 function setChapterEdgeImage(kind,i,pos,input){
   const f=input.files&&input.files[0];if(!f)return;
