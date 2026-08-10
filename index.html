@@ -4586,7 +4586,9 @@ function _mergeChapterImages(localImgs,cloudImgs){
     const idx=key?out.findIndex(im=>label(im)===key):-1;
     if(idx<0){out.push(ci);return;}
     // 同じ名前が既にあるなら、実データを持つ方を優先して残す
-    if(ci&&ci.data&&!(out[idx]&&out[idx].data))out[idx]=ci;
+    if(ci&&ci.data&&!(out[idx]&&out[idx].data)){out[idx]=ci;return;}
+    // 両方が実データを持っている場合も、サイズ指定だけはライターの最新変更を反映する
+    if(ci&&ci.size&&out[idx])out[idx].size=ci.size;
   });
   return out;
 }
