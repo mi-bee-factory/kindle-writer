@@ -4848,21 +4848,22 @@ function _findChapImage(imgs,desc,placed){
   if(k<0)k=imgs.findIndex((im,idx)=>free(idx));
   return k;
 }
-/* 本文で位置指定されなかった画像のうち、章末にまとめて出すものを返す。
-   同じ名前の実ファイルが既に本文中へ置かれているなら、ライターが登録した
-   受け渡し用のリンクは役目を終えているので出さない（二重表示を防ぐ）。 */
-function _leftoverChapImages(imgs,placed){
-  imgs=imgs||[];
+/* 実ファイルはあるのに、本文のどこにも [図N] [画像：説明] で位置指定されていない写真を返す。
+   EPUB/プレビューには表示されない（意図的に配置した写真だけを出す方針）ので、
+   気づけるようにまとめ画面へ「未配置」として知らせるために使う。 */
+function _unplacedChapImages(i){
+  const c=(S.book&&S.book.chapters&&S.book.chapters[i])||{};
+  const imgs=c.images||[];
+  const body=String(c.body||'');
+  const placed=new Set();
+  [...body.matchAll(/\[図(\d+)\]/g)].forEach(m=>placed.add(parseInt(m[1])-1));
   const label=(im)=>((im&&(im.name||im.caption))||'').trim();
-  const done=new Set();
-  imgs.forEach((im,idx)=>{if(placed.has(idx)&&im&&im.data)done.add(label(im));});
-  return imgs.map((im,idx)=>({im,idx}))
-    .filter(x=>!placed.has(x.idx))
-    .filter(x=>!(x.im&&!x.im.data&&x.im.url&&done.has(label(x.im))))
-    // リンクだけの画像（実ファイルが無い）は、本文で位置を指定していない限り自動で出さない。
-    // 本文からタグを消したのに、リンクの一文だけが章末に取り残されるのを防ぐ。
-    // 実ファイルはこれまで通り「入れ忘れ防止」として章末に出す。
-    .filter(x=>!(x.im&&!x.im.data&&x.im.url));
+  [...body.matchAll(/\[画像[：:](.+?)\]/g)].forEach(m=>{
+    const desc=(m[1]||'').trim();
+    const k=_findChapImage(imgs,desc,placed);
+    if(k>=0)placed.add(k);
+  });
+  return imgs.map((im,idx)=>({im,idx})).filter(x=>x.im&&x.im.data&&!placed.has(x.idx));
 }
 // 見出し行の判定。「■」でも Markdown の「#」でも見出しとして扱う（書き手の書き癖に合わせる）。
 // 見出しなら見出し文字を、そうでなければ null を返す。EPUBとプレビューで必ず同じ判定を使う。
@@ -4935,9 +4936,8 @@ function _epubPreviewBodyHtml(c){
     if(h!==null)return `<h2>${bodyFmt(esc(h))}</h2>`;
     return `<p>${bodyFmt(esc(l))}</p>`;
   }).filter(x=>x).join('');
-  // 本文中で位置指定されなかった画像は章末にまとめる（EPUBと同じ）
-  const rest=_leftoverChapImages(imgs,placed).map(x=>_epubPreviewImgTag(x.im)).join('');
-  return lines+rest||'<p style="color:#aaa;text-indent:0">（本文がありません）</p>';
+  // 本文で位置指定した画像だけを表示する（未配置の写真は自動で出さない。EPUBと同じ）
+  return lines||'<p style="color:#aaa;text-indent:0">（本文がありません）</p>';
 }
 // 章まるごと（章タイトル＋著者＋本文）をEPUBと同じ見た目で描く
 function _epubPreviewHtml(c,nIdx){
@@ -5057,7 +5057,7 @@ function buildEpub(){
       const hd=_headingText(l);
       if(hd!==null)return `<h2>${bodyFmt(escXml(hd))}</h2>`;
       return `<p>${bodyFmt(escXml(l))}</p>`;}).filter(x=>x).join('\n');
-    _leftoverChapImages(imgs,placed).forEach(x=>{body+='\n'+x.im._tag;});
+    // 本文で位置指定した画像だけを埋め込む（未配置の写真は出さない。まとめ画面の「未配置」表示で気づける）
     imgs.forEach(im=>{delete im._tag;}); // 組み立て用の一時データを保存データに残さない
     if(ctaOn&&cta.perChapter&&(cta.url||'').trim())body+=`\n<hr/>\n<p style="text-indent:0">▶ ${escXml(cta.linkText||'LINEで読者特典を受け取る')}：<a href="${escXml(cta.url)}">${escXml(cta.url)}</a></p>`;
     const chapNIdx=calcNIdx(ch,i);
@@ -6432,6 +6432,7 @@ function renderChapImgPanelHtml(i){
     <b style="font-size:14px;display:flex;align-items:center;gap:5px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/><path d="M3 14l5-5 5 5" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M13 12l3-3 5 5" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/></svg>この章の図（任意）</b>
     <p class="muted small" style="margin:4px 0 10px">本文中に <code style="background:#f0f0f2;padding:1px 6px">[図1]</code> と書くと、EPUB出力時にその位置に画像が挿入されます</p>
     ${_pendingImgListHtml(i)}
+    ${_unplacedImgNoticeHtml(i)}
     ${thumbs}
     <div class="row" style="margin-top:8px;align-items:center">
       <label class="btn ghost" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;margin:0">
@@ -6470,6 +6471,18 @@ function _pendingImgListHtml(i){
     <b>🖼 まだ画像が入っていない箇所が ${pending.length}件 あります</b>
     <div style="margin-top:4px">ライターが本文で位置を指定しています。<b>本文に出てくる順に</b>画像を追加すると、説明文が自動で付きます。</div>
     <ol style="margin:8px 0 0;padding-left:20px">${rows}</ol>
+  </div>`;
+}
+/* 実ファイルはあるのに本文で位置指定されていない写真を、まとめ画面で気づけるように知らせる。
+   EPUB/プレビューには表示されない（意図的に配置した写真だけを出す方針のため）。 */
+function _unplacedImgNoticeHtml(i){
+  const list=_unplacedChapImages(i);
+  if(!list.length)return '';
+  const names=list.map(x=>(x.im.name||x.im.caption||'（説明なし）')).join('、');
+  return `<div style="font-size:12px;background:#fff7ed;border:1px solid #fdba74;padding:8px 12px;margin:0 0 10px;color:#7c2d12;line-height:1.7">
+    <b>📌 本文に配置されていない写真が ${list.length}件 あります（EPUBには出ません）</b>
+    <div style="margin-top:4px">${esc(names)}</div>
+    <div style="margin-top:4px">下の写真の「[図N] をコピー → 本文に貼る」で、入れたい場所に貼り付けてください。</div>
   </div>`;
 }
 function refreshImgPanel(i){
