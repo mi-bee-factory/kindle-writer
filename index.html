@@ -4573,6 +4573,9 @@ function _coDelChapter(i){
     :`第${i+1}章「${title}」を削除します。この操作は取り消せません。よろしいですか？`;
   if(!confirm(msg))return;
   S.book.chapters.splice(i,1);
+  // 章の数の目標（S.people）も減らしておかないと、再描画時に「目標人数まで補充」する処理で
+  // 空の章が1つ足し戻され、削除が見た目上打ち消されてしまう。
+  if(S.people>1)S.people--;
   save();renderCoInviteAdmin();
 }
 function addChapter(){S.book.chapters.push({author:'',title:'',body:''});save();renderCompile();}
