@@ -1086,6 +1086,17 @@ async function _sbFlushPendingSaves(){
   }
   if(jobs.length)await Promise.all(jobs).catch(()=>{});
 }
+// 「↓ クラウドから取得」ボタン用。クラウド保存には最大5秒の遅延があり、
+// その間に取得すると直前の入力（タイトル・サブタイトル等）が古いクラウドの内容で
+// 黙って上書きされてしまう事故が実際に発生したため、取得前に必ず保留中の保存を先に済ませる。
+async function _safeLoadFromCloud(){
+  await _sbFlushPendingSaves();
+  const ok=await _sbLoadProjectData();
+  const t=document.createElement('div');
+  t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:8px 20px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none';
+  t.textContent=ok?'✓ クラウドから読み込みました（あなたの直前の変更は先に保存済みです）':'データがありません';
+  document.body.appendChild(t);setTimeout(()=>t.remove(),2400);
+}
 // タブを閉じる・別ページへ移動する直前に、保留中の保存を投げる
 window.addEventListener('pagehide',()=>{_sbFlushPendingSaves();});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')_sbFlushPendingSaves();});
@@ -4040,7 +4051,7 @@ function renderCoInviteAdmin(){
     <div style="background:var(--ok-soft);padding:12px 16px;margin-top:24px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <span style="font-size:12px;font-weight:700;color:var(--ok);flex:1">プロジェクトデータのクラウド同期</span>
       <button onclick="_sbSaveProjectData().then(()=>{const t=document.createElement('div');t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:8px 20px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none';t.textContent='✓ クラウドに保存しました';document.body.appendChild(t);setTimeout(()=>t.remove(),2000);})" style="font-size:12px;background:var(--ok);color:#fff;border:none;padding:5px 14px;cursor:pointer;font-weight:700">↑ クラウドに保存</button>
-      <button onclick="_sbLoadProjectData().then(ok=>{const t=document.createElement('div');t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:8px 20px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none';t.textContent=ok?'✓ クラウドから読み込みました':'データがありません';document.body.appendChild(t);setTimeout(()=>t.remove(),2000);})" style="font-size:12px;background:#fff;color:var(--ok);border:none;padding:5px 14px;cursor:pointer;font-weight:700">↓ クラウドから取得</button>
+      <button onclick="_safeLoadFromCloud()" style="font-size:12px;background:#fff;color:var(--ok);border:none;padding:5px 14px;cursor:pointer;font-weight:700">↓ クラウドから取得</button>
     </div>
   `;
   _checkPendingSubmissions();
