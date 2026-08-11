@@ -999,6 +999,19 @@ async function _sbListManagedProjects(){
     };
   }).filter(p=>isOwner||p.id===myId||p.sharedWith.includes(myId));
 }
+// 本のタイトルが、他アカウントの既存プロジェクトと同じになっていないか確認する（重複でどれがどれか分からなくなるのを防ぐ）
+async function _warnIfDuplicateTitle(title){
+  title=(title||'').trim();
+  if(!title||!_sbUser)return;
+  const {data:profiles}=await _sb.from('profiles').select('id,name,role').in('role',['owner','admin']);
+  if(!profiles||!profiles.length)return;
+  const ids=profiles.map(p=>p.id);
+  const {data:settings}=await _sb.from('book_settings').select('id,data').in('id',ids);
+  const myId=_sbUser.id;
+  const nameMap={};profiles.forEach(p=>{nameMap[p.id]=p.name||'（名前未設定）';});
+  const dup=(settings||[]).find(s=>s.id!==myId&&((s.data&&s.data.book&&s.data.book.title)||'').trim()===title);
+  if(dup)alert(`⚠ 同じタイトル「${title}」が、${nameMap[dup.id]||'他のアカウント'}さんのプロジェクトにも既に使われています。\n\nどちらがどちらか分からなくなる原因になるので、タイトルを変えるか、末尾に区別できる言葉（日付・版など）を付けることをおすすめします。`);
+}
 async function _sbShareProject(targetId,producerId,grant){
   if(_sbRole!=='owner')return;
   const {data:existing}=await _sb.from('book_settings').select('data').eq('id',targetId).single();
@@ -1200,7 +1213,7 @@ async function fetchChaptersFromSupabase(){
     const dupIdx=Object.keys(byIdx).filter(i=>byIdx[i].length>1);
     if(dupIdx.length){
       rows=rows.filter(row=>byIdx[row.chapter_index||0].length===1);
-      dupWarning='\n\n⚠ 次の章番号に複数アカウント分のデータが重複しており、間違い選択を避けるため今回は取り込みから除外しました：\n'
+      dupWarning='⚠ 次の章番号に複数アカウント分のデータが重複しており、間違い選択を避けるため取り込みから除外します：\n'
         +dupIdx.map(i=>{
           const list=byIdx[i].map(r=>`　・${r.author_name||'（名前なし）'}（${(r.body||'').length.toLocaleString()}字・${r.updated_at?new Date(r.updated_at).toLocaleString('ja-JP'):''}更新）`).join('\n');
           return `第${Number(i)+1}章：\n${list}`;
@@ -1208,11 +1221,16 @@ async function fetchChaptersFromSupabase(){
         +'\n\nどちらが正しいか確認のうえ、私（ひかり）にどちらを残すか伝えてください。';
     }
   }
+  // ここではまだ S.book を書き換えず、作業用コピーの上でシミュレーションする（確認前に反映しないため）
+  const draftChapters=JSON.parse(JSON.stringify(S.book.chapters||[]));
+  const changes=[]; // 確認画面に出す「章ごとの変化」一覧
   let n=0,nSub=0,nDraft=0,nKept=0,nWait=0,nRevised=0;
   rows.forEach(row=>{
     const i=row.chapter_index||0;
-    while(S.book.chapters.length<=i)S.book.chapters.push({author:'',title:'',body:''});
-    const prev=S.book.chapters[i]||{};
+    while(draftChapters.length<=i)draftChapters.push({author:'',title:'',body:''});
+    const prev=draftChapters[i]||{};
+    const prevBodyLen=(prev.body||'').length;
+    const prevStatus=prev.status||'';
     const cloudBody=row.edited||row.body||'';
     const st=row.status||(cloudBody?'submitted':'');
     const rowTs=row.updated_at?new Date(row.updated_at).getTime():0;
@@ -1241,7 +1259,7 @@ async function fetchChaptersFromSupabase(){
     // （依頼前の古い提出を取り込んで、依頼が消えてしまうのを防ぐ）
     const waitingRevise=prev.status==='revise'&&rowTs<=(prev.reviseRequestedAt||0);
     const nextStatus=waitingRevise?'revise':(st||prev.status||'');
-    S.book.chapters[i]={...prev,...merged,
+    draftChapters[i]={...prev,...merged,
       title:merged.title||`第${i+1}章`,
       status:nextStatus,
       cloudUpdatedAt:row.updated_at||prev.cloudUpdatedAt||'',
@@ -1249,20 +1267,65 @@ async function fetchChaptersFromSupabase(){
     };
     // ライターが応答した（依頼より後に保存された）ら、依頼メモを片付ける
     if(prev.status==='revise'&&!waitingRevise){
-      delete S.book.chapters[i].reviseNote;
-      delete S.book.chapters[i].reviseRequestedAt;
+      delete draftChapters[i].reviseNote;
+      delete draftChapters[i].reviseRequestedAt;
       nRevised++;
     }
     if(waitingRevise)nWait++;
     else if(st==='submitted')nSub++;else if(st==='draft')nDraft++;
     n++;
+    const newBodyLen=(draftChapters[i].body||'').length;
+    if(newBodyLen!==prevBodyLen||nextStatus!==prevStatus){
+      changes.push({i,author:draftChapters[i].author||row.author_name||'',prevLen:prevBodyLen,newLen:newBodyLen,prevStatus,newStatus:nextStatus});
+    }
   });
+  _confirmFetchApply(draftChapters,changes,{n,nSub,nDraft,nKept,nWait,nRevised},dupWarning);
+}
+// 取り込み内容を確認してから適用する確認モーダル。適用前の状態はバックアップして「元に戻す」で復元できるようにする。
+function _confirmFetchApply(draftChapters,changes,counts,dupWarning){
+  const mid='fetchConfirmModal';const ex=document.getElementById(mid);if(ex)ex.remove();
+  const modal=document.createElement('div');modal.id=mid;
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:10005;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  const rows=changes.length?changes.map(c=>`<div style="padding:8px 12px;border-bottom:1px solid var(--line-soft);font-size:13px">
+      <b>第${c.i+1}章</b>　${esc(c.author||'（担当者未設定）')}
+      <div style="font-size:12px;color:var(--sub);margin-top:2px">文字数：${c.prevLen.toLocaleString()} → ${c.newLen.toLocaleString()}字　／　状態：${esc(c.prevStatus||'未着手')} → ${esc(c.newStatus||'未着手')}</div>
+    </div>`).join(''):'<div style="padding:12px;font-size:13px;color:var(--sub)">内容に変化のある章はありません。</div>';
+  modal.innerHTML=`<div style="background:#fff;max-width:520px;width:100%;max-height:86vh;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,.4)">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--line-soft);flex-shrink:0">
+      <b style="font-size:15px">この内容で取り込みますか？</b>
+      <div style="font-size:12px;color:var(--sub);margin-top:4px">対象 ${counts.n}件（提出 ${counts.nSub}・書きかけ ${counts.nDraft}${counts.nWait?`・修正依頼中 ${counts.nWait}`:''}${counts.nRevised?`・修正が届いた ${counts.nRevised}`:''}）</div>
+    </div>
+    <div style="overflow-y:auto;flex:1">${rows}</div>
+    ${dupWarning?`<div style="padding:10px 16px;font-size:12px;background:#fff7ed;border-top:1px solid #fdba74;color:#7c2d12;white-space:pre-wrap;line-height:1.7">${esc(dupWarning)}</div>`:''}
+    <div style="padding:12px 20px;border-top:1px solid var(--line-soft);flex-shrink:0;display:flex;gap:8px">
+      <button class="btn ok" style="flex:1;font-size:14px" onclick='_applyFetchChapters(${JSON.stringify(JSON.stringify(draftChapters))})'>この内容で取り込む</button>
+      <button class="btn gray" style="flex:1;font-size:14px" onclick="document.getElementById('${mid}').remove()">キャンセル</button>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+}
+function _applyFetchChapters(draftChaptersJson){
+  const draftChapters=JSON.parse(draftChaptersJson);
+  // 直前の状態をバックアップしておき、「元に戻す」で復元できるようにする
+  S._fetchBackup={chapters:JSON.parse(JSON.stringify(S.book.chapters||[])),at:Date.now()};
+  S.book.chapters=draftChapters;
   save();renderCoInviteAdmin();
+  const ex=document.getElementById('fetchConfirmModal');if(ex)ex.remove();
   const t=document.createElement('div');
   t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:10px 22px;font-size:14px;font-weight:700;z-index:10010;pointer-events:none;opacity:1;transition:opacity .4s';
-  t.textContent=`✓ ${n}件を取得（提出 ${nSub}・書きかけ ${nDraft}${nWait?`・修正依頼中 ${nWait}`:''}${nRevised?`・修正が届いた ${nRevised}`:''}）${nKept?`／あなたの編集 ${nKept}件を保持`:''}`;document.body.appendChild(t);
-  setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),400);},2800);
-  if(dupWarning)alert('取り込みは完了しましたが、確認してほしいことがあります。'+dupWarning);
+  t.textContent='✓ 取り込みました（「元に戻す」でこの操作を取り消せます）';document.body.appendChild(t);
+  setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),400);},3200);
+}
+function _undoFetchChapters(){
+  if(!S._fetchBackup)return;
+  if(!confirm('直前の取り込みを取り消して、その前の状態に戻します。よろしいですか？'))return;
+  S.book.chapters=S._fetchBackup.chapters;
+  S._fetchBackup=null;
+  save();renderCoInviteAdmin();
+  const t=document.createElement('div');
+  t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:10px 22px;font-size:14px;font-weight:700;z-index:10010;pointer-events:none';
+  t.textContent='✓ 元に戻しました';document.body.appendChild(t);
+  setTimeout(()=>t.remove(),2200);
 }
 let _pendingCheckGen=0;
 async function _checkPendingSubmissions(){
@@ -3903,7 +3966,12 @@ function renderCoInviteAdmin(){
           style="flex:1;border:none;border-bottom:1px dashed var(--line-soft);padding:3px 6px;font-size:12px;background:transparent;color:var(--sub)"
           oninput="S.book.chapters[${i}].subtitle=this.value;_markChapterEdited(${i},['subtitle']);save()">
       </div>
-      ${aff?`<div style="font-size:11px;color:var(--muted);margin:0 0 6px 30px">所属：${esc(c.affiliation.book||'（書名未設定）')}${c.affiliation.producer?' ／ 招待：'+esc(c.affiliation.producer)+' さん':''}</div>`:''}
+      ${aff?(()=>{
+        const affBook=(c.affiliation.book||'').trim();
+        const curTitle=(S.book.title||'').trim();
+        const mismatch=affBook&&curTitle&&affBook!==curTitle;
+        return `<div style="font-size:11px;color:${mismatch?'#c2410c':'var(--muted)'};margin:0 0 6px 30px;font-weight:${mismatch?'700':'400'}">${mismatch?'🔴 別の本の提出の可能性：':'所属：'}${esc(affBook||'（書名未設定）')}${c.affiliation.producer?' ／ 招待：'+esc(c.affiliation.producer)+' さん':''}${mismatch?`<div style="color:#c2410c;font-weight:400;margin-top:2px">今のプロジェクト名「${esc(curTitle)}」と一致しません。この章の内容を確認してください。</div>`:''}</div>`;
+      })():''}
       <button id="invBtn_${i}" onclick="copyInviteUrl(${i})" style="background:var(--brand-soft);border:none;color:#403129;padding:4px 14px;font-size:12px;cursor:pointer;font-weight:700;display:inline-flex;align-items:center;gap:5px">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         招待URLをコピー
@@ -3918,7 +3986,7 @@ function renderCoInviteAdmin(){
         <label style="font-size:11px;color:var(--sub);display:block;margin-bottom:4px;font-weight:700;letter-spacing:.04em;text-transform:uppercase">書籍タイトル（URLに含まれます）</label>
         <input type="text" value="${esc(S.book.title||'')}" placeholder="本のタイトル"
           style="width:100%;border:none;border-bottom:1px solid var(--line-soft);padding:6px 0;font-size:14px;box-sizing:border-box;background:transparent"
-          oninput="S.book.title=this.value;save()">
+          oninput="S.book.title=this.value;save()" onblur="_warnIfDuplicateTitle(this.value)">
       </div>
       <div style="background:#fbfaf5;border:1px solid var(--line-soft);padding:10px 14px;margin-bottom:14px">
         <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px;color:var(--ink)">
@@ -3948,6 +4016,7 @@ function renderCoInviteAdmin(){
             メンバーの最新原稿を取り込む
             <span id="sbFetchBadge"></span>
           </button>
+          ${S._fetchBackup?`<button onclick="_undoFetchChapters()" class="btn gray" style="font-size:12px;padding:6px 16px;margin-left:8px">↩ 直前の取り込みを元に戻す</button>`:''}
         </div>
       </div>
       ${received>0?`<div style="margin-top:4px;padding:14px 16px;background:var(--ok-soft)">
@@ -5284,7 +5353,7 @@ function renderCompile(){
     <h2>${S.coauthor?'みんなの章を1冊にまとめる（統括用）':'章を1冊にまとめて出版'}</h2>
     <p class="muted">${S.coauthor?'まず<b>「誰がどの章を、どんなねらいで」</b>を決めて<b>設計図を配る</b>と、共著でもバラバラになりません。各章がそろったら結合→Kindle用に書き出します。':'各章を書いて並べ、結合→Kindle用（EPUB）に書き出します。表紙も設定できます。'}</p>
     <label class="f">本のタイトル</label>
-    <input type="text" value="${esc(S.book.title)}" oninput="S.book.title=this.value;save()" placeholder="例：はじめての小さな副業">
+    <input type="text" value="${esc(S.book.title)}" oninput="S.book.title=this.value;save()" onblur="_warnIfDuplicateTitle(this.value)" placeholder="例：はじめての小さな副業">
     <label class="f">サブタイトル</label>
     <input type="text" value="${esc(S.book.subtitle)}" oninput="S.book.subtitle=this.value;save()" placeholder="例：30代女性が無理なく月3万円">
     <label class="f">表紙(カバー)画像（任意・KDP推奨）</label>
