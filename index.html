@@ -5079,7 +5079,7 @@ const EPUB_PREVIEW_CSS=`<style>
 .epubPrev .sep{margin:2.5em 0;text-indent:0}
 </style>`;
 // 画像の表示サイズ。ライター・管理者どちらの画面でも同じ選択肢を使う。
-const IMG_SIZE_META={l:{label:'大（画面いっぱい）',pct:100},m:{label:'中',pct:70},s:{label:'小',pct:45}};
+const IMG_SIZE_META={l:{label:'大（画面いっぱい）',pct:100},m:{label:'中',pct:66},s:{label:'小',pct:33}};
 function _imgSizePct(im){return (IMG_SIZE_META[im&&im.size]||IMG_SIZE_META.l).pct;}
 // 画像の表示サイズを選ぶ小さなボタン列。onClickExpr(v) が各サイズの onclick 用JS文字列を返す。
 function _imgSizePickerHtml(current,onClickExpr){
@@ -5092,15 +5092,21 @@ function _imgSizePickerHtml(current,onClickExpr){
     }).join('')}
   </div>`;
 }
+// プレビュー専用：今選ばれている表示サイズが一目で分かるよう、小さなラベルを画像の左上に重ねる。
+// 実際のEPUB出力（buildEpub）には一切影響しない（このラベルは _epubPreviewImgTag からしか出ない）。
+function _previewSizeBadgeHtml(im){
+  const meta=IMG_SIZE_META[im&&im.size]||IMG_SIZE_META.l;
+  return `<span style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:2px;pointer-events:none">${meta.label.replace(/（.*）/,'')}・${meta.pct}%</span>`;
+}
 function _epubPreviewImgTag(im){
   if(!im)return '';
   if(im.data){
     const pct=_imgSizePct(im);
-    const style=pct<100?` style="max-width:${pct}%;margin-left:auto;margin-right:auto"`:'';
+    const style=`position:relative${pct<100?`;max-width:${pct}%;margin-left:auto;margin-right:auto`:''}`;
     const imgTag=`<img src="${esc(im.data)}" alt=""/>`;
     const linkUrl=(im.url||'').trim();
     const linked=/^https?:\/\//.test(linkUrl)?`<a href="${esc(linkUrl)}" target="_blank" rel="noopener">${imgTag}</a>`:imgTag;
-    return `<figure${style}>${linked}${im.caption?`<figcaption>${esc(im.caption)}</figcaption>`:''}</figure>`;
+    return `<figure style="${style}">${_previewSizeBadgeHtml(im)}${linked}${im.caption?`<figcaption>${esc(im.caption)}</figcaption>`:''}</figure>`;
   }
   if(im.url)return `<p style="text-indent:0">🖼 ${esc(im.name||'画像')}：<a href="${esc(im.url)}" target="_blank" rel="noopener">${esc(im.url)}</a></p>`;
   return '';
