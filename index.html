@@ -4710,13 +4710,14 @@ function exportPlan(){
    Kindleの画面は概ね1000〜1500pxなので、長辺1600pxあれば十分きれいに出る。 */
 // EPUBのCSS上の max-width（%指定）はKindle側の変換で無視されることがあるため、
 // 「大」以外のサイズが選ばれている画像は、埋め込む前に物理的にピクセルサイズを縮小しておく。
-// 基準幅は1600px（このアプリの通常アップロード時の圧縮基準と揃えている）。
+// 基準幅は640px（Kindleの本文が実際に読まれる文字幅の目安。1600pxは大きすぎ、
+// 「小」「QRコード用」を選んでも実機で50%前後に見えてしまう不具合が実測で確認されたため修正）。
 function _physicallyResizeForSize(dataUrl,mime,pct){
   if(pct>=100)return Promise.resolve({data:dataUrl,mime});
   return new Promise(resolve=>{
     const img=new Image();
     img.onload=()=>{
-      const baseW=1600;
+      const baseW=640;
       const targetW=Math.max(24,Math.round(baseW*pct/100));
       if(img.width<=targetW){resolve({data:dataUrl,mime});return;} // 既に十分小さければそのまま
       const r=targetW/img.width;
