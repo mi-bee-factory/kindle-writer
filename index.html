@@ -5098,11 +5098,11 @@ const EPUB_PREVIEW_CSS=`<style>
 .epubPrev h1 .ch-ttl{display:block}
 .epubPrev h1 .ch-sub{display:block;font-size:.62em;font-weight:400;color:#444;margin-top:.9em;line-height:1.7}
 .epubPrev .ch-author{text-indent:0;text-align:center;font-size:.85em;color:#555;margin:-.6em 0 2.4em}
-.epubPrev h2{font-size:1.1em;margin:1.8em 0 .5em;font-weight:700;border-left:3px solid #333;padding-left:.6em;text-indent:0}
+.epubPrev h2{font-size:1.1em;margin:1.8em 0 .5em;font-weight:700;border-left:3px solid #333;padding-left:.6em;text-indent:0;page-break-after:avoid;break-after:avoid-page}
 .epubPrev p{text-indent:1em;margin:.6em 0}
 .epubPrev h1+p,.epubPrev h2+p{text-indent:0}
 .epubPrev img{max-width:100%;height:auto}
-.epubPrev figure{margin:1.2em 0;text-align:center}
+.epubPrev figure{margin:1.2em 0;text-align:center;page-break-inside:avoid;break-inside:avoid-page;page-break-after:avoid;break-after:avoid-page}
 .epubPrev figcaption{font-size:.85em;color:#555;text-indent:0}
 .epubPrev .sep{margin:2.5em 0;text-indent:0}
 </style>`;
@@ -5246,10 +5246,10 @@ async function buildEpub(){
     +'h1 .ch-ttl{display:block;}'
     +'h1 .ch-sub{display:block;font-size:.62em;font-weight:400;color:#444;margin-top:.9em;line-height:1.7;}'
     +'.ch-author{text-indent:0;text-align:center;font-size:.85em;color:#555;margin:-.6em 0 2.4em;}'
-    +'h2{font-size:1.1em;margin:1.8em 0 .5em;font-weight:700;border-left:3px solid #333;padding-left:0.6em;}'
+    +'h2{font-size:1.1em;margin:1.8em 0 .5em;font-weight:700;border-left:3px solid #333;padding-left:0.6em;page-break-after:avoid;break-after:avoid-page;}'
     +'p{text-indent:1em;margin:.6em 0;}h1+p,h2+p{text-indent:0;}'
     +'strong,b{font-weight:700;}em,i{font-style:italic;}img{max-width:100%;height:auto;}'
-    +'figure{margin:1.2em 0;text-align:center;}figcaption{font-size:.85em;color:#555;text-indent:0;}')});
+    +'figure{margin:1.2em 0;text-align:center;page-break-inside:avoid;break-inside:avoid-page;page-break-after:avoid;break-after:avoid-page;}figcaption{font-size:.85em;color:#555;text-indent:0;}')});
   let coverSpine='',coverMeta='';
   if(S.book.cover&&S.book.cover.data){
     const cm=S.book.cover.mime||'image/jpeg',cext=(cm==='image/png')?'png':'jpg';
