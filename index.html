@@ -1185,8 +1185,19 @@ async function fetchChaptersFromSupabase(){
   if(btn){btn.textContent='メンバーの最新原稿を取り込む';btn.disabled=false;}
   if(error||!data||!data.length){alert('まだデータがありません。\nメンバーに章を保存してもらってください。');return;}
   if(!S.book)S.book={chapters:[],title:'',subtitle:'',desc:'',keywords:'',cats:'',manuscript:''};
-  const rows=_filterRowsForActiveProject(data);
+  let rows=_filterRowsForActiveProject(data);
   if(!rows.length){alert('このプロジェクトに紐づく原稿はまだありません。');return;}
+  // 同じ章番号に複数行が存在する場合（重複登録・別アカウントの誤保存など）、
+  // 一番新しく更新された行だけを採用する（古い方で新しい方が黙って上書きされるのを防ぐ）
+  {
+    const byIdx={};
+    rows.forEach(row=>{
+      const i=row.chapter_index||0;
+      const ts=row.updated_at?new Date(row.updated_at).getTime():0;
+      if(!byIdx[i]||ts>byIdx[i]._ts)byIdx[i]={row,_ts:ts};
+    });
+    rows=Object.values(byIdx).map(x=>x.row);
+  }
   let n=0,nSub=0,nDraft=0,nKept=0,nWait=0,nRevised=0;
   rows.forEach(row=>{
     const i=row.chapter_index||0;
