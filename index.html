@@ -5079,7 +5079,7 @@ const EPUB_PREVIEW_CSS=`<style>
 .epubPrev .sep{margin:2.5em 0;text-indent:0}
 </style>`;
 // 画像の表示サイズ。ライター・管理者どちらの画面でも同じ選択肢を使う。
-const IMG_SIZE_META={l:{label:'大（画面いっぱい）',pct:100},m:{label:'中',pct:66},s:{label:'小',pct:33}};
+const IMG_SIZE_META={l:{label:'大（画面いっぱい）',pct:100},m:{label:'中',pct:66},s:{label:'小',pct:33},qr:{label:'QRコード用（小さめ）',pct:20}};
 function _imgSizePct(im){return (IMG_SIZE_META[im&&im.size]||IMG_SIZE_META.l).pct;}
 // 画像の表示サイズを選ぶ小さなボタン列。onClickExpr(v) が各サイズの onclick 用JS文字列を返す。
 function _imgSizePickerHtml(current,onClickExpr){
