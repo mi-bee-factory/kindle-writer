@@ -1907,7 +1907,13 @@ async function _renderHomeManagedProjects(){
     const {data:profs}=await _sb.from('profiles').select('id,name').eq('role','admin');
     allProducers=profs||[];
   }
-  el.innerHTML=list.map(p=>{
+  const myProject=list.find(p=>p.id===myId);
+  const myHasContent=!!(myProject&&(myProject.title||myProject.updatedAt));
+  const newProjectBtn=myId?`<div style="padding:10px 0;border-bottom:2px solid var(--brand-soft);margin-bottom:4px">
+    <button onclick="_sbOpenProjectDashboard('${myId}')" style="width:100%;font-size:13px;font-weight:700;background:var(--brand);color:#403129;border:none;padding:8px 14px;cursor:pointer">＋ 新しいプロジェクトを始める</button>
+    ${myHasContent?`<div style="font-size:11px;color:var(--sub);margin-top:4px">※ あなたの枠（1人につき1つ）は今「${esc(myProject.title||'（タイトル未設定）')}」が入っています。押すとその続きが開きます。まったく新しく始めたい場合は、今の内容を書き出してから、まとめ画面でタイトル等を書き換えてください。</div>`:'<div style="font-size:11px;color:var(--sub);margin-top:4px">あなたの空いている枠から始められます。</div>'}
+  </div>`:'';
+  el.innerHTML=newProjectBtn+list.map(p=>{
     const isActive=p.id===activeId;
     const roleLabel=p.role==='owner'?'オーナー':'プロデューサー';
     const isMe=p.id===myId;
