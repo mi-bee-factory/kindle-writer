@@ -3959,6 +3959,7 @@ function renderCoInviteAdmin(){
         ${hasBody?`<span style="font-size:11px;color:var(--sub);white-space:nowrap">${(c.body||'').length.toLocaleString()}文字</span>`:''}
         ${_chapImgBadge(c)}
         ${hasBody?`<button onclick="previewCoChapter(${i})" style="font-size:11px;background:var(--ok);color:#fff;border:none;padding:3px 10px;cursor:pointer;font-weight:700;flex-shrink:0">内容を確認</button>`:''}
+        ${ch.length>1?`<button onclick="_coDelChapter(${i})" title="この章を削除" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:16px;line-height:1;padding:2px 4px;flex-shrink:0">×</button>`:''}
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin:0 0 6px 30px">
         <span style="font-size:11px;color:var(--muted);white-space:nowrap;flex-shrink:0">サブタイトル</span>
@@ -4562,6 +4563,18 @@ function startCompile(){
 }
 function moveChapter(i,d){const a=S.book.chapters,j=i+d;if(j<0||j>=a.length)return;[a[i],a[j]]=[a[j],a[i]];save();renderCompile();}
 function delChapter(i){S.book.chapters.splice(i,1);save();renderCompile();}
+// 共著メンバー招待画面から、途中で辞めた人などの章を選んで削除する。本文が入っている場合は特に強い確認を出す。
+function _coDelChapter(i){
+  const c=S.book.chapters[i];if(!c)return;
+  const hasBody=chHasBody(c);
+  const title=(c.title||'').replace(/^\*+$/,'').trim()||`第${i+1}章`;
+  const msg=hasBody
+    ?`第${i+1}章「${title}」（担当：${c.author||'未設定'}・${(c.body||'').length.toLocaleString()}字）を削除します。\n\n本文が入っています。この操作は取り消せません。本当に削除しますか？`
+    :`第${i+1}章「${title}」を削除します。この操作は取り消せません。よろしいですか？`;
+  if(!confirm(msg))return;
+  S.book.chapters.splice(i,1);
+  save();renderCoInviteAdmin();
+}
 function addChapter(){S.book.chapters.push({author:'',title:'',body:''});save();renderCompile();}
 function importChapter(i,input){
   const f=input.files&&input.files[0]; if(!f)return;
