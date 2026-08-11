@@ -4668,7 +4668,7 @@ function buildBookHTML(){
     const inner=(c.body||'').split(/\n/).map(l=>{l=l.trim();if(!l)return '';
       const hd=_headingText(l);
       if(hd!==null)return `<h2>${bodyFmt(esc(hd))}</h2>`;
-      return `<p>${bodyFmt(esc(l))}</p>`;}).filter(Boolean).join('\n');
+      return `<p${_isLinkOnlyLine(l)?' style="text-indent:0"':''}>${bodyFmt(esc(l))}</p>`;}).filter(Boolean).join('\n');
     return `<h1 id="ch${i+1}">${esc(chapHead(c,i))}</h1>\n${c.author?`<p class="author">著：${esc(c.author)}</p>`:''}\n${inner}`;
   }).join('\n');
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>${esc(S.book.title||'無題')}</title>
@@ -5025,6 +5025,13 @@ function _linkify(s){
 function bodyFmt(s){return _linkify(inlineFmt(s));}
 // HTMLにしない書き出し（テキスト・原稿結合）用。マーカーを「表示（URL）」の形に開く
 function linkMarkToPlain(s){return (s||'').replace(LINK_MARK_RE,(m,text,url)=>((text||'').trim()||url)+'（'+url+'）');}
+// 1行まるごとが [リンク：表示|URL] だけの行かどうか。SNSリンクの一覧などで、
+// 見出し直後だけ字下げが無くて他の行と揃わない、という見た目のズレを防ぐために使う。
+function _isLinkOnlyLine(l){
+  const m=(l||'').match(/\[リンク[：:]([^\]|]+)\|(https?:\/\/[^\s　\]]+)\]/);
+  if(!m)return false;
+  return l.replace(m[0],'').trim()==='';
+}
 /* 本文の [画像：名前] と、登録されている画像を結びつける。
    ライターは「名前＋共有リンク」で登録し、管理者は画像ファイル（＋キャプション）で登録するため、
    どちらの呼び方でも一致させる。同じ名前が両方にある場合は、本に埋め込める実ファイルを優先する。
@@ -5159,7 +5166,7 @@ function _epubPreviewBodyHtml(c){
     }
     const h=_headingText(l);
     if(h!==null)return `<h2>${bodyFmt(esc(h))}</h2>`;
-    return `<p>${bodyFmt(esc(l))}</p>`;
+    return `<p${_isLinkOnlyLine(l)?' style="text-indent:0"':''}>${bodyFmt(esc(l))}</p>`;
   }).filter(x=>x).join('');
   // 本文で位置指定した画像だけを表示する（未配置の写真は自動で出さない。EPUBと同じ）
   return lines||'<p style="color:#aaa;text-indent:0">（本文がありません）</p>';
@@ -5228,7 +5235,7 @@ async function _epubBuildSpecialChapterXhtml(c,files,manifest,imgNRef){
     const mw=l.match(/^\[画像[：:](.+?)\]$/);if(mw){const desc=(mw[1]||'').trim();const k=_findChapImage(imgs,desc,placed);if(k>=0){placed.add(k);return imgs[k]._tag;}return `<p style="text-indent:0">🖼 ${escXml(desc||'画像')}（未登録）</p>`;}
     const hd=_headingText(l);
     if(hd!==null)return `<h2>${bodyFmt(escXml(hd))}</h2>`;
-    return `<p>${bodyFmt(escXml(l))}</p>`;}).filter(x=>x).join('\n');
+    return `<p${_isLinkOnlyLine(l)?' style="text-indent:0"':''}>${bodyFmt(escXml(l))}</p>`;}).filter(x=>x).join('\n');
   imgs.forEach(im=>{delete im._tag;});
   return {heading,xhtml:`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>${heading}</title><link rel="stylesheet" type="text/css" href="style.css"/></head><body><h1><span class="ch-ttl">${heading}</span></h1>\n${body}</body></html>`};
 }
@@ -5326,7 +5333,7 @@ async function buildEpub(){
       const mw=l.match(/^\[画像[：:](.+?)\]$/);if(mw){const desc=(mw[1]||'').trim();const k=_findChapImage(imgs,desc,placed);if(k>=0){placed.add(k);return imgs[k]._tag;}return `<p style="text-indent:0">🖼 ${escXml(desc||'画像')}（未登録）</p>`;}
       const hd=_headingText(l);
       if(hd!==null)return `<h2>${bodyFmt(escXml(hd))}</h2>`;
-      return `<p>${bodyFmt(escXml(l))}</p>`;}).filter(x=>x).join('\n');
+      return `<p${_isLinkOnlyLine(l)?' style="text-indent:0"':''}>${bodyFmt(escXml(l))}</p>`;}).filter(x=>x).join('\n');
     // 本文で位置指定した画像だけを埋め込む（未配置の写真は出さない。まとめ画面の「未配置」表示で気づける）
     imgs.forEach(im=>{delete im._tag;}); // 組み立て用の一時データを保存データに残さない
     if(ctaOn&&cta.perChapter&&(cta.url||'').trim())body+=`\n<hr/>\n<p style="text-indent:0">▶ ${escXml(cta.linkText||'LINEで読者特典を受け取る')}：<a href="${escXml(cta.url)}">${escXml(cta.url)}</a></p>`;
