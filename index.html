@@ -4705,6 +4705,31 @@ function exportPlan(){
 /* 画像ファイルを、本に載せるのにちょうどよい大きさへ縮小・圧縮してから取り込む。
    スマホの写真はそのままだと数MBあり、クラウド同期が重くなるため。
    Kindleの画面は概ね1000〜1500pxなので、長辺1600pxあれば十分きれいに出る。 */
+// EPUBのCSS上の max-width（%指定）はKindle側の変換で無視されることがあるため、
+// 「大」以外のサイズが選ばれている画像は、埋め込む前に物理的にピクセルサイズを縮小しておく。
+// 基準幅は1600px（このアプリの通常アップロード時の圧縮基準と揃えている）。
+function _physicallyResizeForSize(dataUrl,mime,pct){
+  if(pct>=100)return Promise.resolve({data:dataUrl,mime});
+  return new Promise(resolve=>{
+    const img=new Image();
+    img.onload=()=>{
+      const baseW=1600;
+      const targetW=Math.max(24,Math.round(baseW*pct/100));
+      if(img.width<=targetW){resolve({data:dataUrl,mime});return;} // 既に十分小さければそのまま
+      const r=targetW/img.width;
+      const cv=document.createElement('canvas');
+      cv.width=targetW;
+      cv.height=Math.max(1,Math.round(img.height*r));
+      const cx=cv.getContext('2d');
+      cx.fillStyle='#fff';cx.fillRect(0,0,cv.width,cv.height);
+      cx.drawImage(img,0,0,cv.width,cv.height);
+      try{resolve({data:cv.toDataURL('image/jpeg',0.85),mime:'image/jpeg'});}
+      catch(e){resolve({data:dataUrl,mime});}
+    };
+    img.onerror=()=>resolve({data:dataUrl,mime});
+    img.src=dataUrl;
+  });
+}
 function _readImageCompressed(file,cb){
   const MAX=1600, Q=0.82;
   const fr=new FileReader();
@@ -5169,15 +5194,17 @@ function _epubEdgeImageItemref(files,manifest,idPrefix,image){
 }
 // 特別章の本文を組み立てる。files/manifest/imgNは呼び出し元（buildEpub）と共有し、
 // 通常章と同じ規則で [図N] [画像：説明] を実ファイルに置き換える。
-function _epubBuildSpecialChapterXhtml(c,files,manifest,imgNRef){
+async function _epubBuildSpecialChapterXhtml(c,files,manifest,imgNRef){
   const heading=escXml((c.title||'').trim()||_SPECIAL_LABELS[c.type]||'');
   const imgs=c.images||[];
-  imgs.forEach((im,k)=>{
+  for(let k=0;k<imgs.length;k++){
+    const im=imgs[k];
     if(im&&im.data){
-      imgNRef.n++;const ext=(im.mime==='image/png')?'png':'jpg';const fn='img'+imgNRef.n+'.'+ext;
-      files.push({name:'OEBPS/images/'+fn,bytes:b64B((im.data.split(',')[1]||''))});
-      manifest.push(`<item id="img${imgNRef.n}" href="images/${fn}" media-type="${im.mime}"/>`);
       const pct=_imgSizePct(im);
+      const resized=await _physicallyResizeForSize(im.data,im.mime,pct);
+      imgNRef.n++;const ext=(resized.mime==='image/png')?'png':'jpg';const fn='img'+imgNRef.n+'.'+ext;
+      files.push({name:'OEBPS/images/'+fn,bytes:b64B((resized.data.split(',')[1]||''))});
+      manifest.push(`<item id="img${imgNRef.n}" href="images/${fn}" media-type="${resized.mime}"/>`);
       const figStyle=pct<100?` style="max-width:${pct}%;margin-left:auto;margin-right:auto"`:'';
       const imgTag=`<img src="images/${fn}" alt="図${k+1}"/>`;
       const linkUrl=(im.url||'').trim();
@@ -5188,7 +5215,7 @@ function _epubBuildSpecialChapterXhtml(c,files,manifest,imgNRef){
     }else{
       im._tag='';
     }
-  });
+  }
   const placed=new Set();
   const body=(c.body||'').replace(/，/g,'、').replace(/．/g,'。').split(/\n/).map(l=>{l=l.trim();
     if(!l)return '';
@@ -5201,7 +5228,7 @@ function _epubBuildSpecialChapterXhtml(c,files,manifest,imgNRef){
   imgs.forEach(im=>{delete im._tag;});
   return {heading,xhtml:`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>${heading}</title><link rel="stylesheet" type="text/css" href="style.css"/></head><body><h1><span class="ch-ttl">${heading}</span></h1>\n${body}</body></html>`};
 }
-function buildEpub(){
+async function buildEpub(){
   const ch=S.book.chapters.filter(c=>(c.body||'').trim());
   const title=S.book.title||'無題';
   const cta=S.book.cta||{};
@@ -5246,11 +5273,11 @@ function buildEpub(){
   const specialFront=specialCh.filter(c=>c.type==='hajimeni'||c.type==='prologue');
   const specialBack=specialCh.filter(c=>!(c.type==='hajimeni'||c.type==='prologue'));
   let spN=0;
-  const _pushSpecialChapter=(c)=>{
+  const _pushSpecialChapter=async(c)=>{
     spN++;const id='sp'+spN;
     const frontRef=_epubEdgeImageItemref(files,manifest,id+'-front',c.frontImage);
     if(frontRef)spine.push(frontRef);
-    const {heading,xhtml}=_epubBuildSpecialChapterXhtml(c,files,manifest,imgNRef);
+    const {heading,xhtml}=await _epubBuildSpecialChapterXhtml(c,files,manifest,imgNRef);
     files.push({name:'OEBPS/'+id+'.xhtml',bytes:sB(xhtml)});
     manifest.push(`<item id="${id}" href="${id}.xhtml" media-type="application/xhtml+xml"/>`);
     spine.push(`<itemref idref="${id}"/>`);
@@ -5258,18 +5285,21 @@ function buildEpub(){
     const backRef=_epubEdgeImageItemref(files,manifest,id+'-back',c.backImage);
     if(backRef)spine.push(backRef);
   };
-  specialFront.forEach(_pushSpecialChapter);
-  ch.forEach((c,i)=>{
+  for(const c of specialFront)await _pushSpecialChapter(c);
+  for(let i=0;i<ch.length;i++){
+    const c=ch[i];
     const id='ch'+(i+1),imgs=c.images||[];
     const frontRef=_epubEdgeImageItemref(files,manifest,id+'-front',c.frontImage);
     if(frontRef)spine.push(frontRef);
-    imgs.forEach((im,k)=>{
+    for(let k=0;k<imgs.length;k++){
+      const im=imgs[k];
       if(im&&im.data){
-        // 実データを持つ画像（管理者・アップロード画面からの添付）→ そのまま埋め込む
-        imgN++;const ext=(im.mime==='image/png')?'png':'jpg';const fn='img'+imgN+'.'+ext;
-        files.push({name:'OEBPS/images/'+fn,bytes:b64B((im.data.split(',')[1]||''))});
-        manifest.push(`<item id="img${imgN}" href="images/${fn}" media-type="${im.mime}"/>`);
+        // 実データを持つ画像（管理者・アップロード画面からの添付）→ そのまま埋め込む（サイズ指定があれば物理的に縮小してから）
         const pct=_imgSizePct(im);
+        const resized=await _physicallyResizeForSize(im.data,im.mime,pct);
+        imgN++;const ext=(resized.mime==='image/png')?'png':'jpg';const fn='img'+imgN+'.'+ext;
+        files.push({name:'OEBPS/images/'+fn,bytes:b64B((resized.data.split(',')[1]||''))});
+        manifest.push(`<item id="img${imgN}" href="images/${fn}" media-type="${resized.mime}"/>`);
         const figStyle=pct<100?` style="max-width:${pct}%;margin-left:auto;margin-right:auto"`:'';
         const imgTag=`<img src="images/${fn}" alt="図${k+1}"/>`;
         const linkUrl=(im.url||'').trim();
@@ -5281,7 +5311,7 @@ function buildEpub(){
       }else{
         im._tag='';
       }
-    });
+    }
     const placed=new Set();
     let body=(c.body||'').replace(/，/g,'、').replace(/．/g,'。').split(/\n/).map(l=>{l=l.trim();
       if(!l)return '';
@@ -5306,8 +5336,8 @@ function buildEpub(){
     navli.push(`<li><a href="${id}.xhtml">${chapH1Text}</a></li>`);
     const backRef=_epubEdgeImageItemref(files,manifest,id+'-back',c.backImage);
     if(backRef)spine.push(backRef);
-  });
-  specialBack.forEach(_pushSpecialChapter);
+  }
+  for(const c of specialBack)await _pushSpecialChapter(c);
   if(ctaOn){
     let cimg='';
     if(cta.image&&cta.image.data){const cmm=cta.image.mime||'image/png',ce=(cmm==='image/png')?'png':'jpg';
@@ -5348,11 +5378,17 @@ function _confirmDraftChaptersBeforeExport(){
   const list=pend.map(x=>`第${x.i+1}章「${(x.c.title||'').replace(/^\*+$/,'').trim()||'無題'}」（${x.st==='revise'?'修正を依頼中':'書きかけ・未提出'}）`).join('\n');
   return confirm(`次の章はまだ確定していません。\n\n${list}\n\nこのまま書き出すと、これらの原稿も本に含まれます。続けますか？`);
 }
-function exportEpub(){
+async function exportEpub(){
   if(!S.book.chapters.some(c=>(c.body||'').trim())){alert('章の本文がありません。');return;}
   if(!_confirmDraftChaptersBeforeExport())return;
-  const blob=new Blob([buildEpub()],{type:'application/epub+zip'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(S.book.title||'本')+'.epub';a.click();
+  const btn=event&&event.target;const origText=btn?btn.textContent:'';
+  if(btn){btn.textContent='書き出し中…';btn.disabled=true;}
+  try{
+    const blob=new Blob([await buildEpub()],{type:'application/epub+zip'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(S.book.title||'本')+'.epub';a.click();
+  }finally{
+    if(btn){btn.textContent=origText;btn.disabled=false;}
+  }
 }
 function exportMeta(){
   const t=`■ タイトル：${S.book.title||''}\n■ サブタイトル：${S.book.subtitle||''}\n\n■ 内容紹介文：\n${S.book.desc||''}\n\n■ キーワード（7枠）：\n${S.book.keywords||''}\n\n■ カテゴリ（3枠・ニッチ）：\n${S.book.cats||''}\n\n■ 出版前チェックリスト（規約）：\n[ ] 特典条件はLINE登録のみ（レビュー誘導なし）\n[ ] 本そのものを特典にしていない（別コンテンツ）\n[ ] 個人情報フォーム直リンクなし（公式LINEのみ）\n[ ] メタデータに詰め込み・虚偽なし\n[ ] 無料キャンペーンは週末に設定\n[ ] 各章末にLINE特典リンク設置`;
@@ -6419,7 +6455,7 @@ function removeUploadChapImage(chapIdx,imgIdx){
   if(el)el.style.display='block';
   if(btn)btn.textContent='閉じる';
 }
-function buildUploadEpub(){
+async function buildUploadEpub(){
   const ch=S.uploadChapters||[];
   if(!ch.length){alert('まず章に分割してください。');return;}
   // 永続保存（復元しない）
@@ -6432,7 +6468,7 @@ function buildUploadEpub(){
   S.coauthor=false;
   S._uploadSuccess=S.book.chapters.length;
   save();
-  const bytes=buildEpub();
+  const bytes=await buildEpub();
   const blob=new Blob([bytes],{type:'application/epub+zip'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(S.uploadTitle||'本')+'.epub';a.click();
   goHome();
