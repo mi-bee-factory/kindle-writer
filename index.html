@@ -1188,15 +1188,25 @@ async function fetchChaptersFromSupabase(){
   let rows=_filterRowsForActiveProject(data);
   if(!rows.length){alert('このプロジェクトに紐づく原稿はまだありません。');return;}
   // 同じ章番号に複数行が存在する場合（重複登録・別アカウントの誤保存など）、
-  // 一番新しく更新された行だけを採用する（古い方で新しい方が黙って上書きされるのを防ぐ）
+  // どちらが正しいか自動では判断せず、その章は今回の取り込みから除外して管理者に知らせる。
+  // （自動選択は取り違えのリスクがあるため）
+  let dupWarning='';
   {
     const byIdx={};
     rows.forEach(row=>{
       const i=row.chapter_index||0;
-      const ts=row.updated_at?new Date(row.updated_at).getTime():0;
-      if(!byIdx[i]||ts>byIdx[i]._ts)byIdx[i]={row,_ts:ts};
+      (byIdx[i]=byIdx[i]||[]).push(row);
     });
-    rows=Object.values(byIdx).map(x=>x.row);
+    const dupIdx=Object.keys(byIdx).filter(i=>byIdx[i].length>1);
+    if(dupIdx.length){
+      rows=rows.filter(row=>byIdx[row.chapter_index||0].length===1);
+      dupWarning='\n\n⚠ 次の章番号に複数アカウント分のデータが重複しており、間違い選択を避けるため今回は取り込みから除外しました：\n'
+        +dupIdx.map(i=>{
+          const list=byIdx[i].map(r=>`　・${r.author_name||'（名前なし）'}（${(r.body||'').length.toLocaleString()}字・${r.updated_at?new Date(r.updated_at).toLocaleString('ja-JP'):''}更新）`).join('\n');
+          return `第${Number(i)+1}章：\n${list}`;
+        }).join('\n')
+        +'\n\nどちらが正しいか確認のうえ、私（ひかり）にどちらを残すか伝えてください。';
+    }
   }
   let n=0,nSub=0,nDraft=0,nKept=0,nWait=0,nRevised=0;
   rows.forEach(row=>{
@@ -1252,6 +1262,7 @@ async function fetchChaptersFromSupabase(){
   t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:10px 22px;font-size:14px;font-weight:700;z-index:10010;pointer-events:none;opacity:1;transition:opacity .4s';
   t.textContent=`✓ ${n}件を取得（提出 ${nSub}・書きかけ ${nDraft}${nWait?`・修正依頼中 ${nWait}`:''}${nRevised?`・修正が届いた ${nRevised}`:''}）${nKept?`／あなたの編集 ${nKept}件を保持`:''}`;document.body.appendChild(t);
   setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),400);},2800);
+  if(dupWarning)alert('取り込みは完了しましたが、確認してほしいことがあります。'+dupWarning);
 }
 let _pendingCheckGen=0;
 async function _checkPendingSubmissions(){
