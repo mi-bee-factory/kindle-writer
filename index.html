@@ -5446,7 +5446,8 @@ function buildBookHTML(){
 body{font-family:"Yu Mincho","Hiragino Mincho ProN",serif;line-height:${_typo().lineHeight};text-align:${_typo().justify?'justify':'left'};}
 h1{page-break-before:always;font-size:${(1.6*_typo().headScale).toFixed(2)}em;border-bottom:2px solid #333;padding-bottom:.2em;}
 h2{font-size:${(1.25*_typo().headScale).toFixed(2)}em;margin-top:1.4em;}
-p{text-indent:${_typo().indent}em;margin:${_typo().paraGap}em 0;}
+p{text-indent:${_typo().indentMode==='all'?_typo().indent:0}em;margin:${_typo().paraGap}em 0;}
+${_typo().indentMode==='para'?`p.pn{text-indent:${_typo().indent}em;}`:''}
 p.pb{margin-bottom:${_typo().pbGap}em;}
 .title-page{text-align:center;margin-top:30%;page-break-after:always;}
 .title-page h1{page-break-before:auto;border:none;font-size:2em;}
@@ -5952,14 +5953,26 @@ function _bodyLinesToHtml(raw,renderLine,opts){
       mark.add(i);run=0;
     }
   }
+  /* 「段落のはじまり」＝1行空けた直後の段落に pn を付ける。
+     書き手の「ただの呼吸の改行」と「段落を変える改行」を区別するための印。
+     字下げの設定が「1行空けた次だけ」のとき、この印の付いた段落だけを字下げする。 */
+  const newPara=new Set();
+  for(let i=0;i<items.length;i++){
+    if(!isP(items[i].kind))continue;
+    const pv=items[i-1];
+    if(pv&&isP(pv.kind)&&pv.blankAfter)newPara.add(i);
+  }
+  const addClass=(html,cls)=>html.replace(/^<p(\s[^>]*)?>/,(m,attrs)=>{
+    attrs=attrs||'';
+    return /\sclass="/.test(attrs)
+      ? `<p${attrs.replace(/\sclass="([^"]*)"/,` class="$1 ${cls}"`)}>`
+      : `<p class="${cls}"${attrs}>`;
+  });
   return items.map((it,i)=>{
-    if(!mark.has(i))return it.html;
-    return it.html.replace(/^<p(\s[^>]*)?>/,(m,attrs)=>{
-      attrs=attrs||'';
-      return /\sclass="/.test(attrs)
-        ? `<p${attrs.replace(/\sclass="([^"]*)"/,' class="$1 pb"')}>`
-        : `<p class="pb"${attrs}>`;
-    });
+    const cls=[];
+    if(mark.has(i))cls.push('pb');
+    if(newPara.has(i))cls.push('pn');
+    return cls.length?addClass(it.html,cls.join(' ')):it.html;
   }).join(opts.join!==undefined?opts.join:'\n');
 }
 /* ---------- EPUBと同じ見た目のプレビュー ----------
@@ -5970,7 +5983,11 @@ function _bodyLinesToHtml(raw,renderLine,opts){
    すでに少しずつずれていた（QRコードの表示サイズがプレビューと実機で違った事故の温床）。
    同じ数値から同じ文字列を組むことで、見本と書き出しが構造的にずれないようにする。
    sel='' → 実EPUB（body に対して指定）／sel='.epubPrev ' → アプリ内プレビュー */
-const KW_TYPO_DEFAULT={indent:1,paraGap:0.6,pbGap:1.9,pageMargin:1,lineHeight:1.9,justify:true,headScale:1};
+/* 字下げの既定は「しない」。
+   このアプリの原稿は1文＝1行で書かれることが多く、全行を字下げすると
+   「ひと呼吸の改行」にも1文字ぶんの空きが入って階段状に見えてしまう。
+   段落を変えたところ（1行空けた次）だけ字下げしたい場合は indentMode:'para'。 */
+const KW_TYPO_DEFAULT={indentMode:'none',indent:1,paraGap:0.6,pbGap:1.9,pageMargin:1,lineHeight:1.9,justify:true,headScale:1};
 function _typo(){return Object.assign({},KW_TYPO_DEFAULT,(S.book&&S.book.typo)||{});}
 function typoSet(k,v){
   if(!S.book)S.book={};
@@ -5995,7 +6012,9 @@ function bookCss(sel){
     R('h1 .ch-sub','display:block;font-size:.62em;font-weight:400;color:#444;margin-top:.9em;line-height:1.7;'),
     R('.ch-author','text-indent:0;text-align:center;font-size:.85em;color:#555;margin:-.6em 0 2.4em;'),
     R('h2',`font-size:${(1.1*t.headScale).toFixed(2)}em;margin:1.8em 0 .5em;font-weight:700;border-left:3px solid #333;padding-left:.6em;text-indent:0;page-break-after:avoid;break-after:avoid-page;`),
-    R('p',`text-indent:${t.indent}em;margin:${t.paraGap}em 0;`),
+    // 字下げ：none＝全行そろえる／para＝1行空けた次だけ／all＝全行
+    R('p',`text-indent:${t.indentMode==='all'?t.indent:0}em;margin:${t.paraGap}em 0;`),
+    (t.indentMode==='para'?R('p.pn',`text-indent:${t.indent}em;`):''),
     R('p.pb',`margin-bottom:${t.pbGap}em;`),
     `${sel}h1+p,${sel}h2+p{text-indent:0;}`,
     R('strong,b','font-weight:700;'),
@@ -6004,22 +6023,36 @@ function bookCss(sel){
     R('figure','margin:1.2em 0;text-align:center;page-break-inside:avoid;break-inside:avoid-page;page-break-after:avoid;break-after:avoid-page;'),
     R('figcaption','font-size:.85em;color:#555;text-indent:0;'),
     R('.sep','margin:2.5em 0;text-indent:0;')
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 function epubPreviewCss(){return '<style>\n'+bookCss('.epubPrev ')+'\n</style>';}
 /* 体裁の設定パネル。
    Kindleは読者側で文字サイズと書体を変えられるので、その2つは項目として出さない。
    出すと「プレビューでは合っているのに実機で違う」を必ず作ってしまう。 */
 const KW_TYPO_ITEMS=[
-  {k:'indent',   label:'字下げ（段落の先頭）', opts:[[0,'なし'],[1,'1文字ぶん（標準）'],[2,'2文字ぶん']]},
   {k:'paraGap',  label:'段落と段落の空き',     opts:[[0.3,'せまい'],[0.6,'標準'],[1,'ひろい']]},
   {k:'pbGap',    label:'1行空けの余白の大きさ',opts:[[1.2,'ひかえめ'],[1.9,'標準'],[2.8,'たっぷり']]},
   {k:'pageMargin',label:'ページの余白',        opts:[[0.5,'せまい'],[1,'標準'],[1.8,'ひろい']]},
   {k:'lineHeight',label:'行の高さ',            opts:[[1.6,'つめる'],[1.9,'標準'],[2.2,'ゆったり']],note:'端末の行間設定が優先されることがあります'},
   {k:'headScale',label:'見出しの大きさ',       opts:[[0.9,'小さめ'],[1,'標準'],[1.2,'大きめ']]}
 ];
+const KW_INDENT_MODES=[
+  ['none','しない（すべての行を左端にそろえる）'],
+  ['para','1行空けた次の段落だけ字下げする'],
+  ['all','すべての行を字下げする']
+];
 function _typoPanelHtml(){
   const t=_typo();
+  const indentRow=`
+    <label style="display:flex;align-items:center;gap:8px;margin:6px 0;flex-wrap:wrap">
+      <span style="min-width:150px;font-size:13px">段落の先頭の字下げ</span>
+      <select onchange="typoSet('indentMode',this.value)" style="padding:3px 8px;font-size:13px">
+        ${KW_INDENT_MODES.map(([v,l])=>`<option value="${v}" ${t.indentMode===v?'selected':''}>${l}</option>`).join('')}
+      </select>
+    </label>
+    <div class="muted" style="font-size:11px;margin:-2px 0 8px 158px;line-height:1.7">
+      「ひと呼吸」で改行しただけの行まで字下げされると階段状に見えるため、既定は「しない」です。
+    </div>`;
   const rows=KW_TYPO_ITEMS.map(it=>`
     <label style="display:flex;align-items:center;gap:8px;margin:6px 0;flex-wrap:wrap">
       <span style="min-width:150px;font-size:13px">${it.label}</span>
@@ -6029,6 +6062,7 @@ function _typoPanelHtml(){
       ${it.note?`<span class="muted" style="font-size:11px">${it.note}</span>`:''}
     </label>`).join('');
   return `<div class="small" style="background:var(--bg-alt);padding:12px 14px;line-height:1.8">
+    ${indentRow}
     ${rows}
     <label style="display:flex;align-items:center;gap:8px;margin:6px 0">
       <input type="checkbox" ${t.justify?'checked':''} onchange="typoSet('justify',this.checked)">
