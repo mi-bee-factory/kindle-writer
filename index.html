@@ -1947,7 +1947,17 @@ function save(){
   const id=pmCurrentId();
   let ok=true;
   try{localStorage.setItem(_pmKey(id), JSON.stringify(S));}
-  catch(e){ok=false;S._saveFailed=true;console.warn('[kw] この端末への保存に失敗',e);}
+  catch(e){
+    // 「直前の取り込みを元に戻す」用の控えは、全章のコピー（画像込み）を抱えている。
+    // 容量が足りないときは、取り消し機能より本体のデータを守るほうが大事なので先に捨てる。
+    if(S._fetchBackup){
+      S._fetchBackup=null;
+      try{localStorage.setItem(_pmKey(id), JSON.stringify(S));ok=true;
+        console.warn('[kw] 容量不足のため「直前の取り込みを元に戻す」の控えを解放しました');}
+      catch(e2){ok=false;}
+    }else ok=false;
+    if(!ok){S._saveFailed=true;console.warn('[kw] この端末への保存に失敗',e);}
+  }
   if(ok&&S._saveFailed)S._saveFailed=false;
   _renderSaveBanner();
   _sbScheduleSync();
@@ -1957,19 +1967,29 @@ function save(){
 /* 保存できていないことを知らせる帯。トーストでは駄目（消えると気づけない）。
    この帯の「バックアップ」は localStorage を通らないので、容量が満杯でも動く。ここが肝。 */
 function _renderSaveBanner(){
-  let el=document.getElementById('kwSaveBanner');
-  if(!S._saveFailed){if(el)el.remove();return;}
-  if(!el){
-    el=document.createElement('div');el.id='kwSaveBanner';
-    el.style.cssText='position:fixed;top:0;left:0;right:0;z-index:10050;background:#c2410c;color:#fff;'
-      +'padding:10px 16px;font-size:13px;font-weight:700;line-height:1.7;display:flex;align-items:center;'
-      +'gap:12px;flex-wrap:wrap;justify-content:center;text-align:center;box-shadow:0 2px 12px rgba(0,0,0,.3)';
-    el.innerHTML='<span>⚠ この端末に保存できていません。今すぐ［バックアップ］を押してファイルに残してください。'
-      +'表紙や画像を小さくすると直ります。</span>'
-      +'<button onclick="backupProject()" style="background:#fff;color:#c2410c;border:none;padding:5px 16px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap">バックアップ</button>'
-      +'<button onclick="showCapacity()" style="background:none;color:#fff;border:1px solid #fff;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap">容量を見る</button>';
-    document.body.appendChild(el);
-  }
+  const ex=document.getElementById('kwSaveBanner');
+  if(!S._saveFailed){if(ex)ex.remove();return;}
+  // このセッションでバックアップ済みかどうかで、次にやることを出し分ける。
+  // 取ったあとも「バックアップして」と言い続けると、何をすればいいのか分からなくなる。
+  const backedUp=!!S._backupThisSession;
+  const el=ex||document.createElement('div');
+  el.id='kwSaveBanner';
+  el.style.cssText='position:fixed;top:0;left:0;right:0;z-index:10050;background:'+(backedUp?'#b45309':'#c2410c')+';color:#fff;'
+    +'padding:10px 16px;font-size:13px;font-weight:700;line-height:1.7;display:flex;align-items:center;'
+    +'gap:10px;flex-wrap:wrap;justify-content:center;text-align:center;box-shadow:0 2px 12px rgba(0,0,0,.3)';
+  const btn=(label,fn,primary)=>`<button onclick="${fn}" style="${primary
+    ?'background:#fff;color:#b45309;border:none;':'background:none;color:#fff;border:1px solid #fff;'}`
+    +`padding:5px 16px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap">${label}</button>`;
+  el.innerHTML=backedUp
+    ? '<span>✓ バックアップは取れています（原稿は安全です）。ただし<u>この端末にはまだ保存できていません</u>。'
+      +'画像を軽くすると直ります。</span>'
+      +btn('画像をまとめて軽くする','shrinkAllImages()',true)
+      +btn('内訳を見る','showCapacity()')
+    : '<span>⚠ この端末に保存できていません。まず［バックアップ］でファイルに残してください。</span>'
+      +btn('バックアップ','backupProject()',true)
+      +btn('画像を軽くする','shrinkAllImages()')
+      +btn('内訳を見る','showCapacity()');
+  if(!ex)document.body.appendChild(el);
 }
 /* この本がブラウザの保存容量をどれだけ使っているかの内訳。
    「表紙を軽くすればいい」と分かるように、内訳を出すのが要点。 */
@@ -2002,6 +2022,39 @@ function _kwCapacityHtml(){
       <span style="color:var(--sub)">※すでに入れてある表紙は、選び直すまで軽くなりません。</span></div>`:''}
   </div>`;
 }
+/* すでに入っている画像をまとめて軽くする。
+   setCover の縮小は「これから選ぶ表紙」にしか効かないので、
+   すでに重くなっている本を救うにはこれが要る。原稿の文章には一切触らない。 */
+async function shrinkAllImages(){
+  const before=_kwSizeReport();
+  if(!confirm('この本に入っている画像をまとめて軽くします。\n\n'
+    +`今の大きさ：${_kwMB(before.total)}\n\n`
+    +'・写真の細かさは下がりますが、Kindleでの見え方はほとんど変わりません\n'
+    +'・文章には一切触りません\n'
+    +'・元の大きな画像には戻せません（先にバックアップを取ることをおすすめします）\n\n'
+    +'続けますか？'))return;
+  const fit=async(obj,maxEdge)=>{
+    if(!obj||!obj.data||typeof obj.data!=='string'||!obj.data.startsWith('data:'))return;
+    const r=await _kwFitImage(obj.data,obj.mime||'image/jpeg',maxEdge);
+    obj.data=r.data;obj.mime=r.mime;
+  };
+  const b=S.book||{};
+  await fit(b.cover,2560);
+  await fit((b.cta||{}).image,1600);
+  const walk=async(arr)=>{
+    for(const c of (arr||[])){
+      for(const im of (c.images||[]))await fit(im,1600);
+      await fit(c.frontImage,1600);await fit(c.backImage,1600);
+    }
+  };
+  await walk(b.chapters);await walk(b.specialChapters);await walk(S.uploadChapters);
+  const ok=save();
+  const after=_kwSizeReport();
+  const cap=document.getElementById('kwCapModal');if(cap)cap.remove();
+  alert(`画像を軽くしました。\n\n${_kwMB(before.total)} → ${_kwMB(after.total)}\n\n`
+    +(ok?'この端末に保存できました。':'まだ保存できていません。表紙を選び直すか、使っていない画像を減らしてください。'));
+  if(!document.getElementById('compile').classList.contains('hide'))renderCompile();
+}
 function showCapacity(){
   const mid='kwCapModal';const ex=document.getElementById(mid);if(ex)ex.remove();
   const m=document.createElement('div');m.id=mid;
@@ -2009,9 +2062,10 @@ function showCapacity(){
   m.innerHTML=`<div style="background:#fff;max-width:440px;width:100%;padding:24px">
     <div style="font-size:15px;font-weight:700;margin-bottom:12px">保存容量の内訳</div>
     ${_kwCapacityHtml()}
-    <div style="display:flex;gap:8px;margin-top:16px">
-      <button class="btn ok" style="flex:1;font-size:13px" onclick="backupProject()">バックアップを取る</button>
-      <button class="btn gray" style="flex:1;font-size:13px" onclick="document.getElementById('${mid}').remove()">閉じる</button>
+    <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
+      <button class="btn ok" style="flex:1;min-width:130px;font-size:13px" onclick="backupProject()">バックアップを取る</button>
+      <button style="flex:1;min-width:150px;font-size:13px;padding:9px;background:#b45309;color:#fff;border:none;cursor:pointer;font-weight:700" onclick="shrinkAllImages()">画像をまとめて軽くする</button>
+      <button class="btn gray" style="flex:1;min-width:90px;font-size:13px" onclick="document.getElementById('${mid}').remove()">閉じる</button>
     </div>
   </div>`;
   document.body.appendChild(m);
@@ -5225,7 +5279,9 @@ function backupProject(){
   dl(base+'.kwbook.json',_kwBuildBackup(S,{projectName:p.name||''}),'application/json');
   dl(base+'_原稿.txt',exportBookAsSplitText(),'text/plain');
   S._lastBackupAt=new Date().toISOString();
+  S._backupThisSession=true;   // 帯の文面を「次にやること」へ切り替える
   try{save();}catch(e){}
+  _renderSaveBanner();
   renderCompile&&document.getElementById('compile')&&!document.getElementById('compile').classList.contains('hide')&&renderCompile();
   const t=document.createElement('div');
   t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:10px 20px;font-size:13px;font-weight:700;z-index:10070;text-align:center;line-height:1.7';
