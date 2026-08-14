@@ -5906,7 +5906,8 @@ function _headingText(l){
    1行空けが、そのまま消えていたということ。意味が分かっているのは書いた本人だけなので、
    その区切りを尊重するのが正しい。ここに集約して、4箇所の見え方を必ず一致させる。 */
 const PARA_END_RE=/[。！？」』）\)!?…—]$/;
-function _autoParaGapOn(){return !!(S.book&&S.book.autoParaGap);}
+// 既定はオン。オフにし忘れるより「入れておいて、おかしい所を直す」ほうが実用的なため。
+function _autoParaGapOn(){return !(S.book&&S.book.autoParaGap===false);}
 function _autoParaGapEvery(){const n=parseInt((S.book&&S.book.autoParaGapEvery)||5,10);return (n>=3&&n<=8)?n:5;}
 // renderLine(line, index) は 1行ぶんのHTMLを返す（空文字/null なら出力しない）
 function _bodyLinesToHtml(raw,renderLine,opts){
@@ -5938,6 +5939,7 @@ function _bodyLinesToHtml(raw,renderLine,opts){
   }
   // 空行が一つも無い章にだけ、文の切れ目（句点）で自動的に余白を入れる。
   // 書き手が区切りを設計している章では何もしない。
+  const autoMark=new Set();   // 機械が入れた分（人が入れた分と区別して見せるため）
   const autoOn=(opts.autoGap!==undefined?opts.autoGap:_autoParaGapOn());
   if(autoOn&&!writerBlank){
     const N=(opts.gapEvery||_autoParaGapEvery());
@@ -5950,9 +5952,11 @@ function _bodyLinesToHtml(raw,renderLine,opts){
       if(!nx||!isP(nx.kind))continue;
       // 文の途中では絶対に切らない。句点で終わる段落が見つかるまで送る（見つからなければ入れない）
       if(!PARA_END_RE.test(items[i].text)){ if(run>=N+3)run=0; continue; }
-      mark.add(i);run=0;
+      mark.add(i);autoMark.add(i);run=0;
     }
   }
+  // 呼び出し元が件数を知りたいとき用（章一覧やレビュー画面で使う）
+  if(opts.stats){opts.stats.auto=autoMark.size;opts.stats.writer=mark.size-autoMark.size;}
   /* 「段落のはじまり」＝1行空けた直後の段落に pn を付ける。
      書き手の「ただの呼吸の改行」と「段落を変える改行」を区別するための印。
      字下げの設定が「1行空けた次だけ」のとき、この印の付いた段落だけを字下げする。 */
@@ -5972,6 +5976,8 @@ function _bodyLinesToHtml(raw,renderLine,opts){
     const cls=[];
     if(mark.has(i))cls.push('pb');
     if(newPara.has(i))cls.push('pn');
+    // markAuto は確認画面専用の印。実際のEPUBには付けない（本番とプレビューをずらさないため）
+    if(opts.markAuto&&autoMark.has(i))cls.push('pa');
     return cls.length?addClass(it.html,cls.join(' ')):it.html;
   }).join(opts.join!==undefined?opts.join:'\n');
 }
@@ -6078,6 +6084,68 @@ function _typoPanelHtml(){
     <div id="typoPrev" style="margin-top:10px;background:#fff;border:1px solid var(--line-soft);max-height:280px;overflow-y:auto"></div>
   </div>`;
 }
+/* 自動で入れた余白を、章ごとに見て回るための画面。
+   「自動で入れて、おかしいところを直す」ための確認手段。
+   ここで付ける印（.pa）は確認画面だけのもので、実際のEPUBには入らない。 */
+const KW_AUTOGAP_REVIEW_CSS=`<style>
+.epubPrev p.pa{position:relative;border-left:3px solid #b45309;padding-left:8px;margin-left:-11px;background:#fffbeb}
+.epubPrev p.pa::after{content:"↑ここで自動的にひと呼吸";display:block;font-size:.62em;color:#b45309;font-weight:700;text-indent:0;margin-top:.3em}
+</style>`;
+function _autoGapChapterStats(){
+  const rows=[];
+  const push=(c,label,idx,kind)=>{
+    if(!c||!(c.body||'').trim())return;
+    const st={};
+    _epubPreviewBodyHtml(c,{stats:st});
+    rows.push({label,idx,kind,auto:st.auto||0,writer:st.writer||0,c});
+  };
+  ((S.book&&S.book.chapters)||[]).forEach((c,i)=>push(c,`第${i+1}章 ${(c.title||'').replace(/^\*+$/,'').trim()}`,i,'normal'));
+  ((S.book&&S.book.specialChapters)||[]).forEach((c,i)=>push(c,(c.title||'特別章'),i,'special'));
+  return rows;
+}
+function showAutoGapReview(){
+  const mid='kwGapReview';const ex=document.getElementById(mid);if(ex)ex.remove();
+  const rows=_autoGapChapterStats();
+  const totalAuto=rows.reduce((s,r)=>s+r.auto,0);
+  const list=rows.map(r=>`<div style="padding:8px 10px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="flex:1;min-width:0;font-size:13px;font-weight:700">${esc(r.label)}</span>
+      ${r.auto?`<span style="font-size:11px;background:#fffbeb;color:#b45309;padding:1px 8px;font-weight:700;white-space:nowrap">自動 ${r.auto}か所</span>`
+              :`<span style="font-size:11px;color:var(--ok);white-space:nowrap">${r.writer?`ご自身の1行空け ${r.writer}か所`:'余白なし'}</span>`}
+      ${r.auto?`<button onclick="_gapReviewShow('${r.kind}',${r.idx})" style="font-size:11px;background:var(--brand);color:#403129;border:none;padding:3px 12px;cursor:pointer;font-weight:700;white-space:nowrap">どこか見る</button>`:''}
+    </div>`).join('')||'<div style="padding:10px;color:var(--sub);font-size:13px">本文の入った章がありません。</div>';
+  const m=document.createElement('div');m.id=mid;
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:10065;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  m.innerHTML=`<div style="background:#fff;max-width:640px;width:100%;max-height:88vh;display:flex;flex-direction:column">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <div>
+        <div style="font-size:16px;font-weight:700">自動で入れた余白の確認</div>
+        <div style="font-size:12px;color:var(--sub);margin-top:2px">この本では <b style="color:#b45309">${totalAuto}か所</b> に自動で余白が入っています</div>
+      </div>
+      <button onclick="document.getElementById('${mid}').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--sub);line-height:1">×</button>
+    </div>
+    <div style="padding:10px 14px;background:#fffbeb;font-size:12px;color:#403129;line-height:1.8">
+      自動の余白は<b>「。」で終わる文の直後にだけ</b>入ります。文の途中では切りません。<br>
+      入る場所がしっくりこない章は、<b>その章に1行空けをご自身で入れてください。</b>入れた時点で、その章では自動処理が止まります。
+    </div>
+    <div id="gapReviewBody" style="overflow-y:auto;flex:1">${list}</div>
+    <div style="padding:12px 20px;border-top:1px solid var(--line-soft);display:flex;gap:8px">
+      <button class="btn gray" style="flex:1;font-size:13px" onclick="document.getElementById('${mid}').remove()">閉じる</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+function _gapReviewShow(kind,idx){
+  const c=(kind==='special'?(S.book.specialChapters||[]):(S.book.chapters||[]))[idx];
+  if(!c)return;
+  const el=document.getElementById('gapReviewBody');if(!el)return;
+  el.innerHTML=`<div style="padding:10px 14px">
+    <button class="btn gray" style="font-size:12px;padding:4px 12px;margin-bottom:10px" onclick="showAutoGapReview()">← 章の一覧にもどる</button>
+    <div style="font-size:13px;font-weight:700;margin-bottom:8px">${esc((c.title||'').replace(/^\*+$/,'').trim()||'この章')}</div>
+    ${epubPreviewCss()}${KW_AUTOGAP_REVIEW_CSS}
+    <div class="epubPrev" style="background:#fff;border:1px solid var(--line-soft);padding:14px">${_epubPreviewBodyHtml(c,{markAuto:true})}</div>
+  </div>`;
+  el.scrollTop=0;
+}
 function _typoLivePreview(){
   const el=document.getElementById('typoPrev');if(!el)return;
   const c=((S.book&&S.book.chapters)||[]).find(x=>(x&&(x.body||'').trim()))
@@ -6117,7 +6185,8 @@ function _epubPreviewImgTag(im){
   if(im.url)return `<p style="text-indent:0">🖼 ${esc(im.name||'画像')}：<a href="${esc(im.url)}" target="_blank" rel="noopener">${esc(im.url)}</a></p>`;
   return '';
 }
-function _epubPreviewBodyHtml(c){
+function _epubPreviewBodyHtml(c,opts){
+  opts=opts||{};
   c=c||{};
   const imgs=c.images||[];
   const placed=new Set();
@@ -6135,7 +6204,7 @@ function _epubPreviewBodyHtml(c){
     const h=_headingText(l);
     if(h!==null)return `<h2>${bodyFmt(esc(h))}</h2>`;
     return `<p${_isLinkOnlyLine(l)?' style="text-indent:0"':''}>${bodyFmt(esc(l))}</p>`;
-  },{join:''});
+  },{join:'',markAuto:opts.markAuto,stats:opts.stats});
   // 本文で位置指定した画像だけを表示する（未配置の写真は自動で出さない。EPUBと同じ）
   return lines||'<p style="color:#aaa;text-indent:0">（本文がありません）</p>';
 }
@@ -6495,16 +6564,20 @@ function renderCompile(){
     <div class="small" style="background:var(--bg-alt);padding:12px 14px;line-height:1.8">
       <div style="margin-bottom:8px">書き手が入れた <b>1行空け</b> は、そのまま本の余白になります。</div>
       <label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <input type="checkbox" ${S.book.autoParaGap?'checked':''} onchange="S.book.autoParaGap=this.checked;save();renderCompile()">
+        <input type="checkbox" ${_autoParaGapOn()?'checked':''} onchange="S.book.autoParaGap=this.checked;save();renderCompile()">
         <span>1行空けが一度も無い章は、文の切れ目で自動的に余白を入れる</span>
       </label>
-      <div style="margin-top:8px;padding-left:24px;${S.book.autoParaGap?'':'display:none'}">
-        <label style="display:flex;align-items:center;gap:8px">
-          <select onchange="S.book.autoParaGapEvery=parseInt(this.value,10);save()" style="padding:3px 8px;font-size:13px">
+      <div style="margin-top:8px;padding-left:24px;${_autoParaGapOn()?'':'display:none'}">
+        <label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <select onchange="S.book.autoParaGapEvery=parseInt(this.value,10);save();renderCompile()" style="padding:3px 8px;font-size:13px">
             ${[4,5,6].map(n=>`<option value="${n}" ${(_autoParaGapEvery()===n)?'selected':''}>${n}段落ごと</option>`).join('')}
           </select>
           <span class="muted" style="font-size:12px">余白は必ず「。」で終わる段落の直後に入ります（文の途中では切りません）</span>
         </label>
+        <div style="margin-top:8px">
+          <button class="btn ok" style="font-size:12px;padding:6px 16px" onclick="showAutoGapReview()">自動で入った場所を確認する →</button>
+          <span class="muted" style="font-size:11px;margin-left:6px">${(()=>{try{const n=_autoGapChapterStats().reduce((s,r)=>s+r.auto,0);return n?`この本では ${n}か所`:'今のところ0か所';}catch(e){return '';}})()}</span>
+        </div>
       </div>
       <div class="muted" style="font-size:12px;margin-top:8px">
         書き手が1行空けを使っている章では、この自動処理は働きません。人が入れた区切りが優先されます。
