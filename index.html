@@ -1562,6 +1562,7 @@ function _applyFetchChapters(draftChaptersJson){
   const draftChapters=JSON.parse(draftChaptersJson);
   // 直前の状態をバックアップしておき、「元に戻す」で復元できるようにする
   S._fetchBackup={chapters:JSON.parse(JSON.stringify(S.book.chapters||[])),at:Date.now()};
+  snapshotBook('クラウドから章を取り込み');
   S.book.chapters=draftChapters;
   save();renderCoInviteAdmin();
   const ex=document.getElementById('fetchConfirmModal');if(ex)ex.remove();
@@ -1842,6 +1843,8 @@ function pmDelete(id){
   const m=_pmMeta();
   if(m.projects.length<=1){alert('プロジェクトが1つしかないため削除できません。');return;}
   if(!confirm('このプロジェクトをこの端末の一覧から削除しますか？元に戻せません。\n\n※クラウドに保存された本は消えません。この端末の表示から消えるだけです。'))return;
+  // 消す前に必ずファイルとして控えを取る（あとから「やっぱり戻したい」に応えられるように）
+  _kwBackupProjectById(id);
   try{localStorage.removeItem(_pmKey(id));}catch(e){}
   m.projects=m.projects.filter(p=>p.id!==id);
   if(m.current===id)m.current=m.projects[0].id;
@@ -5214,6 +5217,43 @@ function backupProject(){
 /* 手で直せる原稿テキスト。
    既存の「貼るだけ電子書籍化」の manualSplitChapters() がそのまま読み戻せる形にする
    （新しい取り込み口は作らない）。画像や表紙は入らないので、そのことをファイル内にも書く。 */
+/* 本を置き換える操作の直前に控えを取る。
+   localStorage には置かない（それ自体が容量を圧迫するため）。メモリ上に最大3件。 */
+let _bookSnaps=[];
+function snapshotBook(label){
+  try{_bookSnaps.push({label,at:Date.now(),
+    json:JSON.stringify({book:S.book,coauthor:S.coauthor,epubFront:S.epubFront})});}
+  catch(e){return;}
+  if(_bookSnaps.length>3)_bookSnaps.shift();
+  _renderUndoChip();
+}
+function _renderUndoChip(){
+  const id='kwUndoChip';const ex=document.getElementById(id);if(ex)ex.remove();
+  if(!_bookSnaps.length)return;
+  const s=_bookSnaps[_bookSnaps.length-1];
+  const el=document.createElement('div');el.id=id;
+  el.style.cssText='position:fixed;bottom:20px;left:20px;z-index:10040;background:#403129;color:#fff;'
+    +'padding:10px 14px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:10px;box-shadow:0 4px 16px rgba(0,0,0,.3)';
+  el.innerHTML=`<span>「${esc(s.label)}」を実行しました</span>
+    <button onclick="undoLastBookChange()" style="background:#fff;color:#403129;border:none;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap">元に戻す</button>
+    <button onclick="document.getElementById('${id}').remove()" style="background:none;border:none;color:#fff;font-size:16px;cursor:pointer;padding:0 2px;line-height:1">×</button>`;
+  document.body.appendChild(el);
+  setTimeout(()=>{const e2=document.getElementById(id);if(e2&&e2===el)e2.remove();},60000);
+}
+function undoLastBookChange(){
+  const s=_bookSnaps.pop();
+  if(!s){alert('戻せる操作がありません。');return;}
+  if(!confirm(`「${s.label}」の直前の状態に戻します。よろしいですか？`)){_bookSnaps.push(s);return;}
+  const d=JSON.parse(s.json);
+  S.book=d.book;S.coauthor=d.coauthor;S.epubFront=d.epubFront||{};
+  save();
+  const chip=document.getElementById('kwUndoChip');if(chip)chip.remove();
+  _renderUndoChip();
+  renderHomeBookCard&&renderHomeBookCard();
+  if(!document.getElementById('compile').classList.contains('hide'))renderCompile();
+  if(!document.getElementById('upload').classList.contains('hide'))renderUpload();
+  if(!document.getElementById('admin').classList.contains('hide'))renderCoInviteAdmin&&renderCoInviteAdmin();
+}
 function _kwReadTextFile(input,cb){
   const f=input&&input.files&&input.files[0];
   if(!f)return;
@@ -5289,6 +5329,18 @@ function exportBookAsSplitText(book){
   // 取り込み側で説明ブロックだけを落とすので、区切りの数＝章数−1 で数が合う。
   const parts=chs.map(c=>[(c.title||'').trim(),'',(c.body||'').trim()].join('\n').trim());
   return head+'\n\n'+parts.join('\n\n'+CHAP_SEP_LINE+'\n')+'\n';
+}
+/* 表示中でないプロジェクトを、localStorage から直接読んでバックアップする。
+   削除の直前に呼ぶ用。今開いている本には触らない。 */
+function _kwBackupProjectById(id){
+  let st=null;
+  try{const raw=localStorage.getItem(_pmKey(id));if(raw)st=JSON.parse(raw);}catch(e){}
+  if(!st)return false;
+  const m=_pmMeta(),p=(m.projects||[]).find(x=>x.id===id)||{};
+  const base=`kw_${_kwSafeName(p.name||'本')}_${_kwSafeName(st.book&&st.book.title)}_${_kwStamp()}`;
+  dl(base+'.kwbook.json',_kwBuildBackup(st,{projectName:p.name||''}),'application/json');
+  dl(base+'_原稿.txt',exportBookAsSplitText(st.book||{}),'text/plain');
+  return true;
 }
 // 「最終バックアップ：◯◯」の表示。7日を過ぎたら黄色くして促す。
 function _kwBackupStatusHtml(){
@@ -6963,6 +7015,8 @@ function manualSplitChapters(){
   const SEP=CHAP_SEP_RE;
   const sepCount=(text.match(new RegExp(SEP.source,'gmi'))||[]).length;
   if(sepCount===0){alert('「章区切り」という文字を含む行が見つかりませんでした。\n\nテキストの中に「--- 章区切り ---」を単独の行として入れてから再試行してください。\n\n区切り文字は右下の「区切り文字をコピー」ボタンからコピーできます。');return;}
+  // 既に本文のある本を分割し直すと今の章が置き換わるので、先に控えを取る
+  if((S.book&&S.book.chapters||[]).some(c=>(c.body||'').trim()))snapshotBook('テキストを章に分割');
   let parts=text.split(SEP).map(p=>p.trim());
   // バックアップの原稿テキストは冒頭に【本のタイトル】…や※の説明が付いている。
   // それを1章目の本文と誤解しないよう、先頭の連続した説明行だけを落とす。
@@ -7209,6 +7263,7 @@ function splitUploadChapter(i){
 }
 function resetChapterSplit(){
   if(!confirm('章の分割をリセットします。テキストはそのまま残ります。よろしいですか？'))return;
+  snapshotBook('章の分割をリセット');
   S.uploadChapters=[];S.book.chapters=[];save();
   const preview=document.getElementById('uploadChaptersPreview');
   if(preview)preview.innerHTML='';
@@ -7217,6 +7272,7 @@ function resetChapterSplit(){
 }
 function resetUploadText(){
   if(!confirm('テキストと章の分割を両方リセットします。テキストを最初から貼り直せます。よろしいですか？'))return;
+  snapshotBook('テキストと分割をリセット');
   S.uploadText='';S.uploadChapters=[];S.book.chapters=[];save();
   startUpload();
 }
@@ -7278,13 +7334,28 @@ function removeUploadChapImage(chapIdx,imgIdx){
 async function buildUploadEpub(){
   const ch=S.uploadChapters||[];
   if(!ch.length){alert('まず章に分割してください。');return;}
-  // 永続保存（復元しない）
+  // この操作は今の本を丸ごと置き換える。何を失うかを先に見せて、控えも取っておく。
+  {
+    const b=S.book||{};
+    const lost=[];
+    if(b.cover&&b.cover.data)lost.push('表紙');
+    if((b.cta||{}).enabled)lost.push('巻末の読者特典');
+    if((b.subtitle||'').trim())lost.push('サブタイトル「'+b.subtitle+'」');
+    if((b.specialChapters||[]).some(c=>(c.body||'').trim()))lost.push('はじめに・あとがきなどの特別章');
+    const withBody=(b.chapters||[]).filter(c=>(c.body||'').trim()).length;
+    if(withBody)lost.push(`今の${withBody}章の本文`);
+    if(lost.length&&!confirm(
+      'この操作で、今の本の次のものが置き換わります：\n\n・'+lost.join('\n・')
+      +'\n\n先に「バックアップ」を取っておくことをおすすめします。\n続けますか？'))return;
+    snapshotBook('アップロードからEPUB作成');
+  }
   S.book.chapters=ch.map(c=>({author:S.uploadAuthor||'',title:c.title||'',chapterType:c.chapterType||'custom',body:c.body||'',purpose:'',images:c.images||[]}));
   S.book.title=S.uploadTitle||S.book.title||'無題';
   S.book.subtitle='';
   S.book.cover=null;
   S.book.cta={};
-  S.book.uuid=null;
+  // 本のIDは維持する。これは「同じ本を貼り直して出し直す」経路なので、
+  // ID を変えると KDP が別の本として扱ってしまう。
   S.coauthor=false;
   S._uploadSuccess=S.book.chapters.length;
   save();
