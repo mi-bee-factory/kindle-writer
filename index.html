@@ -4109,7 +4109,7 @@ function previewCoChapter(i){
     </div>
     ${_coChapNoticeHtml(i,c)}
     ${_coChapImgListHtml(i,c)}
-    ${_coChapFlowHtml(i,c)}
+    <div id="coChapFlowPanel">${_coChapFlowHtml(i,c)}</div>
     <div id="coChapPrev" style="overflow-y:auto;padding:20px 24px;flex:1;font-size:14px">
       <div style="font-size:11px;color:var(--sub);background:#f5f5f3;padding:5px 10px;margin:-4px 0 14px;text-align:center">本になったときの見え方（EPUBと同じ表示）</div>
       ${_epubPreviewHtml(c,calcNIdx(S.book.chapters,i))}
@@ -4136,6 +4136,50 @@ function previewCoChapter(i){
    (2) この場で自分が1行空けを入れる（編集タブ）
    (3) まとめ画面の自動余白スイッチを使う
    アプリが勝手に本文を書き換えることはしない。判断するのは人。 */
+/* 文の途中の改行を、その場でつなげる。
+   行番号を出しても原稿の中から探せないので、探さずに直せるようにする。 */
+function _coJoinLines(body,lineIdx){
+  const src=String(body||'').split(/\n/);
+  if(lineIdx<0||lineIdx>=src.length-1)return null;
+  const cur=src[lineIdx].replace(/\s+$/,''),nx=src[lineIdx+1].replace(/^\s+/,'');
+  if(!cur.trim()||!nx.trim())return null;
+  src.splice(lineIdx,2,cur+nx);
+  return src.join('\n');
+}
+function _coFixMidBreak(i,lineIdx){
+  const c=S.book&&S.book.chapters&&S.book.chapters[i];if(!c)return;
+  const next=_coJoinLines(c.body,lineIdx);
+  if(next===null){alert('この箇所はもう直っているようです。');_coRefreshFlowPanel(i);return;}
+  snapshotBook('文の途中の改行をつなげた');
+  c.body=next;_markChapterEdited(i,['body']);save();
+  _coRefreshFlowPanel(i);
+}
+function _coFixAllMidBreaks(i){
+  const c=S.book&&S.book.chapters&&S.book.chapters[i];if(!c)return;
+  const f=_paraFlowIssues(c.body);
+  if(!f.midBreaks.length)return;
+  if(!confirm(`${f.midBreaks.length}件の改行をまとめてつなげます。\n\n押したあとでも「元に戻す」で戻せます。続けますか？`))return;
+  snapshotBook('文の途中の改行をまとめてつなげた');
+  // 後ろから処理する（前から詰めると行番号がずれるため）
+  let body=c.body;
+  [...f.midBreaks].sort((a,b)=>b-a).forEach(n=>{const r=_coJoinLines(body,n);if(r!==null)body=r;});
+  c.body=body;_markChapterEdited(i,['body']);save();
+  _coRefreshFlowPanel(i);
+}
+// 確認モーダルを開いたまま、点検パネルとプレビューだけ描き直す
+function _coRefreshFlowPanel(i){
+  const c=S.book&&S.book.chapters&&S.book.chapters[i];if(!c)return;
+  const p=document.getElementById('coChapFlowPanel');
+  if(p){const open=!!(p.querySelector('details')||{}).open;
+    p.innerHTML=_coChapFlowHtml(i,c);
+    const d=p.querySelector('details');if(d&&open)d.open=true;}
+  const pv=document.getElementById('coChapPrev');
+  if(pv){const hd=pv.querySelector('div');
+    pv.innerHTML=(hd?hd.outerHTML:'')+_epubPreviewHtml(c,calcNIdx(S.book.chapters,i));}
+  const ta=document.getElementById('coChapEditTA');if(ta)ta.value=c.body||'';
+  const cnt=document.getElementById('coChapCount');if(cnt)cnt.textContent=(c.body||'').length.toLocaleString()+'文字';
+  renderCoInviteAdmin&&renderCoInviteAdmin();
+}
 function _coChapFlowHtml(i,c){
   const f=_paraFlowIssues(c.body);
   if(!f.midBreaks.length&&!f.longRuns.length)return '';
@@ -4148,16 +4192,18 @@ function _coChapFlowHtml(i,c){
   const cut=s=>{s=String(s||'');return s.length>34?s.slice(0,34)+'…':s;};
   const brkList=f.midBreaks.map(n=>({no:n+1,cur:src[n]||'',next:src[n+1]||''}));
   const brkHtml=brkList.length?`<div style="background:#fff;border:1px solid #fcd9b6;padding:8px 10px;margin:0 0 8px">
-      <div style="font-size:11px;font-weight:700;color:#92400e;margin-bottom:5px">↵ 文の途中で切れていそうな箇所</div>
-      ${brkList.map(b=>`<div style="margin-bottom:6px;font-size:12px;line-height:1.7">
-        <span style="color:var(--muted);font-size:11px">${b.no}行目</span><br>
-        <span style="background:#fff3d6">${esc(cut(b.cur))}</span><span style="color:#c2410c;font-weight:700">⏎</span><br>
-        <span style="color:var(--sub)">${esc(cut(b.next))}</span>
+      <div style="font-size:11px;font-weight:700;color:#92400e;margin-bottom:6px">↵ 文の途中で切れていそうな箇所</div>
+      ${brkList.map(b=>`<div style="margin-bottom:10px;font-size:12px;line-height:1.7;padding-bottom:8px;border-bottom:1px dashed #f0e0c8">
+        <div><span style="background:#fff3d6">${esc(cut(b.cur))}</span><span style="color:#c2410c;font-weight:700">⏎</span></div>
+        <div style="color:var(--sub)">${esc(cut(b.next))}</div>
+        <button onclick="_coFixMidBreak(${i},${b.no-1})" style="margin-top:5px;font-size:11px;padding:3px 12px;background:var(--ok);color:#fff;border:none;cursor:pointer;font-weight:700">この2行をつなげる</button>
       </div>`).join('')}
-      <div style="font-size:11px;color:var(--sub);line-height:1.7">この2行はひと続きの文に見えます。つなげると、Kindleで自然に読めます。</div>
+      ${brkList.length>1?`<button onclick="_coFixAllMidBreaks(${i})" style="font-size:11px;padding:4px 14px;background:#403129;color:#fff;border:none;cursor:pointer;font-weight:700;margin-bottom:6px">${brkList.length}件すべてつなげる</button>`:''}
+      <div style="font-size:11px;color:var(--sub);line-height:1.7">つなげてもよいか、上の文で確かめてから押してください。押したあとでも左下の「元に戻す」で戻せます。</div>
     </div>`:'';
   // 依頼文にも実際の行を入れる。「どこ？」と聞き返されないように。
-  const brkQuote=brkList.map(b=>`・${b.no}行目「${cut(b.cur)}」の改行`).join('\n');
+  // 行番号は受け取った側も探せないので、前後の文をそのまま引用する
+  const brkQuote=brkList.map(b=>`・「${cut(b.cur)}」\n　　↓ ここが改行されています\n　「${cut(b.next)}」`).join('\n');
   const draft=[
     maxRun?`${maxRun}段落ほど区切りなしで続いているところがあります。ひと呼吸置きたい場所で1行空けていただけますか。（Enterを2回押すと1行空きます）`:'',
     brkList.length?`また、次の箇所は文の途中で改行されているようです。Kindleでは改行したところで段落が切れてしまうので、文の終わりまではつなげていただけますか。\n${brkQuote}`:''
