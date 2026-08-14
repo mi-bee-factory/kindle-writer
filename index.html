@@ -550,6 +550,10 @@ async function _notifyNewUser(name,email){
 const _SB_URL='https://qdqzrwymgyfgplbwdfss.supabase.co';
 const _SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFkcXpyd3ltZ3lmZ3BsYndkZnNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0NDA0MTMsImV4cCI6MjA5ODAxNjQxM30.VUIycG1Vjq0OMwKANJXUqMbbfYqPMWoxt3k89navU5c';
 const BOOK_ID='kindle-writer-v1';
+/* 章の区切り。書き出したテキストを取り込み側が必ず読めるよう、1か所で持つ。
+   「章区切り」という文字を含む行なら何でも区切りとして扱う（--- は飾り）。 */
+const CHAP_SEP_RE=/^[^\n\r]*章区切り[^\n\r]*$/mi;
+const CHAP_SEP_LINE='--- 章区切り ---';
 const _sb=window.supabase.createClient(_SB_URL,_SB_KEY);
 let _sbUser=null,_sbRole='member',_sbTimer=null,_freshLogin=false,_authProfileLoaded=false;
 
@@ -1859,6 +1863,7 @@ function showProjectModal(){
       </div>
       ${isCur?'<span style="font-size:11px;font-weight:700;color:var(--brand-dim);flex-shrink:0">表示中</span>'
         :`<button onclick="pmSwitch(${p.id})" style="background:var(--brand-soft);border:1px solid var(--brand);color:#403129;font-size:12px;font-weight:700;padding:4px 12px;cursor:pointer;white-space:nowrap;flex-shrink:0">切り替え</button>`}
+      ${isCur?`<button onclick="backupProject()" title="この本をファイルに保存する" style="background:none;border:1px solid var(--ok);color:var(--ok);font-size:11px;padding:3px 10px;cursor:pointer;flex-shrink:0;font-weight:700;white-space:nowrap">バックアップ</button>`:''}
       ${m.projects.length>1&&!isCur?`<button onclick="pmDelete(${p.id})" style="background:none;border:1px solid #fca5a5;color:#ef4444;font-size:11px;padding:3px 8px;cursor:pointer;flex-shrink:0">削除</button>`:''}
     </div>`;
   }).join('');
@@ -1881,6 +1886,17 @@ function showProjectModal(){
         <button onclick="const v=document.getElementById('pmNewName').value.trim();if(v){pmNewProject(v);document.getElementById('${mid}').remove();}else{alert('名前を入力してください。');}" style="background:var(--brand);color:#403129;border:none;padding:6px 16px;font-size:13px;font-weight:700;cursor:pointer">作成</button>
       </div>
     </div>
+    <div style="margin-top:16px;border-top:1px solid var(--line-soft);padding-top:16px">
+      <div style="font-size:12px;color:var(--sub);margin-bottom:8px">バックアップから復元</div>
+      <label style="display:inline-flex;align-items:center;gap:6px;background:var(--ok-soft);color:var(--ok);border:1px solid var(--ok);padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer">
+        ファイルを選ぶ（.kwbook.json）
+        <input type="file" accept=".json,application/json" style="display:none" onchange="restoreFromBackup(this);document.getElementById('${mid}').remove();">
+      </label>
+      <div style="font-size:11px;color:var(--sub);margin-top:6px;line-height:1.7">
+        <b>新しいプロジェクトとして開きます。</b>今ある本は消えません。<br>
+        復元してもクラウドには自動で上がりません。中身を確かめてから「クラウドに保存」を押してください。
+      </div>
+    </div>
   </div>`;
   modal.addEventListener('click',e=>{if(e.target===modal)modal.remove();});
   document.body.appendChild(modal);
@@ -1901,12 +1917,83 @@ function renderProjectSwitcher(){
   </div>`;
 }
 /* ===== /プロジェクト管理 ===== */
+/* 保存の成否を返す。
+   以前は失敗を握りつぶしていたため、ブラウザの保存容量（約5MB）を超えると
+   それ以降ずっと何も保存されないのに画面は正常に見える、という状態になっていた。
+   表紙1枚で数MB使うことがあるので、これは実際に起こりうる。必ず気づけるようにする。 */
 function save(){
   S.author=val('author'); S.chapTitle=val('chapTitle');
   const id=pmCurrentId();
-  try{localStorage.setItem(_pmKey(id), JSON.stringify(S));}catch(e){/* 容量超過時も落ちないように */}
+  let ok=true;
+  try{localStorage.setItem(_pmKey(id), JSON.stringify(S));}
+  catch(e){ok=false;S._saveFailed=true;console.warn('[kw] この端末への保存に失敗',e);}
+  if(ok&&S._saveFailed)S._saveFailed=false;
+  _renderSaveBanner();
   _sbScheduleSync();
   _sbScheduleProjectSync();
+  return ok;
+}
+/* 保存できていないことを知らせる帯。トーストでは駄目（消えると気づけない）。
+   この帯の「バックアップ」は localStorage を通らないので、容量が満杯でも動く。ここが肝。 */
+function _renderSaveBanner(){
+  let el=document.getElementById('kwSaveBanner');
+  if(!S._saveFailed){if(el)el.remove();return;}
+  if(!el){
+    el=document.createElement('div');el.id='kwSaveBanner';
+    el.style.cssText='position:fixed;top:0;left:0;right:0;z-index:10050;background:#c2410c;color:#fff;'
+      +'padding:10px 16px;font-size:13px;font-weight:700;line-height:1.7;display:flex;align-items:center;'
+      +'gap:12px;flex-wrap:wrap;justify-content:center;text-align:center;box-shadow:0 2px 12px rgba(0,0,0,.3)';
+    el.innerHTML='<span>⚠ この端末に保存できていません。今すぐ［バックアップ］を押してファイルに残してください。'
+      +'表紙や画像を小さくすると直ります。</span>'
+      +'<button onclick="backupProject()" style="background:#fff;color:#c2410c;border:none;padding:5px 16px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap">バックアップ</button>'
+      +'<button onclick="showCapacity()" style="background:none;color:#fff;border:1px solid #fff;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap">容量を見る</button>';
+    document.body.appendChild(el);
+  }
+}
+/* この本がブラウザの保存容量をどれだけ使っているかの内訳。
+   「表紙を軽くすればいい」と分かるように、内訳を出すのが要点。 */
+function _kwSizeReport(){
+  const len=s=>(typeof s==='string'?s.length:0)*2;  // UTF-16 概算
+  const b=S.book||{};
+  let cover=len((b.cover||{}).data);
+  let cta=len(((b.cta||{}).image||{}).data);
+  let imgs=0;
+  const walkImgs=(arr)=>(arr||[]).forEach(c=>{
+    (c.images||[]).forEach(im=>{imgs+=len(im&&im.data);});
+    imgs+=len((c.frontImage||{}).data)+len((c.backImage||{}).data);
+  });
+  walkImgs(b.chapters);walkImgs(b.specialChapters);walkImgs(S.uploadChapters);
+  let total=0;try{total=JSON.stringify(S).length*2;}catch(e){total=0;}
+  const limit=5*1024*1024;
+  return {total,cover,cta,imgs,text:Math.max(0,total-cover-cta-imgs),limit,
+          pct:Math.min(100,Math.round(total/limit*100))};
+}
+function _kwMB(n){return (n/1048576).toFixed(n<1048576?2:1)+'MB';}
+function _kwCapacityHtml(){
+  const r=_kwSizeReport();
+  const color=r.pct>=90?'#c2410c':r.pct>=70?'#b45309':'var(--ok)';
+  return `<div style="font-size:12px;line-height:1.9">
+    <div style="background:rgba(0,0,0,.13);height:14px;overflow:hidden"><div style="width:${r.pct}%;height:100%;background:${color};transition:.3s"></div></div>
+    <div style="margin-top:4px;font-weight:700;color:${color}">この本の大きさ：${_kwMB(r.total)}（目安の上限5MBに対して ${r.pct}%）</div>
+    <div style="color:var(--sub)">表紙 ${_kwMB(r.cover)}　章の画像 ${_kwMB(r.imgs)}　特典画像 ${_kwMB(r.cta)}　文章 ${_kwMB(r.text)}</div>
+    <div style="color:var(--muted);font-size:11px">※実際の上限はブラウザによって違います。超えたときは画面の上に赤い帯が出ます。</div>
+    ${r.pct>=70?`<div style="color:${color};margin-top:4px">${r.pct>=90?'もう限界です。':'そろそろ危ないです。'}画像を「中」「小」にするか、表紙を選び直すと軽くなります。<br>
+      <span style="color:var(--sub)">※すでに入れてある表紙は、選び直すまで軽くなりません。</span></div>`:''}
+  </div>`;
+}
+function showCapacity(){
+  const mid='kwCapModal';const ex=document.getElementById(mid);if(ex)ex.remove();
+  const m=document.createElement('div');m.id=mid;
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10060;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  m.innerHTML=`<div style="background:#fff;max-width:440px;width:100%;padding:24px">
+    <div style="font-size:15px;font-weight:700;margin-bottom:12px">保存容量の内訳</div>
+    ${_kwCapacityHtml()}
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn ok" style="flex:1;font-size:13px" onclick="backupProject()">バックアップを取る</button>
+      <button class="btn gray" style="flex:1;font-size:13px" onclick="document.getElementById('${mid}').remove()">閉じる</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
 }
 function load(){
   _pmMigrate();
@@ -5043,6 +5130,178 @@ async function unifyBook(){
   finally{if(btn){btn.textContent=orig;btn.disabled=false;}}
 }
 function dl(name,text,mime){const b=new Blob([text],{type:(mime||'text/plain')+';charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();}
+
+/* ===== バックアップと復元 =====
+   この端末（localStorage）にもクラウドにも頼らない、ファイルとしての控え。
+   画像は data: URL の巨大な文字列なので、そのまま JSON にすると途中に数MBの塊が挟まって
+   メモ帳で開けなくなる。そこで画像を kwasset: 参照に置き換え、実体は末尾の assets にまとめる。
+   JSON.stringify はキーの順序を保つので、冒頭は日本語で読める状態になる。 */
+const KW_BACKUP_VERSION=1;
+// バックアップに入れないもの（APIキー・招待情報・一時的な状態）
+const KW_BACKUP_OMIT=['apiKey','_inviteData','_fetchBackup','_activeTargetId','_uploadSuccess',
+                      '_lastUpdatedByName','_lastUpdatedAt','_saveFailed','_restoredFrom'];
+function _kwExtractAssets(node,assets,seen){
+  if(node===null||typeof node!=='object')return node;
+  if(Array.isArray(node))return node.map(v=>_kwExtractAssets(v,assets,seen));
+  const out={};
+  for(const k of Object.keys(node)){
+    const v=node[k];
+    if(k==='data'&&typeof v==='string'&&v.startsWith('data:')){
+      let id=seen.get(v);
+      if(!id){id='a'+(seen.size+1);seen.set(v,id);assets[id]=v;}
+      out[k]='kwasset:'+id;
+    }else out[k]=_kwExtractAssets(v,assets,seen);
+  }
+  return out;
+}
+function _kwInlineAssets(node,assets){
+  if(typeof node==='string')return node.startsWith('kwasset:')?(assets[node.slice(8)]||''):node;
+  if(node===null||typeof node!=='object')return node;
+  if(Array.isArray(node))return node.map(v=>_kwInlineAssets(v,assets));
+  const out={};for(const k of Object.keys(node))out[k]=_kwInlineAssets(node[k],assets);
+  return out;
+}
+// 純粋関数。state を渡すので単体で検証できる。
+function _kwBuildBackup(state,meta){
+  const src=JSON.parse(JSON.stringify(state||{}));
+  KW_BACKUP_OMIT.forEach(k=>{delete src[k];});
+  const assets={},seen=new Map();
+  const body=_kwExtractAssets(src,assets,seen);
+  const b=body.book||{};
+  return JSON.stringify({
+    _readme:'kindle-writer のバックアップです。上のほうは読める形になっています。'
+      +'画像は一番下の assets にまとめてあります。'
+      +'戻すときは、アプリのプロジェクト一覧にある「バックアップから復元」でこのファイルを選んでください。'
+      +'（今開いている本は消えません。新しいプロジェクトとして開きます）',
+    format:'kwbook', version:KW_BACKUP_VERSION,
+    savedAt:new Date().toISOString(),
+    bookTitle:b.title||'', subtitle:b.subtitle||'',
+    chapterCount:(b.chapters||[]).length,
+    charCount:(b.chapters||[]).reduce((s,c)=>s+String(c&&c.body||'').replace(/\s/g,'').length,0),
+    imageCount:Object.keys(assets).length,
+    projectName:(meta&&meta.projectName)||'',
+    state:body,
+    assets
+  },null,1);
+}
+function _kwParseBackup(text){
+  let j;
+  try{j=JSON.parse(text);}catch(e){return {ok:false,err:'ファイルの中身を読み取れませんでした。壊れているか、別の種類のファイルかもしれません。'};}
+  if(!j||j.format!=='kwbook')return {ok:false,err:'kindle-writer のバックアップファイルではないようです。'};
+  if((j.version|0)>KW_BACKUP_VERSION)return {ok:false,err:'このアプリより新しいバージョンのバックアップです。ページを再読み込みして最新にしてから、もう一度お試しください。'};
+  if(!j.state||!j.state.book)return {ok:false,err:'本のデータが入っていません。'};
+  return {ok:true,meta:j,state:_kwInlineAssets(j.state,j.assets||{})};
+}
+function _kwStamp(){const d=new Date(),p=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;}
+function _kwSafeName(s){return String(s||'').replace(/[\\\/:*?"<>|\s]/g,'_').slice(0,40)||'無題';}
+/* 1回のクリックで2ファイル出す。
+   .kwbook.json ＝そのまま戻せる控え／_原稿.txt ＝メモ帳で直せる原稿 */
+function backupProject(){
+  try{save();}catch(e){}
+  const m=_pmMeta(),p=(m.projects||[]).find(x=>x.id===m.current)||{};
+  const base=`kw_${_kwSafeName(p.name||'本')}_${_kwSafeName(S.book&&S.book.title)}_${_kwStamp()}`;
+  dl(base+'.kwbook.json',_kwBuildBackup(S,{projectName:p.name||''}),'application/json');
+  dl(base+'_原稿.txt',exportBookAsSplitText(),'text/plain');
+  S._lastBackupAt=new Date().toISOString();
+  try{save();}catch(e){}
+  renderCompile&&document.getElementById('compile')&&!document.getElementById('compile').classList.contains('hide')&&renderCompile();
+  const t=document.createElement('div');
+  t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:10px 20px;font-size:13px;font-weight:700;z-index:10070;text-align:center;line-height:1.7';
+  t.innerHTML='✓ バックアップを2つ保存しました<br><span style="font-weight:400;font-size:12px">.kwbook.json（戻す用）と _原稿.txt（直す用）</span>';
+  document.body.appendChild(t);setTimeout(()=>t.remove(),4000);
+}
+/* 手で直せる原稿テキスト。
+   既存の「貼るだけ電子書籍化」の manualSplitChapters() がそのまま読み戻せる形にする
+   （新しい取り込み口は作らない）。画像や表紙は入らないので、そのことをファイル内にも書く。 */
+function _kwReadTextFile(input,cb){
+  const f=input&&input.files&&input.files[0];
+  if(!f)return;
+  if(f.size>80*1024*1024){alert('ファイルが大きすぎます（80MBを超えています）。');input.value='';return;}
+  const r=new FileReader();
+  r.onerror=()=>{alert('ファイルを読み込めませんでした。');input.value='';};
+  r.onload=()=>{try{cb(String(r.result||''),f);}finally{input.value='';}};
+  r.readAsText(f,'utf-8');
+}
+/* バックアップから復元する。
+   必ず「新しいプロジェクト」として開く。今ある本には一切触らない。
+   さらに、復元直後にクラウドへ自動送信しない（古い控えで新しいクラウドを消さないため）。 */
+function restoreFromBackup(input){
+  _kwReadTextFile(input,(txt)=>{
+    const res=_kwParseBackup(txt);
+    if(!res.ok){alert('復元できません。\n\n'+res.err);return;}
+    const m=res.meta;
+    const when=m.savedAt?new Date(m.savedAt).toLocaleString('ja-JP'):'不明';
+    const keepId=confirm(
+      `「${m.bookTitle||'（タイトル未設定）'}」\n`
+     +`${m.chapterCount}章 ／ 約${(m.charCount||0).toLocaleString()}字 ／ 画像${m.imageCount||0}点\n`
+     +`保存日時：${when}\n\n`
+     +`これを新しいプロジェクトとして復元します。今開いている本はそのまま残ります。\n\n`
+     +`──────────\n`
+     +`【OK】KDPで「同じ本の改訂版」として出す（本のIDを引き継ぐ）\n`
+     +`【キャンセル】別の本として出す（新しいIDにする・こちらが安全）`);
+    try{save();}catch(e){}   // 今の本を確定させてから切り替える
+    const st=res.state;
+    delete st.apiKey;               // 二重の保険
+    if(!st.book)st.book={};
+    if(!keepId)st.book.uuid=null;   // buildEpub 側で新しく採番される
+    delete st.book.projectKey;      // クラウドの枠とは結びつけない
+    _resetSToDefaults();
+    Object.assign(S,st);
+    S._activeTargetId=null;         // ★復元直後にクラウドへ上げない
+    S._restoredFrom=m.savedAt||'';
+    S._lastBackupAt=m.savedAt||'';
+    const name=(m.projectName?m.projectName+'（復元）':'復元 '+_kwStamp());
+    pmNewProject(name,{keepState:true});
+    const ok=save();
+    goHome();
+    alert(ok
+      ? `復元しました。\n\nプロジェクト一覧に「${name}」として入っています。\n`
+        +`※クラウドにはまだ上げていません。内容を確かめてから「クラウドに保存」を押してください。`
+      : `復元しましたが、この端末の保存容量が足りません。\n表紙や画像を軽くしてください。`);
+  });
+}
+// 先頭に連続している説明行（【…】・※・全角空白始まり・空行）だけを落とす。
+// 途中に同じ形の行があっても本文として残す。
+function _kwStripHeadBlock(t){
+  const lines=String(t||'').split(/\r?\n/);
+  let k=0;
+  while(k<lines.length&&(!lines[k].trim()||/^【[^】]*】/.test(lines[k])||/^[※]/.test(lines[k])||/^　/.test(lines[k])))k++;
+  return lines.slice(k).join('\n').trim();
+}
+function exportBookAsSplitText(book){
+  const b=book||S.book||{};
+  const chs=(b.chapters||[]).filter(c=>(c&&(c.body||'').trim()));
+  const head=[
+    `【本のタイトル】${b.title||''}`,
+    `【サブタイトル】${b.subtitle||''}`,
+    `【著者】${(chs[0]&&chs[0].author)||S.author||''}`,
+    `【書き出した日】${new Date().toLocaleString('ja-JP')}`,
+    // ここに CHAP_SEP_LINE の文字列そのものを書いてはいけない。
+    // 取り込み側は「その語を含む行」を区切りとみなすので、説明文が区切りとして誤検出される。
+    `※このファイルはメモ帳などで直せます。直したあと、アプリの「貼るだけ電子書籍化」に貼り付ければ戻せます。`,
+    `※章と章のあいだには区切りの行が入っています。その行は消さずに残してください。`,
+    `※各章の1行目が、その章のタイトルになります。`,
+    `※画像・タップURL・表紙・巻末の読者特典・表題紙・奥付は、このファイルには入りません。`,
+    `　それらは同じ日付の .kwbook.json のほうに入っています。`
+  ].join('\n');
+  // 説明ブロックは1章目の前に置く（区切りは章と章のあいだにだけ入れる）。
+  // 取り込み側で説明ブロックだけを落とすので、区切りの数＝章数−1 で数が合う。
+  const parts=chs.map(c=>[(c.title||'').trim(),'',(c.body||'').trim()].join('\n').trim());
+  return head+'\n\n'+parts.join('\n\n'+CHAP_SEP_LINE+'\n')+'\n';
+}
+// 「最終バックアップ：◯◯」の表示。7日を過ぎたら黄色くして促す。
+function _kwBackupStatusHtml(){
+  const at=S._lastBackupAt?new Date(S._lastBackupAt):null;
+  const days=at?Math.floor((Date.now()-at.getTime())/86400000):null;
+  const stale=(days===null||days>=7);
+  const label=at?`最終バックアップ：${at.toLocaleString('ja-JP')}${days>=1?`（${days}日前）`:''}`:'まだ一度もバックアップを取っていません';
+  return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px;background:${stale?'#fffbeb':'var(--ok-soft)'};margin-bottom:12px">
+    <button class="btn ok" style="font-size:13px;padding:8px 18px" onclick="backupProject()">この本をバックアップ</button>
+    <span style="font-size:12px;color:${stale?'#92400e':'var(--ok)'};font-weight:700">${stale?'⚠ ':''}${label}</span>
+    <button onclick="showCapacity()" style="font-size:11px;background:none;border:1px solid var(--line-soft);padding:4px 10px;cursor:pointer;color:var(--sub);font-weight:700;margin-left:auto">容量を見る</button>
+  </div>`;
+}
 /* 結合原稿を「Kindleの型」(見出し・目次・改ページ)のHTMLに整形 */
 function buildBookHTML(){
   const ch=S.book.chapters.filter(c=>(c.body||'').trim());
@@ -5213,7 +5472,39 @@ function insertFig(i,k,kind){
   save();
   if(kind==='special'){renderCoInviteAdmin&&renderCoInviteAdmin();}else{renderCompile();}
 }
-function setCover(input){const f=input.files&&input.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{S.book.cover={data:String(r.result),mime:(f.type||'image/jpeg')};save();renderCompile();};r.readAsDataURL(f);}
+/* 表紙は縮小してから持つ。
+   以前はカメラ解像度のまま入れていたため、表紙1枚でブラウザの保存容量（約5MB）を
+   使い切ることがあった。KDPの推奨は長辺2560pxなので、それを上限にする。 */
+function _kwFitImage(dataUrl,mime,maxEdge){
+  return new Promise(resolve=>{
+    const img=new Image();
+    img.onload=()=>{
+      const long=Math.max(img.width,img.height);
+      if(long<=maxEdge){resolve({data:dataUrl,mime});return;}
+      const r=maxEdge/long;
+      const cv=document.createElement('canvas');
+      cv.width=Math.max(1,Math.round(img.width*r));
+      cv.height=Math.max(1,Math.round(img.height*r));
+      const cx=cv.getContext('2d');
+      cx.fillStyle='#fff';cx.fillRect(0,0,cv.width,cv.height);
+      cx.drawImage(img,0,0,cv.width,cv.height);
+      try{resolve({data:cv.toDataURL('image/jpeg',0.85),mime:'image/jpeg'});}
+      catch(e){resolve({data:dataUrl,mime});}
+    };
+    img.onerror=()=>resolve({data:dataUrl,mime});
+    img.src=dataUrl;
+  });
+}
+function setCover(input){
+  const f=input.files&&input.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=async()=>{
+    const fit=await _kwFitImage(String(r.result),(f.type||'image/jpeg'),2560);
+    S.book.cover={data:fit.data,mime:fit.mime};
+    save();renderCompile();
+  };
+  r.readAsDataURL(f);
+}
 function delCover(){S.book.cover=null;save();renderCompile();}
 /* ---------- 章頭・章末の「見出しなし画像だけページ」 ---------- */
 function _chapArrFor(kind){return kind==='special'?(S.book.specialChapters||[]):(S.book.chapters||[]);}
@@ -5897,6 +6188,7 @@ function renderCompile(){
   const total=ch.reduce((s,c)=>s+(c.body||'').replace(/\s/g,'').length,0);
   document.getElementById('compileCard').innerHTML=`
    <div style="margin-bottom:8px"><button class="btn gray" onclick="goHome()" style="font-size:13px;padding:6px 14px">← ホームに戻る</button></div>
+   ${_kwBackupStatusHtml()}
    <div class="card">
     <h2>${S.coauthor?'みんなの章を1冊にまとめる（統括用）':'章を1冊にまとめて出版'}</h2>
     <p class="muted">${S.coauthor?'まず<b>「誰がどの章を、どんなねらいで」</b>を決めて<b>設計図を配る</b>と、共著でもバラバラになりません。各章がそろったら結合→Kindle用に書き出します。':'各章を書いて並べ、結合→Kindle用（EPUB）に書き出します。表紙も設定できます。'}</p>
@@ -6464,7 +6756,7 @@ function uploadCount(){
   const text=S.uploadText||'';
   const n=text.replace(/\s/g,'').length;
   const el=document.getElementById('uploadCnt');
-  const SEP=/^[^\n\r]*章区切り[^\n\r]*$/mi;
+  const SEP=CHAP_SEP_RE;
   const sepCount=(text.match(new RegExp(SEP.source,'gmi'))||[]).length;
   if(el)el.innerHTML=`全体 ${n.toLocaleString()} 字${sepCount>0?` ／ <b style="color:var(--ok)">章区切り ${sepCount}個を検出 → ${sepCount+1}章に分割できます</b>`:'<span style="color:#aaa"> ／ 章区切りなし（1章としてそのまま使う場合はそのままでOK）</span>'}`;
 }
@@ -6668,10 +6960,14 @@ function setChapterType(i,type){
 function manualSplitChapters(){
   const text=(document.getElementById('uploadTextArea')||{value:S.uploadText||''}).value;
   S.uploadText=text;save();
-  const SEP=/^[^\n\r]*章区切り[^\n\r]*$/mi;
+  const SEP=CHAP_SEP_RE;
   const sepCount=(text.match(new RegExp(SEP.source,'gmi'))||[]).length;
   if(sepCount===0){alert('「章区切り」という文字を含む行が見つかりませんでした。\n\nテキストの中に「--- 章区切り ---」を単独の行として入れてから再試行してください。\n\n区切り文字は右下の「区切り文字をコピー」ボタンからコピーできます。');return;}
-  const parts=text.split(SEP).map(p=>p.trim()).filter(p=>p);
+  let parts=text.split(SEP).map(p=>p.trim());
+  // バックアップの原稿テキストは冒頭に【本のタイトル】…や※の説明が付いている。
+  // それを1章目の本文と誤解しないよう、先頭の連続した説明行だけを落とす。
+  if(parts.length)parts[0]=_kwStripHeadBlock(parts[0]);
+  parts=parts.filter(p=>p);
   if(parts.length<2){alert(`区切りを${sepCount}個検出しましたが、区切り前後の本文が空です。各章に本文を入れてから再試行してください。`);return;}
   S.uploadChapters=parts.map((p,i)=>{
     const lines=p.split('\n');
@@ -6894,7 +7190,7 @@ function splitUploadChapter(i){
   const ta=document.getElementById('chapBodyTa_'+i);
   const text=ta?ta.value:(S.uploadChapters[i]&&S.uploadChapters[i].body||'');
   if(ta)S.uploadChapters[i].body=text;
-  const SEP=/^[^\n\r]*章区切り[^\n\r]*$/mi;
+  const SEP=CHAP_SEP_RE;
   const parts=text.split(SEP).map(p=>p.trim()).filter(p=>p);
   if(parts.length<2){alert('この章の中に「--- 章区切り ---」が見つかりません。\n分割したい場所に「--- 章区切り ---」を1行で入れてから実行してください。');return;}
   const newChapters=parts.map((p,j)=>{
