@@ -5953,8 +5953,10 @@ function _bodyLinesToHtml(raw,renderLine,opts){
       if(run<N)continue;
       const nx=items[i+1];
       if(!nx||!isP(nx.kind))continue;
-      // 文の途中では絶対に切らない。句点で終わる段落が見つかるまで送る（見つからなければ入れない）
-      if(!PARA_END_RE.test(it.text)){ if(run>=N+3)run=0; continue; }
+      // 文の途中では絶対に切らない。文が終わる段落が来るまで待つ。
+      // ここでカウンタを戻してはいけない。戻すと「ひと呼吸の改行」が多い原稿
+      //（行末が「、」などで終わる書き方）では条件が永久に揃わず、1か所も入らなくなる。
+      if(!PARA_END_RE.test(it.text))continue;
       mark.add(i);autoMark.add(i);run=0;
     }
   }
