@@ -5998,21 +5998,41 @@ function _headingText(l){
 const PARA_END_RE=/[。！？」』）\)!?…—]$/;
 // 既定はオン。オフにし忘れるより「入れておいて、おかしい所を直す」ほうが実用的なため。
 function _autoParaGapOn(){return !(S.book&&S.book.autoParaGap===false);}
-/* 章ごとの余白の倍率。書き手によって1行空けの入れ方が違うので、章単位でそろえられるようにする。 */
-const KW_GAP_SCALES=[[1,'そのまま'],[0.6,'少し詰める'],[0.35,'かなり詰める'],[0,'1行空けを普通の改行にする']];
-function _chapGapScale(c){
-  const v=c&&c.gapScale;
-  return (v===undefined||v===null||isNaN(v))?1:Number(v);
+/* 章ごとの余白の倍率。
+   書き手によって1行空けの入れ方がまるで違う（1行ごとに空ける人／段落ごとの人）ため、
+   同じ設定でも章によって空き方が倍以上変わる。本全体で同じ雰囲気になるよう自動でそろえる。
+   ※ここで調整するのは「段落と段落の空き」だけ。行間（line-height）には触れない。 */
+const KW_GAP_SCALES=[[null,'自動でそろえる'],[1,'そのまま'],[0.6,'少し詰める'],[0.35,'かなり詰める'],[0,'1行空けを普通の改行にする']];
+function _evenGapsOn(){return !(S.book&&S.book.evenGaps===false);}
+/* その章が「何字ごとに1行空けているか」。数が小さいほど空きが多い＝スカスカに見える。
+   本文から直接数える（描画を通さない）。_chapGapScale から呼ぶので、
+   描画経由にすると無限に呼び合ってしまうため。 */
+function _rawGapDensity(c){
+  const src=String((c&&c.body)||'').split(/\n/);
+  let gaps=0,chars=0,prev=false;
+  for(let i=0;i<src.length;i++){
+    const l=src[i].trim();
+    if(!l){if(prev){gaps++;prev=false;}continue;}
+    chars+=l.replace(/\s/g,'').length;prev=true;
+  }
+  return gaps?Math.round(chars/gaps):null;
 }
-// その章が「何字ごとに1行空けているか」。数が小さいほど空きが多い＝スカスカに見える。
-function _chapGapDensity(c){
-  if(!c||!(c.body||'').trim())return null;
-  const st={};
-  _epubPreviewBodyHtml(c,{stats:st});
-  const gaps=(st.writer||0)+(st.auto||0);
-  if(!gaps)return null;
-  const chars=(c.body||'').replace(/\s/g,'').length;
-  return Math.round(chars/gaps);
+function _chapGapDensity(c){return _rawGapDensity(c);}
+// 本の中での「ふつうの空き具合」。中央値を使うので、極端な章に引っ張られない。
+function _bookGapMedian(){
+  const ds=[].concat((S.book&&S.book.chapters)||[],(S.book&&S.book.specialChapters)||[])
+    .map(_rawGapDensity).filter(d=>d!==null).sort((a,b)=>a-b);
+  if(ds.length<2)return null;
+  return ds.length%2?ds[(ds.length-1)/2]:Math.round((ds[ds.length/2-1]+ds[ds.length/2])/2);
+}
+function _chapGapScale(c){
+  // 章ごとに手で指定してあれば、それが最優先
+  if(c&&c.gapScale!==undefined&&c.gapScale!==null&&!isNaN(c.gapScale))return Number(c.gapScale);
+  if(!_evenGapsOn())return 1;
+  const d=_rawGapDensity(c),m=_bookGapMedian();
+  if(d===null||m===null)return 1;
+  if(d>=m*0.7)return 1;            // 十分ゆとりのある章は触らない
+  return Math.max(0.35,Math.round((d/m)*100)/100);
 }
 function _autoParaGapEvery(){const n=parseInt((S.book&&S.book.autoParaGapEvery)||3,10);return (n>=2&&n<=8)?n:3;}
 // renderLine(line, index) は 1行ぶんのHTMLを返す（空文字/null なら出力しない）
@@ -6268,6 +6288,8 @@ function showAutoGapReview(){
   const totalAuto=rows.reduce((s,r)=>s+r.auto,0);
   const list=rows.map(r=>{
     const d=_chapGapDensity(r.c);
+    const sc=_chapGapScale(r.c);
+    const manual=(r.c&&r.c.gapScale!==undefined&&r.c.gapScale!==null)?Number(r.c.gapScale):null;
     const airy=(d!==null&&d<45);   // 45字ごとより細かく空いていると、他の章よりスカスカに見える
     return `<div style="padding:8px 10px;border-bottom:1px solid var(--line-soft)">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -6278,12 +6300,13 @@ function showAutoGapReview(){
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:5px">
         <span style="font-size:11px;color:${airy?'#b45309':'var(--sub)'};white-space:nowrap">
-          ${d===null?'余白なし':`約${d}字ごとに1行空き${airy?'（他より空きが多め）':''}`}
+          ${d===null?'余白なし':`約${d}字ごとに1行空き`}
+          ${(sc<1)?`<b style="color:var(--ok)">→ 自動で${Math.round((1-sc)*100)}%詰めました</b>`:(airy?'（他より空きが多め）':'')}
         </span>
         <label style="font-size:11px;color:var(--sub);display:flex;align-items:center;gap:4px;margin-left:auto">
           この章の余白
           <select onchange="_setChapGapScale('${r.kind}',${r.idx},this.value)" style="font-size:11px;padding:2px 6px">
-            ${KW_GAP_SCALES.map(([v,l])=>`<option value="${v}" ${_chapGapScale(r.c)===v?'selected':''}>${l}</option>`).join('')}
+            ${KW_GAP_SCALES.map(([v,l])=>`<option value="${v===null?'auto':v}" ${manual===v?'selected':''}>${l}</option>`).join('')}
           </select>
         </label>
       </div>
@@ -6302,10 +6325,14 @@ function showAutoGapReview(){
       自動の余白は<b>「。」で終わる文の直後にだけ</b>入ります。文の途中では切りません。<br>
       入る場所がしっくりこない章は、<b>その章に1行空けをご自身で入れてください。</b>入れた時点で、その章では自動処理が止まります。
     </div>
+    <label style="padding:8px 14px;display:flex;align-items:center;gap:8px;font-size:12px;border-bottom:1px solid var(--line-soft);background:var(--ok-soft);flex-wrap:wrap">
+      <input type="checkbox" ${_evenGapsOn()?'checked':''} onchange="S.book.evenGaps=this.checked;save();showAutoGapReview();">
+      <b>本全体で空き方をそろえる</b>
+      <span style="color:var(--sub)">書き手ごとの1行空けの入れ方の差を、自動でならします（行間そのものは変わりません）</span>
+    </label>
     <div id="gapReviewBody" style="overflow-y:auto;flex:1">${list}</div>
     <div style="padding:12px 20px;border-top:1px solid var(--line-soft);display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn gray" style="font-size:12px;padding:7px 14px" onclick="_evenOutGaps()">空きが多い章をまとめてそろえる</button>
-      <button class="btn gray" style="font-size:12px;padding:7px 14px" onclick="_resetChapGapScales()">全章を「そのまま」に戻す</button>
+      <button class="btn gray" style="font-size:12px;padding:7px 14px" onclick="_resetChapGapScales()">手で変えた分をすべて自動に戻す</button>
       <button class="btn gray" style="flex:1;min-width:80px;font-size:13px" onclick="document.getElementById('${mid}').remove()">閉じる</button>
     </div>
   </div>`;
@@ -6313,27 +6340,7 @@ function showAutoGapReview(){
 }
 function _setChapGapScale(kind,idx,v){
   const c=_gapReviewChap(kind,idx);if(!c)return;
-  c.gapScale=Number(v);
-  save();showAutoGapReview();
-  if(!document.getElementById('compile').classList.contains('hide'))_typoLivePreview();
-}
-/* 空きが多すぎる章だけを、他の章に近づける。
-   一番ゆったりしている章に合わせるのではなく、章ごとの「何字ごとに空くか」の
-   中央値に寄せる。基準の章（ちょうど良い章）を動かさないのが狙い。 */
-function _evenOutGaps(){
-  const rows=_autoGapChapterStats().map(r=>({r:r,d:_chapGapDensity(r.c)})).filter(x=>x.d!==null);
-  if(rows.length<2){alert('比べられる章が足りません。');return;}
-  const ds=rows.map(x=>x.d).sort((a,b)=>a-b);
-  const mid=ds.length%2?ds[(ds.length-1)/2]:Math.round((ds[ds.length/2-1]+ds[ds.length/2])/2);
-  const targets=rows.filter(x=>x.d<mid*0.7);   // 中央値よりはっきり細かく空いている章だけ
-  if(!targets.length){alert('空きが多すぎる章は見つかりませんでした。今のままで揃っています。');return;}
-  const msg=targets.map(x=>`・${x.r.label}（約${x.d}字ごと → 約${mid}字ごとに近づけます）`).join('\n');
-  if(!confirm(`次の章だけ、余白を詰めて他の章に近づけます。\n\n${msg}\n\n原稿の文章は変わりません。あとから章ごとに戻せます。\n続けますか？`))return;
-  targets.forEach(x=>{
-    // 目標の密度になるよう倍率を決める（0.35〜1の範囲に収める）
-    const scale=Math.max(0.35,Math.min(1,x.d/mid));
-    x.r.c.gapScale=Math.round(scale*100)/100;
-  });
+  if(v==='auto')delete c.gapScale; else c.gapScale=Number(v);
   save();showAutoGapReview();
   if(!document.getElementById('compile').classList.contains('hide'))_typoLivePreview();
 }
