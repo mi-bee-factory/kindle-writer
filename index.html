@@ -4154,7 +4154,7 @@ function _coChapFlowHtml(i,c){
         <button onclick="_coRequestRevision(${i},${JSON.stringify(draft).replace(/"/g,'&quot;')})" style="font-size:11px;padding:4px 12px;background:#c2410c;color:#fff;border:none;cursor:pointer;font-weight:700">ひと呼吸ほしいと伝える</button>
         <button onclick="_coChapTab('edit',${i})" style="font-size:11px;padding:4px 12px;background:#fff;border:1px solid var(--line-soft);cursor:pointer;font-weight:700;color:var(--ink)">自分で1行空けを入れる</button>
       </div>
-      <div style="font-size:11px;color:var(--sub)">1行空けはそのまま本の余白になります。まとめ画面で「自動で余白を入れる」を選ぶこともできます。</div>
+      <div style="font-size:11px;color:var(--sub)">1行空けはそのまま本の余白になります。長く続いているところには、書き出すときに自動でも余白が入ります（まとめ画面の「自動で入った場所を確認する」で位置を確認・調整できます）。</div>
     </div>
   </details>`;
 }
@@ -5914,10 +5914,9 @@ function _bodyLinesToHtml(raw,renderLine,opts){
   opts=opts||{};
   const src=String(raw==null?'':raw).split(/\n/);
   const items=[];
-  let writerBlank=false;   // 書き手が空行を入れているか（入れていれば自動余白は出しゃばらない）
   for(let i=0;i<src.length;i++){
     const l=src[i].trim();
-    if(!l){ if(items.length){items[items.length-1].blankAfter=true;writerBlank=true;} continue; }
+    if(!l){ if(items.length)items[items.length-1].blankAfter=true; continue; }
     const html=renderLine(l,i);
     if(html===null||html===undefined||html==='')continue;
     let kind='p';
@@ -5941,17 +5940,21 @@ function _bodyLinesToHtml(raw,renderLine,opts){
   // 書き手が区切りを設計している章では何もしない。
   const autoMark=new Set();   // 機械が入れた分（人が入れた分と区別して見せるため）
   const autoOn=(opts.autoGap!==undefined?opts.autoGap:_autoParaGapOn());
-  if(autoOn&&!writerBlank){
+  if(autoOn){
     const N=(opts.gapEvery||_autoParaGapEvery());
     let run=0;
     for(let i=0;i<items.length;i++){
-      if(!isP(items[i].kind)){run=0;continue;}
+      const it=items[i];
+      if(!isP(it.kind)){run=0;continue;}
       run++;
+      // 書き手がここで1行空けている＝人の区切り。そこで数え直す。
+      // （章単位で止めると、1か所だけ空いていて残り80段落が壁、という章を助けられない）
+      if(it.blankAfter){run=0;continue;}
       if(run<N)continue;
       const nx=items[i+1];
       if(!nx||!isP(nx.kind))continue;
       // 文の途中では絶対に切らない。句点で終わる段落が見つかるまで送る（見つからなければ入れない）
-      if(!PARA_END_RE.test(items[i].text)){ if(run>=N+3)run=0; continue; }
+      if(!PARA_END_RE.test(it.text)){ if(run>=N+3)run=0; continue; }
       mark.add(i);autoMark.add(i);run=0;
     }
   }
