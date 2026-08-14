@@ -5383,12 +5383,19 @@ async function buildEpub(){
     colophonSpine='<itemref idref="colophon"/>';
     navli.push(`<li><a href="colophon.xhtml">奥付</a></li>`);
   }
+  // 目次ページ（本文内。サイドバーのnav.xhtmlとは別に、1ページ目付近に実ページとして入れる）
+  let tocSpine='';
+  {
+    files.push({name:'OEBPS/toc.xhtml',bytes:sB(`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>目次</title><link rel="stylesheet" type="text/css" href="style.css"/><style>.toclist{list-style:none;padding:0;margin:0;}.toclist li{margin:.9em 0;text-indent:0;}.toclist a{text-decoration:none;color:inherit;}</style></head><body><h1>目次</h1><ol class="toclist">${navli.join('')}</ol></body></html>`)});
+    manifest.push('<item id="tocpage" href="toc.xhtml" media-type="application/xhtml+xml"/>');
+    tocSpine='<itemref idref="tocpage"/>';
+  }
   const landmarks=`<nav epub:type="landmarks" id="landmarks" hidden="hidden"><h2>ガイド</h2><ol><li><a epub:type="toc" href="nav.xhtml">目次</a></li>${ch.length?`<li><a epub:type="bodymatter" href="ch1.xhtml">本文の先頭</a></li>`:''}</ol></nav>`;
   files.push({name:'OEBPS/nav.xhtml',bytes:sB(`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="ja"><head><meta charset="utf-8"/><title>目次</title></head><body><nav epub:type="toc" id="toc"><h1>目次</h1><ol>${navli.join('')}</ol></nav>${landmarks}</body></html>`)});
   const authors=[...new Set(ch.map(c=>(c.author||'').trim()).filter(Boolean))];
   const creatorTags=authors.map(a=>`<dc:creator>${escXml(a)}</dc:creator>`).join('');
   if(!S.book.uuid){S.book.uuid=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return (c==='x'?r:(r&3|8)).toString(16);});save();}
-  files.push({name:'OEBPS/content.opf',bytes:sB(`<?xml version="1.0" encoding="utf-8"?>\n<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="bookid">urn:uuid:${S.book.uuid}</dc:identifier><dc:title>${escXml(title)}</dc:title><dc:language>ja</dc:language>${creatorTags}${coverMeta}<meta property="dcterms:modified">2026-01-01T00:00:00Z</meta></metadata><manifest>${manifest.join('')}</manifest><spine>${coverSpine}${titlePageSpine}${spine.join('')}${colophonSpine}</spine></package>`)});
+  files.push({name:'OEBPS/content.opf',bytes:sB(`<?xml version="1.0" encoding="utf-8"?>\n<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="bookid">urn:uuid:${S.book.uuid}</dc:identifier><dc:title>${escXml(title)}</dc:title><dc:language>ja</dc:language>${creatorTags}${coverMeta}<meta property="dcterms:modified">2026-01-01T00:00:00Z</meta></metadata><manifest>${manifest.join('')}</manifest><spine>${coverSpine}${titlePageSpine}${tocSpine}${spine.join('')}${colophonSpine}</spine></package>`)});
   return zipStore(files);
 }
 // 未提出（書きかけ）の章があれば書き出し前に知らせる。章は除外せず、気づかないまま本にしてしまうのを防ぐ。
