@@ -5284,8 +5284,9 @@ async function buildEpub(){
   const fmTitle=title,fmSub=S.book.subtitle||'',fmAuthor=S.uploadAuthor||(ch.length>0&&ch[0].author)||'';
   const fmYear=new Date().getFullYear();
   if(!fm.titlePageSkip){
-    const _parseBody=(txt,indent)=>( txt||'').split(/\n/).map(l=>{l=l.trim();if(!l)return'';if(l.startsWith('■'))return`<h2>${bodyFmt(escXml(l.replace(/^■\s*/,'')))}</h2>`;return`<p${indent?'':' style="text-indent:0"'}>${bodyFmt(escXml(l))}</p>`;}).filter(x=>x).join('\n');
-    const tpBody=_parseBody(fm.titlePageBody||_fmAutoTp(),true);
+    let tpFirstDone=false;
+    const _parseTpBody=(txt)=>( txt||'').split(/\n/).map(l=>{l=l.trim();if(!l)return'';if(l.startsWith('■'))return`<h2>${bodyFmt(escXml(l.replace(/^■\s*/,'')))}</h2>`;if(!tpFirstDone){tpFirstDone=true;return`<h1 style="font-size:1.7em;margin:0 0 .7em">${bodyFmt(escXml(l))}</h1>`;}return`<p style="text-indent:0">${bodyFmt(escXml(l))}</p>`;}).filter(x=>x).join('\n');
+    const tpBody=_parseTpBody(fm.titlePageBody||_fmAutoTp());
     files.push({name:'OEBPS/titlepage.xhtml',bytes:sB(`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>${escXml(fmTitle)}</title><link rel="stylesheet" type="text/css" href="style.css"/><style>body{text-align:center;}p{text-indent:0;margin:.8em 0;}h1,h2{text-align:center;}</style></head><body style="padding-top:20%">${tpBody}</body></html>`)});
     manifest.push('<item id="titlepage" href="titlepage.xhtml" media-type="application/xhtml+xml"/>');
     titlePageSpine='<itemref idref="titlepage"/>';
@@ -6248,9 +6249,11 @@ function previewChapter(i){
 function previewTitlePage(){
   const fm=S.epubFront||{};
   const body=fm.titlePageBody||_fmAutoTp();
+  let tpPrevFirstDone=false;
   const bodyHtml=body.split(/\n/).map(l=>{
     l=l.trim();if(!l)return'';
     if(l.startsWith('■'))return`<h2 style="font-size:1.1em;font-weight:700;border-left:3px solid #333;padding-left:10px;text-align:left;margin:1.4em 0 .5em;font-family:'Noto Sans JP','Hiragino Kaku Gothic Pro','Yu Gothic',sans-serif">${bodyFmt(esc(l.replace(/^■\s*/,'')))}</h2>`;
+    if(!tpPrevFirstDone){tpPrevFirstDone=true;return`<h1 style="font-size:1.6em;font-weight:900;margin:0 0 .8em;line-height:1.5;font-family:'Noto Sans JP','Hiragino Kaku Gothic Pro','Yu Gothic',sans-serif">${bodyFmt(esc(l))}</h1>`;}
     return`<p style="text-indent:0;margin:.8em 0;line-height:1.8">${bodyFmt(esc(l))}</p>`;
   }).filter(x=>x).join('');
   _fmPreviewModal('表題紙プレビュー',bodyHtml,'center');
