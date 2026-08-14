@@ -4143,15 +4143,32 @@ function _coChapFlowHtml(i,c){
   const notes=[];
   if(f.midBreaks.length)notes.push(`文の途中で改行されていそうな箇所が <b>${f.midBreaks.length}件</b>（Kindleではそこで段落が切れます）`);
   if(maxRun)notes.push(`1行空けなしで <b>${maxRun}段落</b> 続いている箇所があります`);
-  const draft=(maxRun
-    ? `${maxRun}段落ほど区切りなしで続いているところがあります。ひと呼吸置きたい場所で1行空けていただけますか。（Enterを2回押すと1行空きます）`
-    : `文の途中で改行されている箇所がいくつかあるようです。Kindleでは改行のところで段落が切れてしまうので、文の終わりまでは改行せずに続けていただけますか。`);
+  // 件数だけでは直しようがないので、該当する行そのものを出す。
+  const src=String(c.body||'').split(/\n/);
+  const cut=s=>{s=String(s||'');return s.length>34?s.slice(0,34)+'…':s;};
+  const brkList=f.midBreaks.map(n=>({no:n+1,cur:src[n]||'',next:src[n+1]||''}));
+  const brkHtml=brkList.length?`<div style="background:#fff;border:1px solid #fcd9b6;padding:8px 10px;margin:0 0 8px">
+      <div style="font-size:11px;font-weight:700;color:#92400e;margin-bottom:5px">↵ 文の途中で切れていそうな箇所</div>
+      ${brkList.map(b=>`<div style="margin-bottom:6px;font-size:12px;line-height:1.7">
+        <span style="color:var(--muted);font-size:11px">${b.no}行目</span><br>
+        <span style="background:#fff3d6">${esc(cut(b.cur))}</span><span style="color:#c2410c;font-weight:700">⏎</span><br>
+        <span style="color:var(--sub)">${esc(cut(b.next))}</span>
+      </div>`).join('')}
+      <div style="font-size:11px;color:var(--sub);line-height:1.7">この2行はひと続きの文に見えます。つなげると、Kindleで自然に読めます。</div>
+    </div>`:'';
+  // 依頼文にも実際の行を入れる。「どこ？」と聞き返されないように。
+  const brkQuote=brkList.map(b=>`・${b.no}行目「${cut(b.cur)}」の改行`).join('\n');
+  const draft=[
+    maxRun?`${maxRun}段落ほど区切りなしで続いているところがあります。ひと呼吸置きたい場所で1行空けていただけますか。（Enterを2回押すと1行空きます）`:'',
+    brkList.length?`また、次の箇所は文の途中で改行されているようです。Kindleでは改行したところで段落が切れてしまうので、文の終わりまではつなげていただけますか。\n${brkQuote}`:''
+  ].filter(Boolean).join('\n\n');
   return `<details style="border-bottom:1px solid var(--line-soft);flex-shrink:0;background:#fffbeb">
     <summary style="padding:7px 16px;font-size:12px;font-weight:700;color:#92400e;cursor:pointer;list-style:none">☰ 読みやすさの点検</summary>
     <div style="padding:4px 16px 12px;font-size:12px;color:#403129;line-height:1.9">
       <ul style="margin:0 0 8px;padding-left:1.2em">${notes.map(n=>`<li>${n}</li>`).join('')}</ul>
+      ${brkHtml}
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
-        <button onclick="_coRequestRevision(${i},${JSON.stringify(draft).replace(/"/g,'&quot;')})" style="font-size:11px;padding:4px 12px;background:#c2410c;color:#fff;border:none;cursor:pointer;font-weight:700">ひと呼吸ほしいと伝える</button>
+        <button onclick="_coRequestRevision(${i},${JSON.stringify(draft).replace(/"/g,'&quot;')})" style="font-size:11px;padding:4px 12px;background:#c2410c;color:#fff;border:none;cursor:pointer;font-weight:700">${brkList.length&&!maxRun?'この箇所を直すよう伝える':'ひと呼吸ほしいと伝える'}</button>
         <button onclick="_coChapTab('edit',${i})" style="font-size:11px;padding:4px 12px;background:#fff;border:1px solid var(--line-soft);cursor:pointer;font-weight:700;color:var(--ink)">自分で1行空けを入れる</button>
       </div>
       <div style="font-size:11px;color:var(--sub)">1行空けはそのまま本の余白になります。長く続いているところには、書き出すときに自動でも余白が入ります（まとめ画面の「自動で入った場所を確認する」で位置を確認・調整できます）。</div>
