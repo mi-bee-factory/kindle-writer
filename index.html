@@ -1242,6 +1242,8 @@ async function _sbSwitchTarget(id){
    全ての取り込みフィルタで除外されるので、消せなくても無害。 */
 async function _sbProbeBookId(bookId){
   if(!_sbUser)return {ok:false,msg:'未ログイン'};
+  // 念のための歯止め：既存の本に対しては絶対に実行しない（この関数だけが delete を持つため）
+  if(!bookId||bookId===BOOK_ID)return {ok:true};
   const row={book_id:bookId,user_id:_sbUser.id,chapter_index:9999,
     author_name:'',chapter_title:'_probe',body:'',status:'_probe',
     updated_at:new Date().toISOString()};
