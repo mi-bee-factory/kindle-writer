@@ -6115,7 +6115,9 @@ function bookCss(sel){
     R('h1 .ch-ttl','display:block;'),
     R('h1 .ch-sub','display:block;font-size:.62em;font-weight:400;color:#444;margin-top:.9em;line-height:1.7;'),
     R('.ch-author','text-indent:0;text-align:center;font-size:.85em;color:#555;margin:-.6em 0 2.4em;'),
-    R('h2',`font-size:${(1.1*t.headScale).toFixed(2)}em;margin:1.8em 0 .5em;font-weight:700;border-left:3px solid #333;padding-left:.6em;text-indent:0;page-break-after:avoid;break-after:avoid-page;`),
+    // 節見出しの上下。以前は上1.8／下0.5で、下が詰まって見えていた。
+    // 「1行空けの余白の大きさ」に連動させ、下は必ず1行ぶん以上あけて、上はその倍近く取る。
+    R('h2',`font-size:${(1.1*t.headScale).toFixed(2)}em;margin:${Math.max(2.4,t.pbGap*1.0).toFixed(2)}em 0 ${Math.max(1.4,t.pbGap*0.6).toFixed(2)}em;font-weight:700;border-left:3px solid #333;padding-left:.6em;text-indent:0;page-break-after:avoid;break-after:avoid-page;`),
     // 字下げ：none＝全行そろえる／para＝1行空けた次だけ／all＝全行
     R('p',`text-indent:${t.indentMode==='all'?t.indent:0}em;margin:${t.paraGap}em 0;`),
     (t.indentMode==='para'?R('p.pn',`text-indent:${t.indent}em;`):''),
