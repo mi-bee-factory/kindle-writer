@@ -146,3 +146,13 @@ curl -s "https://mi-bee-factory.github.io/kindle-writer/?_=$(date +%s)" | grep -
 3. 実装後は必ず`preview_console_logs`でエラー無しを確認してからプッシュする。
 4. プッシュは「プッシュしてください」の一言で、こちらが`git add / commit / push`まで代行する（ユーザーはGitHub操作をしない）。
 5. プッシュ後は上記の「デプロイ運用上の注意」の手順で必ず反映確認まで行う。反映確認が取れるまでユーザーに「完了」と報告しない。
+6. **EPUBの見た目に関わる修正は、実際に生成されたファイルの中身で確認する。**コードを読んだだけ・アプリ内プレビューだけで「直りました」と言わない。過去にQRコードのサイズで、プレビューは正しいのに実機Kindleでは2.5倍という事故があった。
+   ブラウザで検証するときは `zipStore` を一時的に差し替えると、ダウンロードせずに生成されたXHTMLを直接読める：
+   ```js
+   const orig=window.zipStore;let cap=null;
+   window.zipStore=(f)=>{cap=f;return new Blob([]);};
+   await buildEpub();
+   window.zipStore=orig;
+   new TextDecoder().decode(cap.find(f=>f.name==='OEBPS/ch1.xhtml').bytes)
+   ```
+7. **`_sb` は `const`、`_sbUser` は `let` のモジュールスコープ変数なので、`window._sb=...` で差し替えられない。**Supabaseまわりを検証したいときは、通信から切り離した純粋関数（`_buildSwapData` など）を作ってそれを直接テストする。
