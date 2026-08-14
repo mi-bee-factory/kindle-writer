@@ -937,9 +937,14 @@ function _paraFlowIssues(body){
     if(_flowSkipLine(l)){ if(run>=FLOW_LONG_RUN)longRuns.push({start:runStart,count:run}); run=0; continue; }
     if(run===0)runStart=i;
     run++;
-    // 次に本文行が続くのに句点等で終わっていない＝文の途中で折り返した疑い
     const nx=(src[i+1]||'').trim();
-    if(nx&&!_flowSkipLine(nx)&&!PARA_END_RE.test(l)&&[...l].length<30)midBreaks.push(i);
+    if(nx&&!_flowSkipLine(nx)){
+      // 次の行がカギ閉じ・丸カッコ閉じで始まる＝閉じ記号だけが次行に取り残された事故。
+      // 前の行が「。」で終わっていても、これは必ずつなげるべき改行。
+      if(/^[」』）\)】〉》］\]]/.test(nx))midBreaks.push(i);
+      // 句点等で終わっていない短い行＝文の途中で折り返した疑い
+      else if(!PARA_END_RE.test(l)&&[...l].length<30)midBreaks.push(i);
+    }
   }
   if(run>=FLOW_LONG_RUN)longRuns.push({start:runStart,count:run});
   return {midBreaks,longRuns,hasBlank:src.some((l,i)=>!l.trim()&&i>0&&i<src.length-1)};
@@ -5523,7 +5528,7 @@ function buildBookHTML(){
       const hd=_headingText(l);
       if(hd!==null)return `<h2>${bodyFmt(esc(hd))}</h2>`;
       return `<p${_isLinkOnlyLine(l)?' style="text-indent:0"':''}>${bodyFmt(esc(l))}</p>`;
-    });
+    },{gapScale:_chapGapScale(c)});
     return `<h1 id="ch${i+1}">${esc(chapHead(c,i))}</h1>\n${c.author?`<p class="author">著：${esc(c.author)}</p>`:''}\n${inner}`;
   }).join('\n');
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>${esc(S.book.title||'無題')}</title>
@@ -5993,6 +5998,22 @@ function _headingText(l){
 const PARA_END_RE=/[。！？」』）\)!?…—]$/;
 // 既定はオン。オフにし忘れるより「入れておいて、おかしい所を直す」ほうが実用的なため。
 function _autoParaGapOn(){return !(S.book&&S.book.autoParaGap===false);}
+/* 章ごとの余白の倍率。書き手によって1行空けの入れ方が違うので、章単位でそろえられるようにする。 */
+const KW_GAP_SCALES=[[1,'そのまま'],[0.6,'少し詰める'],[0.35,'かなり詰める'],[0,'1行空けを普通の改行にする']];
+function _chapGapScale(c){
+  const v=c&&c.gapScale;
+  return (v===undefined||v===null||isNaN(v))?1:Number(v);
+}
+// その章が「何字ごとに1行空けているか」。数が小さいほど空きが多い＝スカスカに見える。
+function _chapGapDensity(c){
+  if(!c||!(c.body||'').trim())return null;
+  const st={};
+  _epubPreviewBodyHtml(c,{stats:st});
+  const gaps=(st.writer||0)+(st.auto||0);
+  if(!gaps)return null;
+  const chars=(c.body||'').replace(/\s/g,'').length;
+  return Math.round(chars/gaps);
+}
 function _autoParaGapEvery(){const n=parseInt((S.book&&S.book.autoParaGapEvery)||3,10);return (n>=2&&n<=8)?n:3;}
 // renderLine(line, index) は 1行ぶんのHTMLを返す（空文字/null なら出力しない）
 function _bodyLinesToHtml(raw,renderLine,opts){
@@ -6063,6 +6084,13 @@ function _bodyLinesToHtml(raw,renderLine,opts){
     const pv=items[i-1];
     if(pv&&isP(pv.kind)&&pv.blankAfter)newPara.add(i);
   }
+  /* 章ごとの余白の詰め方。
+     書き手によって1行空けの入れ方がまるで違う（1行ごとに空ける人／段落ごとの人）ため、
+     同じ設定でも章によって空き方が倍以上変わる。章単位で倍率をかけて揃えられるようにする。
+     1=そのまま／0.5=半分に詰める／0=1行空けを普通の改行として扱う */
+  const gs=(opts.gapScale===undefined||opts.gapScale===null)?1:Number(opts.gapScale);
+  const t=_typo();
+  const inlineGap=(base)=>` style="margin-bottom:${(base*gs).toFixed(2)}em"`;
   const addClass=(html,cls)=>html.replace(/^<p(\s[^>]*)?>/,(m,attrs)=>{
     attrs=attrs||'';
     return /\sclass="/.test(attrs)
@@ -6071,12 +6099,20 @@ function _bodyLinesToHtml(raw,renderLine,opts){
   });
   return items.map((it,i)=>{
     const cls=[];
-    if(mark.has(i))cls.push('pb');
-    if(markBig.has(i))cls.push('pbb');
+    const isBig=markBig.has(i),isGap=mark.has(i);
+    // gs===0 は「1行空けを普通の改行として扱う」＝余白を付けない（大きな区切りだけ残す）
+    if(isGap&&gs>0)cls.push('pb');
+    if(isBig)cls.push('pbb');
     if(newPara.has(i))cls.push('pn');
     // markAuto は確認画面専用の印。実際のEPUBには付けない（本番とプレビューをずらさないため）
     if(opts.markAuto&&autoMark.has(i))cls.push('pa');
-    return cls.length?addClass(it.html,cls.join(' ')):it.html;
+    let html=cls.length?addClass(it.html,cls.join(' ')):it.html;
+    // 章ごとに倍率が指定されているときは、その章だけ実寸で上書きする
+    if(gs!==1&&(isGap||isBig)){
+      const base=isBig?(t.pbGap*1.7):t.pbGap;
+      html=html.replace(/^<p(\s[^>]*)?>/,(m,attrs)=>`<p${attrs||''}${inlineGap(base)}>`);
+    }
+    return html;
   }).join(opts.join!==undefined?opts.join:'\n');
 }
 /* ---------- EPUBと同じ見た目のプレビュー ----------
@@ -6230,12 +6266,28 @@ function showAutoGapReview(){
   const mid='kwGapReview';const ex=document.getElementById(mid);if(ex)ex.remove();
   const rows=_autoGapChapterStats();
   const totalAuto=rows.reduce((s,r)=>s+r.auto,0);
-  const list=rows.map(r=>`<div style="padding:8px 10px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-      <span style="flex:1;min-width:0;font-size:13px;font-weight:700">${esc(r.label)}</span>
-      ${r.auto?`<span style="font-size:11px;background:#fffbeb;color:#b45309;padding:1px 8px;font-weight:700;white-space:nowrap">自動 ${r.auto}か所</span>`
-              :`<span style="font-size:11px;color:var(--ok);white-space:nowrap">${r.writer?`ご自身の1行空け ${r.writer}か所`:'余白なし'}</span>`}
-      ${r.auto?`<button onclick="_gapReviewShow('${r.kind}',${r.idx})" style="font-size:11px;background:var(--brand);color:#403129;border:none;padding:3px 12px;cursor:pointer;font-weight:700;white-space:nowrap">どこか見る</button>`:''}
-    </div>`).join('')||'<div style="padding:10px;color:var(--sub);font-size:13px">本文の入った章がありません。</div>';
+  const list=rows.map(r=>{
+    const d=_chapGapDensity(r.c);
+    const airy=(d!==null&&d<45);   // 45字ごとより細かく空いていると、他の章よりスカスカに見える
+    return `<div style="padding:8px 10px;border-bottom:1px solid var(--line-soft)">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="flex:1;min-width:0;font-size:13px;font-weight:700">${esc(r.label)}</span>
+        ${r.auto?`<span style="font-size:11px;background:#fffbeb;color:#b45309;padding:1px 8px;font-weight:700;white-space:nowrap">自動 ${r.auto}か所</span>`
+                :`<span style="font-size:11px;color:var(--ok);white-space:nowrap">${r.writer?`1行空け ${r.writer}か所`:'余白なし'}</span>`}
+        ${r.auto?`<button onclick="_gapReviewShow('${r.kind}',${r.idx})" style="font-size:11px;background:var(--brand);color:#403129;border:none;padding:3px 12px;cursor:pointer;font-weight:700;white-space:nowrap">どこか見る</button>`:''}
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:5px">
+        <span style="font-size:11px;color:${airy?'#b45309':'var(--sub)'};white-space:nowrap">
+          ${d===null?'余白なし':`約${d}字ごとに1行空き${airy?'（他より空きが多め）':''}`}
+        </span>
+        <label style="font-size:11px;color:var(--sub);display:flex;align-items:center;gap:4px;margin-left:auto">
+          この章の余白
+          <select onchange="_setChapGapScale('${r.kind}',${r.idx},this.value)" style="font-size:11px;padding:2px 6px">
+            ${KW_GAP_SCALES.map(([v,l])=>`<option value="${v}" ${_chapGapScale(r.c)===v?'selected':''}>${l}</option>`).join('')}
+          </select>
+        </label>
+      </div>
+    </div>`;}).join('')||'<div style="padding:10px;color:var(--sub);font-size:13px">本文の入った章がありません。</div>';
   const m=document.createElement('div');m.id=mid;
   m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:10065;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
   m.innerHTML=`<div style="background:#fff;max-width:640px;width:100%;max-height:88vh;display:flex;flex-direction:column">
@@ -6251,11 +6303,45 @@ function showAutoGapReview(){
       入る場所がしっくりこない章は、<b>その章に1行空けをご自身で入れてください。</b>入れた時点で、その章では自動処理が止まります。
     </div>
     <div id="gapReviewBody" style="overflow-y:auto;flex:1">${list}</div>
-    <div style="padding:12px 20px;border-top:1px solid var(--line-soft);display:flex;gap:8px">
-      <button class="btn gray" style="flex:1;font-size:13px" onclick="document.getElementById('${mid}').remove()">閉じる</button>
+    <div style="padding:12px 20px;border-top:1px solid var(--line-soft);display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn gray" style="font-size:12px;padding:7px 14px" onclick="_evenOutGaps()">空きが多い章をまとめてそろえる</button>
+      <button class="btn gray" style="font-size:12px;padding:7px 14px" onclick="_resetChapGapScales()">全章を「そのまま」に戻す</button>
+      <button class="btn gray" style="flex:1;min-width:80px;font-size:13px" onclick="document.getElementById('${mid}').remove()">閉じる</button>
     </div>
   </div>`;
   document.body.appendChild(m);
+}
+function _setChapGapScale(kind,idx,v){
+  const c=_gapReviewChap(kind,idx);if(!c)return;
+  c.gapScale=Number(v);
+  save();showAutoGapReview();
+  if(!document.getElementById('compile').classList.contains('hide'))_typoLivePreview();
+}
+/* 空きが多すぎる章だけを、他の章に近づける。
+   一番ゆったりしている章に合わせるのではなく、章ごとの「何字ごとに空くか」の
+   中央値に寄せる。基準の章（ちょうど良い章）を動かさないのが狙い。 */
+function _evenOutGaps(){
+  const rows=_autoGapChapterStats().map(r=>({r:r,d:_chapGapDensity(r.c)})).filter(x=>x.d!==null);
+  if(rows.length<2){alert('比べられる章が足りません。');return;}
+  const ds=rows.map(x=>x.d).sort((a,b)=>a-b);
+  const mid=ds.length%2?ds[(ds.length-1)/2]:Math.round((ds[ds.length/2-1]+ds[ds.length/2])/2);
+  const targets=rows.filter(x=>x.d<mid*0.7);   // 中央値よりはっきり細かく空いている章だけ
+  if(!targets.length){alert('空きが多すぎる章は見つかりませんでした。今のままで揃っています。');return;}
+  const msg=targets.map(x=>`・${x.r.label}（約${x.d}字ごと → 約${mid}字ごとに近づけます）`).join('\n');
+  if(!confirm(`次の章だけ、余白を詰めて他の章に近づけます。\n\n${msg}\n\n原稿の文章は変わりません。あとから章ごとに戻せます。\n続けますか？`))return;
+  targets.forEach(x=>{
+    // 目標の密度になるよう倍率を決める（0.35〜1の範囲に収める）
+    const scale=Math.max(0.35,Math.min(1,x.d/mid));
+    x.r.c.gapScale=Math.round(scale*100)/100;
+  });
+  save();showAutoGapReview();
+  if(!document.getElementById('compile').classList.contains('hide'))_typoLivePreview();
+}
+function _resetChapGapScales(){
+  ((S.book&&S.book.chapters)||[]).forEach(c=>{delete c.gapScale;});
+  ((S.book&&S.book.specialChapters)||[]).forEach(c=>{delete c.gapScale;});
+  save();showAutoGapReview();
+  if(!document.getElementById('compile').classList.contains('hide'))_typoLivePreview();
 }
 function _gapReviewChap(kind,idx){
   return (kind==='special'?(S.book.specialChapters||[]):(S.book.chapters||[]))[idx];
@@ -6384,7 +6470,7 @@ function _epubPreviewBodyHtml(c,opts){
     const h=_headingText(l);
     if(h!==null)return `<h2>${bodyFmt(esc(h))}</h2>`;
     return `<p${_isLinkOnlyLine(l)?' style="text-indent:0"':''}>${bodyFmt(esc(l))}</p>`;
-  },{join:'',markAuto:opts.markAuto,stats:opts.stats});
+  },{join:'',markAuto:opts.markAuto,stats:opts.stats,gapScale:_chapGapScale(c)});
   // 本文で位置指定した画像だけを表示する（未配置の写真は自動で出さない。EPUBと同じ）
   return lines||'<p style="color:#aaa;text-indent:0">（本文がありません）</p>';
 }
@@ -6452,7 +6538,7 @@ async function _epubBuildSpecialChapterXhtml(c,files,manifest,imgNRef){
     const hd=_headingText(l);
     if(hd!==null)return `<h2>${bodyFmt(escXml(hd))}</h2>`;
     return `<p${_isLinkOnlyLine(l)?' style="text-indent:0"':''}>${bodyFmt(escXml(l))}</p>`;
-  });
+  },{gapScale:_chapGapScale(c)});
   imgs.forEach(im=>{delete im._tag;});
   return {heading,xhtml:`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>${heading}</title><link rel="stylesheet" type="text/css" href="style.css"/></head><body><h1><span class="ch-ttl">${heading}</span></h1>\n${body}</body></html>`};
 }
@@ -6551,7 +6637,7 @@ async function buildEpub(){
       const hd=_headingText(l);
       if(hd!==null)return `<h2>${bodyFmt(escXml(hd))}</h2>`;
       return `<p${_isLinkOnlyLine(l)?' style="text-indent:0"':''}>${bodyFmt(escXml(l))}</p>`;
-    });
+    },{gapScale:_chapGapScale(c)});
     // 本文で位置指定した画像だけを埋め込む（未配置の写真は出さない。まとめ画面の「未配置」表示で気づける）
     imgs.forEach(im=>{delete im._tag;}); // 組み立て用の一時データを保存データに残さない
     if(ctaOn&&cta.perChapter&&(cta.url||'').trim())body+=`\n<hr/>\n<p style="text-indent:0">▶ ${escXml(cta.linkText||'LINEで読者特典を受け取る')}：<a href="${escXml(cta.url)}">${escXml(cta.url)}</a></p>`;
