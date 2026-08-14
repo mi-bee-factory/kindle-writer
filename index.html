@@ -6069,7 +6069,7 @@ function _bodyLinesToHtml(raw,renderLine,opts){
    このアプリの原稿は1文＝1行で書かれることが多く、全行を字下げすると
    「ひと呼吸の改行」にも1文字ぶんの空きが入って階段状に見えてしまう。
    段落を変えたところ（1行空けた次）だけ字下げしたい場合は indentMode:'para'。 */
-const KW_TYPO_DEFAULT={indentMode:'none',indent:1,paraGap:0.6,pbGap:2.6,pageMargin:1,lineHeight:1.9,justify:true,headScale:1};
+const KW_TYPO_DEFAULT={indentMode:'none',indent:1,paraGap:0.6,pbGap:3.2,pageMargin:1,lineHeight:1.9,justify:true,headScale:1};
 function _typo(){return Object.assign({},KW_TYPO_DEFAULT,(S.book&&S.book.typo)||{});}
 function typoSet(k,v){
   if(!S.book)S.book={};
@@ -6098,8 +6098,9 @@ function bookCss(sel){
     R('p',`text-indent:${t.indentMode==='all'?t.indent:0}em;margin:${t.paraGap}em 0;`),
     (t.indentMode==='para'?R('p.pn',`text-indent:${t.indent}em;`):''),
     R('p.pb',`margin-bottom:${t.pbGap}em;`),
-    // 原稿で2行以上空けたところは、もう一段大きく空ける（章の中の大きな区切り）
-    R('p.pbb',`margin-bottom:${(t.pbGap*2).toFixed(2)}em;`),
+    // 原稿で2行以上空けたところは、もう一段大きく空ける（章の中の大きな区切り）。
+    // 倍率は1.7。2倍にすると「最大」を選んだときに穴が空きすぎる。
+    R('p.pbb',`margin-bottom:${(t.pbGap*1.7).toFixed(2)}em;`),
     `${sel}h1+p,${sel}h2+p{text-indent:0;}`,
     R('strong,b','font-weight:700;'),
     R('em,i','font-style:italic;'),
@@ -6115,7 +6116,7 @@ function epubPreviewCss(){return '<style>\n'+bookCss('.epubPrev ')+'\n</style>';
    出すと「プレビューでは合っているのに実機で違う」を必ず作ってしまう。 */
 const KW_TYPO_ITEMS=[
   {k:'paraGap',  label:'段落と段落の空き',     opts:[[0.3,'せまい'],[0.6,'標準'],[1,'ひろい']]},
-  {k:'pbGap',    label:'1行空けの余白の大きさ',opts:[[1.4,'ひかえめ'],[2.0,'標準'],[2.6,'ゆったり'],[3.4,'たっぷり']],note:'2行以上空けたところは、この倍の余白になります'},
+  {k:'pbGap',    label:'1行空けの余白の大きさ',opts:[[1.4,'ひかえめ'],[2.2,'標準'],[3.2,'ゆったり'],[4.6,'たっぷり'],[6.5,'最大（かなり空ける）']],note:'2行以上空けたところは、さらに広くなります'},
   {k:'pageMargin',label:'ページの余白',        opts:[[0.5,'せまい'],[1,'標準'],[1.8,'ひろい']]},
   {k:'lineHeight',label:'行の高さ',            opts:[[1.6,'つめる'],[1.9,'標準'],[2.2,'ゆったり']],note:'端末の行間設定が優先されることがあります'},
   {k:'headScale',label:'見出しの大きさ',       opts:[[0.9,'小さめ'],[1,'標準'],[1.2,'大きめ']]}
