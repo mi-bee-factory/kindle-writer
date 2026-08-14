@@ -824,6 +824,19 @@ function _splitTarget(id){
   return i<0?{userId:s,key:PROJ_LEGACY}:{userId:s.slice(0,i),key:s.slice(i+1)};
 }
 function _makeTarget(uid,key){return (!key||key===PROJ_LEGACY)?String(uid||''):uid+'#'+key;}
+/* book_settings は1ユーザー1行のまま。今アクティブな本を最上位に置き、
+   それ以外の本は同じ行の data.archive[key] に退避する。
+   既存の行は projectKey も archive も持たないので、そのまま legacy として読める。 */
+function _pickProjectData(root,key){
+  if(!root)return null;
+  const rootKey=root.projectKey||PROJ_LEGACY;
+  if((key||PROJ_LEGACY)===rootKey)return root;
+  return (root.archive||{})[key]||null;
+}
+function _isRlsError(e){
+  const s=((e&&e.message)||'')+' '+((e&&e.code)||'')+' '+((e&&e.details)||'');
+  return /row-level security|violates row-level|42501|not authorized|permission denied/i.test(s);
+}
 // ライターは招待URLに書かれた book_id を使う。
 // 手元の S.book は別プロジェクトの残骸かもしれないので当てにしない。
 function _chapterBookId(){
@@ -987,34 +1000,56 @@ function chAdminEditBadge(c){
   const when=isNaN(d.getTime())?'':`（${d.toLocaleDateString('ja-JP')}）`;
   return `<span title="管理者が編集${when}" style="color:var(--brand-dim);font-size:12px;font-weight:700;white-space:nowrap;flex-shrink:0">✏️ 管理者が編集</span>`;
 }
+// 別タブで別の本を開いたまま保存しようとしたときの案内（黙って失敗させない）
+let _tabMismatchShown=0;
+function _toastTabMismatch(){
+  if(Date.now()-_tabMismatchShown<30000)return;
+  _tabMismatchShown=Date.now();
+  const t=document.createElement('div');
+  t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#c2410c;color:#fff;padding:12px 20px;font-size:13px;font-weight:700;z-index:10010;max-width:88%;text-align:center;line-height:1.7';
+  t.textContent='別のタブで別の本を開いています。この画面の変更はまだ保存されていません。このタブを再読み込みしてください。';
+  document.body.appendChild(t);setTimeout(()=>t.remove(),8000);
+}
 async function _sbSaveProjectData(){
   if(!_sbUser||(_sbRole!=='owner'&&_sbRole!=='admin'))return;
   const myName=S.author||_sbUser.user_metadata?.name||_sbUser.email||'';
   const targetId=_activeTargetId();
   if(!targetId)return;
-  // 空の本でクラウドを潰さない（プロジェクト新規作成・切替直後の誤爆防止）
-  if(!_bookHasContent(S.book)){
-    const {data:cur}=await _sb.from('book_settings').select('data').eq('id',targetId).single();
-    if(cur&&cur.data&&_bookHasContent(cur.data.book))return;
+  const {userId,key}=_splitTarget(targetId);
+  if(!userId)return;
+  const {data:existing}=await _sb.from('book_settings').select('data').eq('id',userId).single();
+  const curData=(existing&&existing.data)||{};
+  const curKey=curData.projectKey||PROJ_LEGACY;
+  // ガード1：クラウドが別の本を最前面に持っている＝状態がずれている。
+  // ここで書くと相手の本を丸ごと潰すので、書かずに中断して知らせる。
+  if(Object.keys(curData).length&&curKey!==key){
+    console.warn('[kw] 保存を中断：クラウドは別の本を開いています',curKey,'!==',key);
+    _toastTabMismatch&&_toastTabMismatch();
+    return;
   }
-  const {data:existing}=await _sb.from('book_settings').select('data').eq('id',targetId).single();
+  // ガード2：空の本でクラウドを潰さない（プロジェクト新規作成・切替直後の誤爆防止）
+  if(!_bookHasContent(S.book)&&_bookHasContent(curData.book))return;
   const saveData={
-    ...(existing?.data||{}),
+    ...curData,
+    projectKey:key,
     book:S.book||{},
     theme:S.theme||'',reader:S.reader||'',goal:S.goal||'',
     people:S.people||5,totalTarget:S.totalTarget||25000,
     coauthor:(S.coauthor!==false),soloChosen:!!S.soloChosen,
     updatedByName:myName,updatedByEmail:_sbUser.email||''
   };
-  await _sb.from('book_settings').upsert({id:targetId,data:saveData,updated_at:new Date().toISOString()});
+  await _sb.from('book_settings').upsert({id:userId,data:saveData,updated_at:new Date().toISOString()});
 }
 async function _sbLoadProjectData(targetId,opts){
   targetId=targetId||_activeTargetId();
   if(!targetId)return false;
   const switching=!!(opts&&opts.switching);
-  const {data}=await _sb.from('book_settings').select('*').eq('id',targetId).single();
+  const {userId,key}=_splitTarget(targetId);
+  const {data}=await _sb.from('book_settings').select('*').eq('id',userId).single();
   if(!data||!data.data)return false;
-  const d=data.data;
+  // 最上位（今アクティブな本）か、archive に退避された本かを解決する
+  const d=_pickProjectData(data.data,key);
+  if(!d)return false;   // まだ保存の無い新規プロジェクト → 呼び出し元の空初期化パスへ
   if(d.book){
     const sameProject=!switching&&S._activeTargetId===targetId;
     if(sameProject&&S.book&&(S.book.chapters||[]).length){
@@ -1043,6 +1078,9 @@ async function _sbLoadProjectData(targetId,opts){
     }else{
       // 別プロジェクトへの切替・初回読み込みはクラウドの内容をそのまま採用
       S.book=d.book;
+      // 本が入れ替わるので、前の本の表題紙・奥付のキャッシュを持ち越さない
+      // （一度作られると再生成されないため、放置すると別の本の書名が載る）
+      S.epubFront={};
     }
   }
   if(d.theme)S.theme=d.theme;
@@ -1053,14 +1091,57 @@ async function _sbLoadProjectData(targetId,opts){
   // 単独出版として保存された本は単独のまま開く（以前は無条件に共著へ戻していた）
   S.coauthor=(d.coauthor!==false);S.soloChosen=!!d.soloChosen;S.memberMode=false;
   S.coauthorChap=null; // 管理モードに入るので、ライターとしての担当章は解除する
+  // 読み込んだ本にキーを刻む。legacy は「キーを持たない」のが正しい姿なので消す
+  // （こうしないと次の保存で既存データの形が変わってしまう）
+  if(S.book){if(key===PROJ_LEGACY)delete S.book.projectKey;else S.book.projectKey=key;}
   S._activeTargetId=targetId;
   S._lastUpdatedByName=d.updatedByName||'';
-  S._lastUpdatedAt=data.updated_at||'';
+  S._lastUpdatedAt=d.updatedAt||data.updated_at||'';
   save();
   const el=document.getElementById('theme');if(el)el.value=S.theme||'';
   const el2=document.getElementById('people');if(el2)el2.value=S.people||5;
   renderModeUI&&renderModeUI();renderHomeBookCard&&renderHomeBookCard();renderCoInviteAdmin&&renderCoInviteAdmin();
   return true;
+}
+/* 自分の本を入れ替える：今アクティブな本を archive へ退避し、指定の本を最上位へ上げる。
+   1つのオブジェクトを作ってから1回で書くので、途中でどれかが消えることはない。
+   呼ぶ前に必ず _sbFlushPendingSaves() すること。保留中の保存が入れ替え後に発火すると
+   ガード1に弾かれて直前の編集が失われる。 */
+// 入れ替え後の data を作る純粋な処理。通信から切り離してあるので単体で検証できる。
+// 出ていく本を archive に入れてから最上位を差し替えるのを、1つのオブジェクトの中で行う。
+function _buildSwapData(rootIn,curUpdatedAt,key){
+  const root={...(rootIn||{})};
+  const curKey=root.projectKey||PROJ_LEGACY;
+  if(curKey===key)return null;   // 入れ替え不要
+  const archive={...(root.archive||{})};
+  archive[curKey]={
+    book:root.book||{},theme:root.theme||'',reader:root.reader||'',goal:root.goal||'',
+    people:root.people||5,totalTarget:root.totalTarget||25000,
+    coauthor:(root.coauthor!==false),soloChosen:!!root.soloChosen,
+    updatedByName:root.updatedByName||'',
+    updatedAt:curUpdatedAt||new Date().toISOString()
+  };
+  const next=archive[key]||{
+    book:{chapters:[],title:'',subtitle:'',desc:'',keywords:'',cats:'',manuscript:''},
+    theme:'',reader:'',goal:'',people:5,totalTarget:25000,coauthor:true,soloChosen:false
+  };
+  delete archive[key];
+  return {
+    ...root, archive, projectKey:key,
+    book:next.book||{},theme:next.theme||'',reader:next.reader||'',goal:next.goal||'',
+    people:next.people||5,totalTarget:next.totalTarget||25000,
+    coauthor:(next.coauthor!==false),soloChosen:!!next.soloChosen
+  };
+}
+async function _sbActivateOwnProject(key){
+  if(!_sbUser)return false;
+  const uid=_sbUser.id;
+  const {data:cur}=await _sb.from('book_settings').select('data,updated_at').eq('id',uid).single();
+  const merged=_buildSwapData((cur&&cur.data)||{},(cur&&cur.updated_at),key);
+  if(!merged)return true;   // すでにその本が開いている
+  const {error}=await _sb.from('book_settings').upsert({id:uid,data:merged,updated_at:new Date().toISOString()});
+  if(error)console.warn('[kw] プロジェクト入れ替えに失敗',error);
+  return !error;
 }
 async function _sbListManagedProjects(){
   const {data:profiles}=await _sb.from('profiles').select('id,name,role').in('role',['owner','admin']);
@@ -1070,18 +1151,35 @@ async function _sbListManagedProjects(){
   const map={};(settings||[]).forEach(s=>map[s.id]=s);
   const myId=_sbUser?.id;
   const isOwner=_sbRole==='owner';
-  return profiles.map(p=>{
+  const out=profiles.map(p=>{
     const s=map[p.id];
     const d=s&&s.data||{};
     const sharedWith=d.sharedWith||[];
+    const key=d.projectKey||PROJ_LEGACY;
     return {
-      id:p.id,name:p.name||'（名前未設定）',role:p.role,
+      id:_makeTarget(p.id,key),ownerId:p.id,projectKey:key,isMine:(p.id===myId),
+      name:p.name||'（名前未設定）',role:p.role,
       title:(d.book&&d.book.title)||'',
       updatedByName:d.updatedByName||'',
       updatedAt:(s&&s.updated_at)||'',
       sharedWith
     };
-  }).filter(p=>isOwner||p.id===myId||p.sharedWith.includes(myId));
+  }).filter(p=>isOwner||p.ownerId===myId||p.sharedWith.includes(myId));
+  // 自分が過去に作った本（archive に退避してあるもの）も選べるように並べる
+  const mineData=((map[myId]||{}).data)||{};
+  const myName=(profiles.find(p=>p.id===myId)||{}).name||'（名前未設定）';
+  Object.keys(mineData.archive||{}).forEach(k=>{
+    const a=mineData.archive[k]||{};
+    out.push({
+      id:_makeTarget(myId,k),ownerId:myId,projectKey:k,isMine:true,archived:true,
+      name:myName,role:_sbRole,
+      title:(a.book&&a.book.title)||'',
+      updatedByName:a.updatedByName||'',
+      updatedAt:a.updatedAt||'',
+      sharedWith:[]
+    });
+  });
+  return out;
 }
 // 本のタイトルが、他アカウントの既存プロジェクトと同じになっていないか確認する（重複でどれがどれか分からなくなるのを防ぐ）
 async function _warnIfDuplicateTitle(title){
@@ -1098,28 +1196,34 @@ async function _warnIfDuplicateTitle(title){
 }
 async function _sbShareProject(targetId,producerId,grant){
   if(_sbRole!=='owner')return;
-  const {data:existing}=await _sb.from('book_settings').select('data').eq('id',targetId).single();
+  // 共有はアカウント単位。合成IDが来てもユーザーID側だけを使う。
+  const {userId}=_splitTarget(targetId);
+  const {data:existing}=await _sb.from('book_settings').select('data').eq('id',userId).single();
   const d=existing?.data||{};
   const sharedWith=d.sharedWith||[];
   const idx=sharedWith.indexOf(producerId);
   if(grant&&idx===-1)sharedWith.push(producerId);
   if(!grant&&idx!==-1)sharedWith.splice(idx,1);
   d.sharedWith=sharedWith;
-  await _sb.from('book_settings').upsert({id:targetId,data:d,updated_at:existing?.updated_at||new Date().toISOString()});
+  await _sb.from('book_settings').upsert({id:userId,data:d,updated_at:existing?.updated_at||new Date().toISOString()});
   _renderHomeManagedProjects();
 }
 async function _sbSwitchTarget(id){
   // 切替前に、保留中の編集を今のプロジェクトへ確実に書き出す
   await _sbFlushPendingSaves();
+  // 自分の本どうしの移動なら、先にクラウド側で入れ替えて（今の本を archive へ退避して）から読む
+  const {userId,key}=_splitTarget(id);
+  if(_sbUser&&userId===_sbUser.id){
+    const swapped=await _sbActivateOwnProject(key);
+    if(!swapped){alert('本の切り替えに失敗しました。通信状態を確認して、もう一度お試しください。');return false;}
+  }
   const ok=await _sbLoadProjectData(id,{switching:true});
   if(!ok){
     // クラウドにまだ保存が無い（新規・空）プロジェクト：空の状態から管理を始められるようにする
+    _resetProjectScopedState();
     S._activeTargetId=id;
-    S.coauthor=true;S.memberMode=false;S.coauthorChap=null;
-    S.book={chapters:[],title:'',subtitle:'',desc:'',keywords:'',cats:'',manuscript:''};
-    S.theme='';S.reader='';S.goal='';
-    if(!(S.people>=1))S.people=5;
-    S._lastUpdatedByName='';S._lastUpdatedAt='';
+    S.coauthor=true;S.soloChosen=false;S.memberMode=false;S.coauthorChap=null;
+    if(key!==PROJ_LEGACY)S.book.projectKey=key;
     save();
     const el=document.getElementById('theme');if(el)el.value='';
     const el2=document.getElementById('people');if(el2)el2.value=S.people||5;
@@ -1132,10 +1236,51 @@ async function _sbSwitchTarget(id){
   document.body.appendChild(t);setTimeout(()=>t.remove(),2200);
   return true;
 }
+/* 新しい book_id でライターが保存できるかを、本文を1文字も触らずに事前確認する。
+   RLSポリシーが book_id を固定していると新しい本ではライターが保存できないため、
+   招待URLを配ってから気づく事態を避ける。chapter_index:9999 のセンチネル行は
+   全ての取り込みフィルタで除外されるので、消せなくても無害。 */
+async function _sbProbeBookId(bookId){
+  if(!_sbUser)return {ok:false,msg:'未ログイン'};
+  const row={book_id:bookId,user_id:_sbUser.id,chapter_index:9999,
+    author_name:'',chapter_title:'_probe',body:'',status:'_probe',
+    updated_at:new Date().toISOString()};
+  let {error}=await _sb.from('member_chapters').upsert(row,{onConflict:'book_id,user_id,chapter_index'});
+  if(error){delete row.status;({error}=await _sb.from('member_chapters').upsert(row,{onConflict:'book_id,user_id,chapter_index'}));}
+  if(error)return {ok:false,msg:error.message||error.code||''};
+  await _sb.from('member_chapters').delete().eq('book_id',bookId).eq('user_id',_sbUser.id).eq('chapter_index',9999);
+  return {ok:true};
+}
+/* 本当に新しい本を始める。今の本は archive に退避するだけで、消さない。 */
+async function _sbStartNewProject(){
+  if(!_sbUser||(_sbRole!=='owner'&&_sbRole!=='admin'))return;
+  const title=(prompt('新しい本のタイトルを入れてください。（あとから変えられます）','')||'').trim();
+  if(!title)return;
+  const nowTitle=(S.book&&S.book.title)||'（タイトル未設定）';
+  if(!confirm(`今の本「${nowTitle}」は保存したまま残ります。\nホーム画面の一覧からいつでも戻れます。\n\n新しい本「${title}」を始めますか？`))return;
+  await _sbFlushPendingSaves();          // 1) 今の内容を確実にクラウドへ
+  const key=_newProjectKey();
+  const ok=await _sbActivateOwnProject(key);  // 2) 今の本を archive へ退避し、新しい枠を最前面に
+  if(!ok){alert('クラウドへの切り替えに失敗しました。通信状態を確認して、もう一度お試しください。\n\n※今の本はそのまま残っています。');return;}
+  _resetProjectScopedState();            // 3) 手元も作り直す（uuid・表題紙・奥付も新しくなる）
+  S.book.projectKey=key;S.book.title=title;
+  S._activeTargetId=_makeTarget(_sbUser.id,key);
+  S.coauthor=true;S.soloChosen=false;S.memberMode=false;
+  pmNewProject(title,{keepState:true});  // ローカルの切替UIとも足並みを揃える
+  save();
+  const probe=await _sbProbeBookId(_projectBookId());   // 4) ライターが保存できるか事前確認
+  if(!probe.ok){
+    alert('注意：この本ではライターのクラウド保存が拒否されました。\n（'+(probe.msg||'原因不明')+'）\n\n既存の本には影響ありません。この本ではまだ招待URLを配らないでください。\nこの画面をひかりに伝えてください。');
+  }
+  await _sbSaveProjectData();
+  renderModeUI&&renderModeUI();renderHomeBookCard&&renderHomeBookCard();
+  renderProjectSwitcher&&renderProjectSwitcher();renderHomeProjectPanel&&renderHomeProjectPanel();
+  startAdmin();
+}
 // 指定プロジェクトに切り替えて、その管理ダッシュボードを開く（一覧から直接ダッシュボードへ）
 async function _sbOpenProjectDashboard(id){
   if(id&&id!==_activeTargetId()){await _sbSwitchTarget(id);}
-  else{S.coauthor=true;save();}
+  else if(!S.soloChosen){S.coauthor=true;save();}   // 単独出版として選ばれている本は共著へ戻さない
   startAdmin();
 }
 let _sbProjectTimer=null,_sbProjectDirty=false,_sbChapterDirty=false;
@@ -1198,7 +1343,7 @@ async function _sbSaveChapter(opts){
   // 明示bodyもstatusも無い旧来の自動同期呼び出しでは、空本文を保存しない（旧挙動の維持）
   if(!(body||'').trim()&&opts.body==null&&!opts.status)return {ok:false,reason:'empty'};
   const row={
-    book_id:BOOK_ID,user_id:_sbUser.id,chapter_index:idx,
+    book_id:_chapterBookId(),user_id:_sbUser.id,chapter_index:idx,
     author_name:opts.author||S.memberName||S.author||'',
     chapter_title:opts.title||S.chapTitle||`第${idx+1}章`,
     body:body||'', edited:(opts.edited!=null)?opts.edited:'',
@@ -1210,7 +1355,9 @@ async function _sbSaveChapter(opts){
   if(opts.images!=null)row.images=opts.images;
   if(opts.subtitle!=null)row.chapter_subtitle=opts.subtitle;
   const inv=S._inviteData||{};
-  if(inv.projId)row.project_id=inv.projId;
+  // ライターは招待元のプロジェクト、管理者は今開いているプロジェクトを記録する
+  const _pid=S.memberMode?(inv.projId||''):(_activeTargetId()||'');
+  if(_pid)row.project_id=_pid;
   const bt=inv.projName||(S.book&&S.book.title)||'';
   if(bt)row.book_title=bt;
   if(inv.producerName)row.producer_name=inv.producerName;
@@ -1218,6 +1365,11 @@ async function _sbSaveChapter(opts){
   let usedFallback=false;
   // 一意制約は (book_id,user_id,chapter_index)。1人が複数章を担当しても章ごとに別行で保存される。
   let {error}=await _sb.from('member_chapters').upsert(row,{onConflict:'book_id,user_id,chapter_index'});
+  // RLSで弾かれた場合、ここで従来の book_id に落として再試行してはいけない。
+  // それをやると別プロジェクトの同じ章番号を上書きしてしまう（この設計が防ごうとしている事故そのもの）。
+  if(error&&_isRlsError(error)&&row.book_id!==BOOK_ID){
+    return {ok:false,error,reason:'rls-bookid',bookTitle:bt,bookTitleSaved:false};
+  }
   if(error&&/chapter_subtitle/i.test(error.message||'')){
     // サブタイトル列だけがまだ無いスキーマ：それだけ落として再試行する。
     // status・images 等はここでは絶対に落とさない（提出済み・添付画像が保存されなくなるため）。
@@ -1245,7 +1397,7 @@ async function _sbLoadMyChapter(idx){
   if(!_sbUser)return null;
   if(idx==null)idx=S.coauthorChap;
   if(idx==null)return null;
-  const {data,error}=await _sb.from('member_chapters').select('*').eq('book_id',BOOK_ID).eq('user_id',_sbUser.id).eq('chapter_index',idx);
+  const {data,error}=await _sb.from('member_chapters').select('*').eq('book_id',_chapterBookId()).eq('user_id',_sbUser.id).eq('chapter_index',idx);
   if(error||!data||!data.length)return null;
   const row=data[0];
   if(!S.book)S.book={chapters:[],title:''};
@@ -1272,7 +1424,8 @@ async function _sbLoadMyChapter(idx){
 // project_id が無い旧データは、このプロジェクトに紐づく行が1件でもあるなら「別物」とみなして除外し、
 // 1件も無い（＝まだ誰も project_id 付きで保存していない）ときだけ後方互換で通す。
 function _filterRowsForActiveProject(rows){
-  rows=rows||[];
+  // chapter_index>=9000 はRLS確認用のセンチネル行。本文としては絶対に扱わない。
+  rows=(rows||[]).filter(r=>r&&r.status!=='_probe'&&(r.chapter_index||0)<9000);
   const active=_activeTargetId();
   const tagged=rows.filter(r=>r.project_id);
   const mine=tagged.filter(r=>r.project_id===active);
@@ -1289,7 +1442,7 @@ function _rowBelongsToActiveProject(row){
 async function fetchChaptersFromSupabase(){
   const btn=document.getElementById('sbFetchBtn');
   if(btn){btn.textContent='取得中...';btn.disabled=true;}
-  const {data,error}=await _sb.from('member_chapters').select('*').eq('book_id',BOOK_ID);
+  const {data,error}=await _sb.from('member_chapters').select('*').eq('book_id',_projectBookId());
   if(btn){btn.textContent='メンバーの最新原稿を取り込む';btn.disabled=false;}
   if(error||!data||!data.length){alert('まだデータがありません。\nメンバーに章を保存してもらってください。');return;}
   if(!S.book)S.book={chapters:[],title:'',subtitle:'',desc:'',keywords:'',cats:'',manuscript:''};
@@ -1426,7 +1579,7 @@ let _pendingCheckGen=0;
 async function _checkPendingSubmissions(){
   if(!_sbUser)return;
   const gen=++_pendingCheckGen; // 連続呼び出し時に古い結果で上書きしないための世代管理
-  const {data,error}=await _sb.from('member_chapters').select('chapter_index,updated_at,project_id').eq('book_id',BOOK_ID);
+  const {data,error}=await _sb.from('member_chapters').select('chapter_index,updated_at,project_id,status').eq('book_id',_projectBookId());
   if(gen!==_pendingCheckGen)return; // 待っている間に新しいチェックが始まっていたら破棄
   const badge=document.getElementById('sbFetchBadge');
   const btn=document.getElementById('sbFetchBtn');
@@ -2166,21 +2319,20 @@ async function _renderHomeManagedProjects(){
     const {data:profs}=await _sb.from('profiles').select('id,name').eq('role','admin');
     allProducers=profs||[];
   }
-  const myProject=list.find(p=>p.id===myId);
-  const myHasContent=!!(myProject&&(myProject.title||myProject.updatedAt));
   const newProjectBtn=myId?`<div style="padding:10px 0;border-bottom:2px solid var(--brand-soft);margin-bottom:4px">
-    <button onclick="_sbOpenProjectDashboard('${myId}')" style="width:100%;font-size:13px;font-weight:700;background:var(--brand);color:#403129;border:none;padding:8px 14px;cursor:pointer">＋ 新しいプロジェクトを始める</button>
-    ${myHasContent?`<div style="font-size:11px;color:var(--sub);margin-top:4px">※ あなたの枠（1人につき1つ）は今「${esc(myProject.title||'（タイトル未設定）')}」が入っています。押すとその続きが開きます。まったく新しく始めたい場合は、今の内容を書き出してから、まとめ画面でタイトル等を書き換えてください。</div>`:'<div style="font-size:11px;color:var(--sub);margin-top:4px">あなたの空いている枠から始められます。</div>'}
+    <button onclick="_sbStartNewProject()" style="width:100%;font-size:13px;font-weight:700;background:var(--brand);color:#403129;border:none;padding:8px 14px;cursor:pointer">＋ 新しいプロジェクトを始める</button>
+    <div style="font-size:11px;color:var(--sub);margin-top:4px">今の本は保存されたまま残ります。この一覧からいつでも戻れます。</div>
   </div>`:'';
   el.innerHTML=newProjectBtn+list.map(p=>{
     const isActive=p.id===activeId;
     const roleLabel=p.role==='owner'?'オーナー':'プロデューサー';
-    const isMe=p.id===myId;
+    const isMe=!!p.isMine;
     const updated=p.updatedAt?new Date(p.updatedAt).toLocaleString('ja-JP'):'まだ保存なし';
-    const others=allProducers.filter(pr=>pr.id!==p.id);
+    const others=allProducers.filter(pr=>pr.id!==p.ownerId);
     const grantedList=others.filter(pr=>p.sharedWith.includes(pr.id));
     const notGrantedList=others.filter(pr=>!p.sharedWith.includes(pr.id));
-    const shareUi=(isOwner&&others.length)?`<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--line-soft)">
+    // 共有はアカウント単位なので、退避中の本には共有UIを出さない
+    const shareUi=(isOwner&&others.length&&!p.archived)?`<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--line-soft)">
       <div style="font-size:10px;color:var(--sub);margin-bottom:4px">共有中のメンバー（クリックで解除）</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:${notGrantedList.length?'6px':'0'}">
         ${grantedList.length?grantedList.map(pr=>`<button onclick="_sbShareProject('${p.id}','${pr.id}',false)" style="font-size:10px;padding:2px 10px;cursor:pointer;font-weight:700;border:1px solid var(--ok);background:var(--ok-soft);color:var(--ok);display:inline-flex;align-items:center;gap:4px">✓ ${esc(pr.name||'（名前未設定）')} ×</button>`).join(''):`<span style="font-size:10px;color:var(--sub)">まだ誰にも共有していません</span>`}
@@ -2190,13 +2342,13 @@ async function _renderHomeManagedProjects(){
         ${notGrantedList.map(pr=>`<button onclick="_sbShareProject('${p.id}','${pr.id}',true)" style="font-size:10px;padding:2px 10px;cursor:pointer;font-weight:700;border:1px solid var(--line-soft);background:#fff;color:var(--sub)">＋ ${esc(pr.name||'（名前未設定）')}</button>`).join('')}
       </div>`:''}
     </div>`:'';
-    const isMyEmptySlot=isMe&&!p.title&&!p.updatedAt;
+    const isMyEmptySlot=isMe&&!p.archived&&!p.title&&!p.updatedAt;
     const titleLabel=p.title?esc(p.title):(isMyEmptySlot?'🆕 あなたの新しいプロジェクト（ここから始められます）':'（タイトル未設定）');
     return `<div style="padding:8px 0;border-bottom:1px solid var(--line-soft)">
       <div style="display:flex;align-items:center;gap:8px">
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:700;color:var(--ink)">${titleLabel}${isActive?'<span style="font-size:11px;color:var(--ok);margin-left:6px">● 管理中</span>':''}</div>
-          <div style="font-size:11px;color:var(--sub);margin-top:2px">${esc(p.name)}（${roleLabel}）${isMe?'・あなた':''}　最終更新：${p.updatedByName?esc(p.updatedByName)+'・':''}${updated}</div>
+          <div style="font-size:11px;color:var(--sub);margin-top:2px">${esc(p.name)}（${roleLabel}）${isMe?'・あなた':''}${p.archived?'・<span style="color:var(--muted)">保管中</span>':''}　最終更新：${p.updatedByName?esc(p.updatedByName)+'・':''}${updated}</div>
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
           ${isActive?'':`<button onclick="_sbSwitchTarget('${p.id}')" style="font-size:11px;background:#fff;color:var(--brand-dim);border:1px solid var(--brand);padding:4px 10px;cursor:pointer;font-weight:700;white-space:nowrap">これを管理する</button>`}
@@ -2749,6 +2901,8 @@ function _invDec(s){try{return JSON.parse(decodeURIComponent(escape(atob(s))));}
 async function _applyInviteData(d){
   S.coauthor=true;S.coauthorChap=d.chapIdx;S.memberMode=true;
   if(!S.book)S.book={chapters:[],title:'',subtitle:''};
+  // 招待された本に紐づける。bookId を持たない古い招待URLは 'legacy'＝従来どおりの本になる。
+  S.book.projectKey=d.projKey||PROJ_LEGACY;
   S.book.title=d.bookTitle;
   while(S.book.chapters.length<=d.chapIdx)S.book.chapters.push({author:'',title:'',body:''});
   S.book.chapters[d.chapIdx].title=d.chapTitle;
@@ -3480,9 +3634,12 @@ async function _mwCheckAdminEdit(idx){
   if(!el||!_sbUser)return;
   const projId=(S._inviteData&&S._inviteData.projId)||'';
   if(!projId){el.innerHTML='';return;}
-  const {data,error}=await _sb.from('book_settings').select('data').eq('id',projId).single();
-  if(error||!data||!data.data||!data.data.book){el.innerHTML='';return;}
-  const cloudC=(data.data.book.chapters||[])[idx];
+  // projId は "userId" または "userId#projectKey"。book_settings の主キーは userId 側だけ。
+  const _t=_splitTarget(projId);
+  const {data,error}=await _sb.from('book_settings').select('data').eq('id',_t.userId).single();
+  const _root=_pickProjectData(data&&data.data,_t.key);
+  if(error||!_root||!_root.book){el.innerHTML='';return;}
+  const cloudC=(_root.book.chapters||[])[idx];
   if(!cloudC||!cloudC.adminEditedAt){el.innerHTML='';return;}
   const localC=S.book&&S.book.chapters&&S.book.chapters[idx];
   const seenAt=(localC&&localC.adminEditSeenAt)||0;
@@ -3690,7 +3847,9 @@ function generateInviteUrl(chapIdx){
   if(!S.book)S.book={chapters:[],title:''};
   const c=S.book.chapters[chapIdx]||{};
   const d={v:1,bookTitle:S.book.title||'',chapIdx,chapTitle:c.title||`第${chapIdx+1}章`,totalChaps:S.book.chapters.length,
-    projId:_activeTargetId()||'',           // 所属プロジェクト（招待元）のuser id
+    projId:_activeTargetId()||'',           // 所属プロジェクト（招待元）の識別子
+    projKey:_projectKey(),                  // 本ごとのキー（従来の本は 'legacy'）
+    bookId:_projectBookId(),                // この本の member_chapters.book_id
     projName:S.book.title||'',              // 所属プロジェクトの書名
     producerName:S.author||''};             // 招待したプロデューサー/オーナー名
   return location.href.split('?')[0]+'?invite=KWINV1'+encodeURIComponent(_invEnc(d));
