@@ -891,6 +891,58 @@ function _chapImgBadge(c){
   if(imgs.length)return pill('#fffbeb','#92400e','画像'+imgs.length+'件','');
   return '';
 }
+/* ---------- 本文の流れ（改行・段落）の点検 ----------
+   Kindleでは改行1つがそのまま段落の切れ目になる。文の途中で改行された原稿は
+   段落がバラバラに見え、逆に1行空けが一度も無い原稿は文字の壁になる。
+   書き手は自分の書き慣れた画面で見ているので気づきにくい。ここで検出して知らせる。 */
+const FLOW_LONG_RUN=5; // 1行空けなしで何段落続いたら「長い」とみなすか
+// 段落として数えない行（図・リンク・見出し・区切り・箇条書き）
+function _flowSkipLine(l){
+  if(!l)return true;
+  if(/^-{3,}$/.test(l))return true;
+  if(/^\[図\d+\]$/.test(l))return true;
+  if(/^\[画像[：:].+\]$/.test(l))return true;
+  if(/^[<＜]図/.test(l))return true;
+  if(_headingText(l)!==null)return true;
+  if(_isLinkOnlyLine(l))return true;
+  if(/^[・･◦▪\-*＊●○◯■□〇]/.test(l))return true;
+  if(/^\d+[.．)）]/.test(l))return true;
+  return false;
+}
+function _paraFlowIssues(body){
+  const src=String(body==null?'':body).split(/\n/);
+  const midBreaks=[];  // 文の途中で改行されている疑いのある行
+  const longRuns=[];   // {start,count} 1行空けなしで続いている塊
+  let run=0,runStart=0;
+  for(let i=0;i<src.length;i++){
+    const l=src[i].trim();
+    if(!l){ if(run>=FLOW_LONG_RUN)longRuns.push({start:runStart,count:run}); run=0; continue; }
+    if(_flowSkipLine(l)){ if(run>=FLOW_LONG_RUN)longRuns.push({start:runStart,count:run}); run=0; continue; }
+    if(run===0)runStart=i;
+    run++;
+    // 次に本文行が続くのに句点等で終わっていない＝文の途中で折り返した疑い
+    const nx=(src[i+1]||'').trim();
+    if(nx&&!_flowSkipLine(nx)&&!PARA_END_RE.test(l)&&[...l].length<30)midBreaks.push(i);
+  }
+  if(run>=FLOW_LONG_RUN)longRuns.push({start:runStart,count:run});
+  return {midBreaks,longRuns,hasBlank:src.some((l,i)=>!l.trim()&&i>0&&i<src.length-1)};
+}
+// 章一覧に出すバッジ。中に入らなくても要注意の章が分かるようにする。
+function _chapFlowBadge(c){
+  c=c||{};
+  if(!(c.body||'').trim())return '';
+  const f=_paraFlowIssues(c.body);
+  const pill=(bg,fg,txt,title)=>`<span title="${esc(title||'')}" style="font-size:11px;background:${bg};color:${fg};padding:1px 6px;white-space:nowrap;flex-shrink:0;font-weight:700">${txt}</span>`;
+  const out=[];
+  if(f.midBreaks.length)out.push(pill('#fff7ed','#c2410c','↵ 改行 '+f.midBreaks.length+'件',
+    '文の途中で改行されていそうな箇所です。Kindleではそこで段落が切れます。'));
+  if(f.longRuns.length){
+    const max=Math.max(...f.longRuns.map(r=>r.count));
+    out.push(pill('#fffbeb','#92400e','☰ 続き '+max+'段落',
+      '1行空けなしで '+max+' 段落続いています。ひと呼吸置ける場所があると読みやすくなります。'));
+  }
+  return out.join('');
+}
 /* ---------- 章の状態判定（全画面でこれを使う。個別に「本文があれば完成」と判定しないこと） ---------- */
 // 戻り値: 'submitted'（提出済み）/ 'revise'（管理者が修正を依頼中）/ 'draft'（書きかけ・未提出）
 //         / 'admin'（管理者が作成）/ 'none'（未着手）
@@ -3252,6 +3304,19 @@ async function _mwSubmit(chapIdx){
   if(!window._mwMode){alert('書き方を選んでください');return;}
   const body=_mwGetBody();
   if(!body){alert('本文を入力してください');return;}
+  // 読みやすさの点検。指示ではなく提案として伝え、そのまま提出もできるようにする。
+  {
+    const f=_paraFlowIssues(body);
+    const maxRun=f.longRuns.length?Math.max(...f.longRuns.map(r=>r.count)):0;
+    const msgs=[];
+    if(maxRun)msgs.push(`・1行空けなしで ${maxRun}段落 続いているところがあります。\n　ひと呼吸置きたい場所で Enterを2回押して1行空けると、そのまま本の余白になります。`);
+    if(f.midBreaks.length)msgs.push(`・文の途中で改行されていそうな箇所が ${f.midBreaks.length}件 あります。\n　Kindleでは改行のところで段落が切れるので、文の終わりまでは改行しないほうが読みやすくなります。`);
+    if(msgs.length){
+      const ok=confirm('提出の前に、読みやすさについてお知らせです。\n\n'+msgs.join('\n\n')
+        +'\n\n──────────\n「OK」＝このまま提出する\n「キャンセル」＝戻って直す');
+      if(!ok)return;
+    }
+  }
   // 直前の入力で仕込まれた「自動保存（下書き）」タイマーが、この提出の後に遅れて発火すると
   // status:'draft' で上書きされ、提出したはずが黙って下書きに戻ってしまう。それを防ぐため先に止める。
   if(_mwDraftTimer){clearTimeout(_mwDraftTimer);_mwDraftTimer=null;}
@@ -3721,6 +3786,7 @@ function previewCoChapter(i){
     </div>
     ${_coChapNoticeHtml(i,c)}
     ${_coChapImgListHtml(i,c)}
+    ${_coChapFlowHtml(i,c)}
     <div id="coChapPrev" style="overflow-y:auto;padding:20px 24px;flex:1;font-size:14px">
       <div style="font-size:11px;color:var(--sub);background:#f5f5f3;padding:5px 10px;margin:-4px 0 14px;text-align:center">本になったときの見え方（EPUBと同じ表示）</div>
       ${_epubPreviewHtml(c,calcNIdx(S.book.chapters,i))}
@@ -3741,6 +3807,33 @@ function previewCoChapter(i){
     </div>
   </div>`;
   document.body.appendChild(modal);
+}
+/* 改行・段落の点検結果と、3つの対処への導線。
+   (1) ライター本人に直してもらう（推奨・修正依頼を下書きする）
+   (2) この場で自分が1行空けを入れる（編集タブ）
+   (3) まとめ画面の自動余白スイッチを使う
+   アプリが勝手に本文を書き換えることはしない。判断するのは人。 */
+function _coChapFlowHtml(i,c){
+  const f=_paraFlowIssues(c.body);
+  if(!f.midBreaks.length&&!f.longRuns.length)return '';
+  const maxRun=f.longRuns.length?Math.max(...f.longRuns.map(r=>r.count)):0;
+  const notes=[];
+  if(f.midBreaks.length)notes.push(`文の途中で改行されていそうな箇所が <b>${f.midBreaks.length}件</b>（Kindleではそこで段落が切れます）`);
+  if(maxRun)notes.push(`1行空けなしで <b>${maxRun}段落</b> 続いている箇所があります`);
+  const draft=(maxRun
+    ? `${maxRun}段落ほど区切りなしで続いているところがあります。ひと呼吸置きたい場所で1行空けていただけますか。（Enterを2回押すと1行空きます）`
+    : `文の途中で改行されている箇所がいくつかあるようです。Kindleでは改行のところで段落が切れてしまうので、文の終わりまでは改行せずに続けていただけますか。`);
+  return `<details style="border-bottom:1px solid var(--line-soft);flex-shrink:0;background:#fffbeb">
+    <summary style="padding:7px 16px;font-size:12px;font-weight:700;color:#92400e;cursor:pointer;list-style:none">☰ 読みやすさの点検</summary>
+    <div style="padding:4px 16px 12px;font-size:12px;color:#403129;line-height:1.9">
+      <ul style="margin:0 0 8px;padding-left:1.2em">${notes.map(n=>`<li>${n}</li>`).join('')}</ul>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+        <button onclick="_coRequestRevision(${i},${JSON.stringify(draft).replace(/"/g,'&quot;')})" style="font-size:11px;padding:4px 12px;background:#c2410c;color:#fff;border:none;cursor:pointer;font-weight:700">ひと呼吸ほしいと伝える</button>
+        <button onclick="_coChapTab('edit',${i})" style="font-size:11px;padding:4px 12px;background:#fff;border:1px solid var(--line-soft);cursor:pointer;font-weight:700;color:var(--ink)">自分で1行空けを入れる</button>
+      </div>
+      <div style="font-size:11px;color:var(--sub)">1行空けはそのまま本の余白になります。まとめ画面で「自動で余白を入れる」を選ぶこともできます。</div>
+    </div>
+  </details>`;
 }
 // 管理者が章を開いたときの注意書き。ライターが書きかけの章を直しても上書きされてしまうため、
 // 先に知らせて無駄な作業を防ぐ。修正依頼中なら依頼内容を表示する。
@@ -3798,11 +3891,12 @@ function _coChapImgListHtml(i,c){
 }
 // 章をライターに差し戻す。管理者が直した本文をそのまま土台として渡すので、
 // ライターは「取り込む」ことで管理者の修正を引き継いだうえで書き直せる。
-function _coRequestRevision(i){
+// draft を渡すと、その文面を下書きとして入力欄に入れた状態で聞く（自動送信はしない）
+function _coRequestRevision(i,draft){
   const c=S.book&&S.book.chapters&&S.book.chapters[i];
   if(!c){alert('章データが見つかりません。');return;}
   const prev=c.reviseNote||'';
-  const note=prompt('ライターに伝える内容を入力してください。\n（例：3つ目の見出しの説明が分かりにくいので、具体例を足してください）',prev);
+  const note=prompt('ライターに伝える内容を入力してください。\n（例：3つ目の見出しの説明が分かりにくいので、具体例を足してください）',draft||prev);
   if(note===null)return;
   const trimmed=(note||'').trim();
   if(!trimmed){alert('伝える内容を入力してください。');return;}
@@ -4081,6 +4175,7 @@ function renderCoInviteAdmin(){
         <span id="chPendingBadge_${i}"></span>
         ${hasBody?`<span style="font-size:11px;color:var(--sub);white-space:nowrap">${(c.body||'').length.toLocaleString()}文字</span>`:''}
         ${_chapImgBadge(c)}
+        ${_chapFlowBadge(c)}
         ${hasBody?`<button onclick="previewCoChapter(${i})" style="font-size:11px;background:var(--ok);color:#fff;border:none;padding:3px 10px;cursor:pointer;font-weight:700;flex-shrink:0">内容を確認</button>`:''}
         ${ch.length>1?`<button onclick="_coDelChapter(${i})" title="この章を削除" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:16px;line-height:1;padding:2px 4px;flex-shrink:0">×</button>`:''}
       </div>
