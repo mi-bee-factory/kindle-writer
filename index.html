@@ -7506,28 +7506,19 @@ function previewChapter(i){
 function previewTitlePage(){
   const fm=S.epubFront||{};
   const body=fm.titlePageBody||_fmAutoTp();
-  // 実際の書き出し（buildEpub の _parseTpBody）と同じ描き分けにする
-  const _tpFont="font-family:'Noto Sans JP','Hiragino Kaku Gothic Pro','Yu Gothic',sans-serif";
-  let tpN=0;
-  const bodyHtml=body.split(/\n/).map(l=>{
-    l=l.trim();if(!l)return'';
-    tpN++;
-    if(tpN===1)return`<h1 style="font-size:1.9em;font-weight:700;margin:0 0 .6em;line-height:1.5;${_tpFont}">${bodyFmt(esc(l))}</h1>`;
-    if(l.startsWith('■'))return`<h2 style="font-size:1.1em;font-weight:700;border-left:3px solid #333;padding-left:10px;text-align:left;margin:1.4em 0 .5em;${_tpFont}">${bodyFmt(esc(l.replace(/^■\s*/,'')))}</h2>`;
-    if(tpN===2)return`<p style="text-indent:0;font-size:1.05em;color:#444;margin:0 0 2.4em;line-height:1.7">${bodyFmt(esc(l))}</p>`;
-    return`<p style="text-indent:0;margin:.8em 0;line-height:1.8">${bodyFmt(esc(l))}</p>`;
-  }).filter(x=>x).join('');
+  // 実EPUBと同じ組み立て（_tpBodyHtml）を使う。ここで自前に書き直すと必ずずれる。
+  const bodyHtml=epubPreviewCss()
+    +`<div class="epubPrev" style="text-align:center;padding:0">${_tpBodyHtml(body,esc)}</div>`;
   _fmPreviewModal('表題紙プレビュー',bodyHtml,'center');
 }
 function previewColophon(){
   const fm=S.epubFront||{};
   const body=fm.colophonBody||_fmAutoCo();
-  const bodyHtml=body.split(/\n/).map(l=>{
-    l=l.trim();if(!l)return'';
-    if(l.startsWith('■'))return`<h2 style="font-size:1em;font-weight:700;border-left:3px solid #333;padding-left:10px;margin:1.4em 0 .5em;font-family:'Noto Sans JP','Hiragino Kaku Gothic Pro','Yu Gothic',sans-serif">${bodyFmt(esc(l.replace(/^■\s*/,'')))}</h2>`;
-    return`<p style="text-indent:0;margin:.5em 0;line-height:2.2;font-size:.9em">${bodyFmt(esc(l))}</p>`;
-  }).filter(x=>x).join('');
-  _fmPreviewModal('奥付プレビュー','<hr style="border:none;border-top:1px solid #aaa;margin:1em 0">'+bodyHtml,'left');
+  // 実EPUBと同じ組み立て（_coBodyHtml）を使う
+  const bodyHtml=epubPreviewCss()
+    +`<div class="epubPrev" style="font-size:.9em;line-height:2.2;padding:0">`
+    +`<hr style="border:none;border-top:1px solid #aaa;margin:1em 0">${_coBodyHtml(body,esc)}</div>`;
+  _fmPreviewModal('奥付プレビュー',bodyHtml,'left');
 }
 function _fmPreviewModal(pageLabel,bodyHtml,textAlign){
   const mid='fmPreviewModal';
