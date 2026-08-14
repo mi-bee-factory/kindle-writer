@@ -5924,7 +5924,7 @@ function _bodyLinesToHtml(raw,renderLine,opts){
     if(/^<h[1-6][\s>]/.test(html))kind='head';
     else if(/^<figure[\s>]/.test(html))kind='fig';
     else if(/^<p[^>]*>&nbsp;<\/p>$/.test(html))kind='sep';
-    items.push({html,kind,blankAfter:false,text:l});
+    items.push({html,kind,blankAfter:false,text:l,srcIdx:i});
   }
   const isP=k=>k==='p';
   // 段落に余白クラスを付ける（空の<p>は作らない。Kindleが空段落を削ることがあるため）
@@ -5956,7 +5956,12 @@ function _bodyLinesToHtml(raw,renderLine,opts){
     }
   }
   // 呼び出し元が件数を知りたいとき用（章一覧やレビュー画面で使う）
-  if(opts.stats){opts.stats.auto=autoMark.size;opts.stats.writer=mark.size-autoMark.size;}
+  // autoLines＝自動で余白を入れた段落が、原稿の何行目だったか（原稿に書き込むときに使う）
+  if(opts.stats){
+    opts.stats.auto=autoMark.size;
+    opts.stats.writer=mark.size-autoMark.size;
+    opts.stats.autoLines=[...autoMark].map(i=>items[i].srcIdx).sort((a,b)=>a-b);
+  }
   /* 「段落のはじまり」＝1行空けた直後の段落に pn を付ける。
      書き手の「ただの呼吸の改行」と「段落を変える改行」を区別するための印。
      字下げの設定が「1行空けた次だけ」のとき、この印の付いた段落だけを字下げする。 */
@@ -6134,17 +6139,74 @@ function showAutoGapReview(){
   </div>`;
   document.body.appendChild(m);
 }
+function _gapReviewChap(kind,idx){
+  return (kind==='special'?(S.book.specialChapters||[]):(S.book.chapters||[]))[idx];
+}
 function _gapReviewShow(kind,idx){
-  const c=(kind==='special'?(S.book.specialChapters||[]):(S.book.chapters||[]))[idx];
+  const c=_gapReviewChap(kind,idx);
   if(!c)return;
   const el=document.getElementById('gapReviewBody');if(!el)return;
+  const st={};
+  const html=_epubPreviewBodyHtml(c,{markAuto:true,stats:st});
   el.innerHTML=`<div style="padding:10px 14px">
     <button class="btn gray" style="font-size:12px;padding:4px 12px;margin-bottom:10px" onclick="showAutoGapReview()">← 章の一覧にもどる</button>
     <div style="font-size:13px;font-weight:700;margin-bottom:8px">${esc((c.title||'').replace(/^\*+$/,'').trim()||'この章')}</div>
     ${epubPreviewCss()}${KW_AUTOGAP_REVIEW_CSS}
-    <div class="epubPrev" style="background:#fff;border:1px solid var(--line-soft);padding:14px">${_epubPreviewBodyHtml(c,{markAuto:true})}</div>
+    <div class="epubPrev" style="background:#fff;border:1px solid var(--line-soft);padding:14px">${html}</div>
+    ${st.auto?`<div style="background:#fffbeb;padding:10px 12px;margin-top:10px;font-size:12px;line-height:1.8;color:#403129">
+      この${st.auto}か所は、書き出すときにだけ入る余白です。原稿そのものには入っていません。<br>
+      <b>この位置でよければ、下のボタンで原稿に書き込めます。</b>書き込むと自分で自由に動かせるようになります。
+      <div style="margin-top:8px">
+        <button class="btn ok" style="font-size:12px;padding:6px 14px" onclick="_gapApplyToBody('${kind}',${idx})">この${st.auto}か所を原稿に書き込む</button>
+      </div>
+    </div>`:''}
+    <div style="margin-top:12px">
+      <div style="font-size:12px;font-weight:700;margin-bottom:4px">この章の本文（ここで直せます）</div>
+      <div class="muted" style="font-size:11px;margin-bottom:6px;line-height:1.7">
+        ひと呼吸置きたいところで <b>Enterを2回</b> 押して1行空けてください。<br>
+        1行空けを1つでも入れると、この章では自動の余白は入らなくなります（ご自身の区切りが優先されます）。
+      </div>
+      <textarea id="gapEditTA" style="width:100%;min-height:180px;font-size:13px;line-height:1.9;box-sizing:border-box;padding:10px">${esc(c.body||'')}</textarea>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn ok" style="font-size:13px;padding:7px 18px" onclick="_gapEditSave('${kind}',${idx})">保存して見本を更新</button>
+        <button class="btn gray" style="font-size:13px;padding:7px 18px" onclick="_gapReviewShow('${kind}',${idx})">元にもどす</button>
+      </div>
+    </div>
   </div>`;
   el.scrollTop=0;
+}
+function _gapEditSave(kind,idx){
+  const c=_gapReviewChap(kind,idx);const ta=document.getElementById('gapEditTA');
+  if(!c||!ta)return;
+  if(ta.value!==(c.body||'')){
+    c.body=ta.value;
+    if(kind==='normal')_markChapterEdited(idx,['body']);
+    save();
+  }
+  _gapReviewShow(kind,idx);
+  if(!document.getElementById('compile').classList.contains('hide'))_typoLivePreview();
+}
+/* 自動で入った余白を、実際の本文に空行として書き込む。
+   書き込むと「人が入れた区切り」になるので、以後この章では自動処理が働かず、
+   みほさんが自由に足したり消したりできるようになる。 */
+function _gapApplyToBody(kind,idx){
+  const c=_gapReviewChap(kind,idx);if(!c)return;
+  const st={};
+  _epubPreviewBodyHtml(c,{stats:st});
+  const lines=(st.autoLines||[]);
+  if(!lines.length){alert('書き込む余白がありません。');return;}
+  if(!confirm(`自動で入っている${lines.length}か所の余白を、この章の本文に1行空けとして書き込みます。\n\n`
+    +'書き込むと、あとから自分で動かしたり消したりできるようになります。\n続けますか？'))return;
+  snapshotBook('自動の余白を原稿に書き込み');
+  const src=String(c.body||'').split(/\n/);
+  const set=new Set(lines);
+  const out=[];
+  src.forEach((l,i)=>{out.push(l);if(set.has(i))out.push('');});
+  c.body=out.join('\n');
+  if(kind==='normal')_markChapterEdited(idx,['body']);
+  save();
+  _gapReviewShow(kind,idx);
+  if(!document.getElementById('compile').classList.contains('hide'))renderCompile();
 }
 function _typoLivePreview(){
   const el=document.getElementById('typoPrev');if(!el)return;
