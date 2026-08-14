@@ -1014,6 +1014,9 @@ function _toastTabMismatch(){
   t.textContent='別のタブで別の本を開いています。この画面の変更はまだ保存されていません。このタブを再読み込みしてください。';
   document.body.appendChild(t);setTimeout(()=>t.remove(),8000);
 }
+// 直前にクラウドへ送った内容の指紋。同じなら送り直さない。
+let _sbLastSavedHash='';
+function _kwHash(s){let h=5381;for(let i=0;i<s.length;i++)h=((h*33)^s.charCodeAt(i))>>>0;return h+':'+s.length;}
 async function _sbSaveProjectData(){
   if(!_sbUser||(_sbRole!=='owner'&&_sbRole!=='admin'))return;
   const myName=S.author||_sbUser.user_metadata?.name||_sbUser.email||'';
@@ -1042,12 +1045,24 @@ async function _sbSaveProjectData(){
     coauthor:(S.coauthor!==false),soloChosen:!!S.soloChosen,
     updatedByName:myName,updatedByEmail:_sbUser.email||''
   };
-  await _sb.from('book_settings').upsert({id:userId,data:saveData,updated_at:new Date().toISOString()});
+  // 中身が前回と同じなら送らない。
+  // book_settings は1行に本まるごと（画像込み）が入るので、無変更の再送は数MBの無駄になる。
+  // archive（過去の本）はこの関数が書き換えないのでハッシュに含めない。
+  let h='';
+  try{h=_kwHash(JSON.stringify({
+    projectKey:saveData.projectKey,book:saveData.book,theme:saveData.theme,
+    reader:saveData.reader,goal:saveData.goal,people:saveData.people,
+    totalTarget:saveData.totalTarget,coauthor:saveData.coauthor,soloChosen:saveData.soloChosen
+  }));}catch(e){h='';}
+  if(h&&h===_sbLastSavedHash)return;
+  const {error}=await _sb.from('book_settings').upsert({id:userId,data:saveData,updated_at:new Date().toISOString()});
+  if(!error&&h)_sbLastSavedHash=h;
 }
 async function _sbLoadProjectData(targetId,opts){
   targetId=targetId||_activeTargetId();
   if(!targetId)return false;
   const switching=!!(opts&&opts.switching);
+  _sbLastSavedHash='';   // 読み直したので指紋を捨てる
   const {userId,key}=_splitTarget(targetId);
   const {data}=await _sb.from('book_settings').select('*').eq('id',userId).single();
   if(!data||!data.data)return false;
@@ -1141,6 +1156,7 @@ async function _sbActivateOwnProject(key){
   if(!_sbUser)return false;
   const uid=_sbUser.id;
   const {data:cur}=await _sb.from('book_settings').select('data,updated_at').eq('id',uid).single();
+  _sbLastSavedHash='';   // 別の本になるので指紋を捨てる
   const merged=_buildSwapData((cur&&cur.data)||{},(cur&&cur.updated_at),key);
   if(!merged)return true;   // すでにその本が開いている
   const {error}=await _sb.from('book_settings').upsert({id:uid,data:merged,updated_at:new Date().toISOString()});
@@ -1294,7 +1310,9 @@ function _sbScheduleProjectSync(){
   if(_sbRole!=='owner'&&_sbRole!=='admin')return;
   _sbProjectDirty=true;
   if(_sbProjectTimer)clearTimeout(_sbProjectTimer);
-  _sbProjectTimer=setTimeout(()=>{_sbProjectDirty=false;_sbSaveProjectData();},5000);
+  // 15秒。本1冊ぶんの画像を含む行を丸ごと送るので、5秒だと入力のたびに重い往復が起きる。
+  // 画面遷移時は _sbFlushPendingSaves() が走るので取りこぼさない。
+  _sbProjectTimer=setTimeout(()=>{_sbProjectDirty=false;_sbSaveProjectData();},15000);
 }
 // 今このユーザーがライターとして章を書いているか。
 // 管理者が過去に招待URLを開いた名残（S.coauthorChap）で member_chapters に書き込まないためのガード。
@@ -3790,7 +3808,7 @@ function _mwShowAdminEditDiff(idx){
       ${sameTitle?'':`<div style="font-size:12px;color:var(--sub);margin-top:6px">章タイトル：<s style="color:#aaa">${esc(local.title||'')}</s> → <b>${esc(cloudC.title||'')}</b></div>`}
     </div>
     <div style="overflow-y:auto;padding:20px;flex:1;font-size:14px;background:${sameBody?'#f5f5f5':'#fffef5'}">
-      ${sameBody?'<p style="color:var(--sub)">本文の内容は変わっていません（タイトルのみの変更、または表示上の差分はありません）。</p>':EPUB_PREVIEW_CSS+`<div class="epubPrev">${_epubPreviewBodyHtml(cloudC)}</div>`}
+      ${sameBody?'<p style="color:var(--sub)">本文の内容は変わっていません（タイトルのみの変更、または表示上の差分はありません）。</p>':epubPreviewCss()+`<div class="epubPrev">${_epubPreviewBodyHtml(cloudC)}</div>`}
     </div>
     <div style="padding:12px 20px;border-top:1px solid var(--line-soft);display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn ok" style="flex:1;font-size:13px;padding:10px" onclick="_mwAdoptAdminEdit(${idx})">この内容を自分の編集画面に取り込む</button>
@@ -4570,7 +4588,7 @@ function _previewSpecialChapter(i){
     </div>
     <div style="overflow-y:auto;padding:20px 24px;flex:1;font-size:14px">
       <div style="font-size:11px;color:var(--sub);background:#f5f5f3;padding:5px 10px;margin:-4px 0 14px;text-align:center">本になったときの見え方（EPUBと同じ表示）</div>
-      ${EPUB_PREVIEW_CSS}<div class="epubPrev">
+      ${epubPreviewCss()}<div class="epubPrev">
         <h1><span class="ch-ttl">${esc(c.title||_SPECIAL_LABELS[c.type]||'特別章')}</span></h1>
         ${_epubPreviewBodyHtml(c)}
       </div>
@@ -5110,7 +5128,7 @@ function _previewWholeBook(){
       <b style="font-size:15px">本になったときの見た目（画像込み・EPUBと同じ表示）</b>
       <button class="btn gray" style="font-size:13px" onclick="document.getElementById('${mid}').remove()">閉じる</button>
     </div>
-    <div style="overflow-y:auto;padding:20px 24px;flex:1">${EPUB_PREVIEW_CSS}${parts.join('')||'<p class="muted">本文が入った章がありません。</p>'}</div>
+    <div style="overflow-y:auto;padding:20px 24px;flex:1">${epubPreviewCss()}${parts.join('')||'<p class="muted">本文が入った章がありません。</p>'}</div>
   </div>`;
   document.body.appendChild(modal);
 }
@@ -5369,11 +5387,11 @@ function buildBookHTML(){
   }).join('\n');
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>${esc(S.book.title||'無題')}</title>
 <style>
-body{font-family:"Yu Mincho","Hiragino Mincho ProN",serif;line-height:1.85;}
-h1{page-break-before:always;font-size:1.6em;border-bottom:2px solid #333;padding-bottom:.2em;}
-h2{font-size:1.25em;margin-top:1.4em;}
-p{text-indent:1em;margin:.4em 0;}
-p.pb{margin-bottom:1.9em;}
+body{font-family:"Yu Mincho","Hiragino Mincho ProN",serif;line-height:${_typo().lineHeight};text-align:${_typo().justify?'justify':'left'};}
+h1{page-break-before:always;font-size:${(1.6*_typo().headScale).toFixed(2)}em;border-bottom:2px solid #333;padding-bottom:.2em;}
+h2{font-size:${(1.25*_typo().headScale).toFixed(2)}em;margin-top:1.4em;}
+p{text-indent:${_typo().indent}em;margin:${_typo().paraGap}em 0;}
+p.pb{margin-bottom:${_typo().pbGap}em;}
 .title-page{text-align:center;margin-top:30%;page-break-after:always;}
 .title-page h1{page-break-before:auto;border:none;font-size:2em;}
 .author{text-align:right;color:#555;text-indent:0;}
@@ -5891,22 +5909,91 @@ function _bodyLinesToHtml(raw,renderLine,opts){
 /* ---------- EPUBと同じ見た目のプレビュー ----------
    本文の変換規則（見出し・区切り・図・太字）はEPUB書き出しと揃えてある。
    CSSも buildEpub() の style.css と同じ値を使っているので、見え方が一致する。 */
-const EPUB_PREVIEW_CSS=`<style>
-.epubPrev{font-family:serif;line-height:1.9;text-align:justify;color:#1a1a2e}
-.epubPrev h1{font-size:1.5em;margin:1.4em 0 1.2em;font-weight:700;text-align:center;line-height:1.55}
-.epubPrev h1 .ch-no{display:block;font-size:.6em;font-weight:400;letter-spacing:.2em;color:#666;margin-bottom:.9em}
-.epubPrev h1 .ch-ttl{display:block}
-.epubPrev h1 .ch-sub{display:block;font-size:.62em;font-weight:400;color:#444;margin-top:.9em;line-height:1.7}
-.epubPrev .ch-author{text-indent:0;text-align:center;font-size:.85em;color:#555;margin:-.6em 0 2.4em}
-.epubPrev h2{font-size:1.1em;margin:1.8em 0 .5em;font-weight:700;border-left:3px solid #333;padding-left:.6em;text-indent:0;page-break-after:avoid;break-after:avoid-page}
-.epubPrev p{text-indent:1em;margin:.6em 0}
-.epubPrev p.pb{margin-bottom:1.9em}
-.epubPrev h1+p,.epubPrev h2+p{text-indent:0}
-.epubPrev img{max-width:100%;height:auto}
-.epubPrev figure{margin:1.2em 0;text-align:center;page-break-inside:avoid;break-inside:avoid-page;page-break-after:avoid;break-after:avoid-page}
-.epubPrev figcaption{font-size:.85em;color:#555;text-indent:0}
-.epubPrev .sep{margin:2.5em 0;text-indent:0}
-</style>`;
+/* ---------- 本文CSSの唯一の出どころ ----------
+   以前はプレビュー・実EPUB・Word書き出しの3か所が別々に同じCSSを持っていて、
+   すでに少しずつずれていた（QRコードの表示サイズがプレビューと実機で違った事故の温床）。
+   同じ数値から同じ文字列を組むことで、見本と書き出しが構造的にずれないようにする。
+   sel='' → 実EPUB（body に対して指定）／sel='.epubPrev ' → アプリ内プレビュー */
+const KW_TYPO_DEFAULT={indent:1,paraGap:0.6,pbGap:1.9,pageMargin:1,lineHeight:1.9,justify:true,headScale:1};
+function _typo(){return Object.assign({},KW_TYPO_DEFAULT,(S.book&&S.book.typo)||{});}
+function typoSet(k,v){
+  if(!S.book)S.book={};
+  if(!S.book.typo)S.book.typo={};
+  S.book.typo[k]=v;save();_typoLivePreview();
+}
+function typoReset(){if(S.book)S.book.typo=null;save();renderCompile();}
+function bookCss(sel){
+  sel=sel||'';
+  const t=_typo();
+  const R=(s,d)=>`${sel}${s}{${d}}`;
+  const align=t.justify?'justify':'left';
+  // プレビューには body が無いので、ページ余白は .epubPrev の padding として出す。
+  // この非対称をここに閉じ込めるのが要点（外でやると余白だけプレビューに反映されなくなる）。
+  const root=sel
+    ? `.epubPrev{font-family:serif;line-height:${t.lineHeight};text-align:${align};color:#1a1a2e;padding:${t.pageMargin}em}`
+    : `body{margin:${t.pageMargin}em;line-height:${t.lineHeight};text-align:${align};}`;
+  return [root,
+    R('h1',`font-size:${(1.5*t.headScale).toFixed(2)}em;margin:1.5em 0 1.3em;font-weight:700;text-align:center;line-height:1.55;`),
+    R('h1 .ch-no','display:block;font-size:.6em;font-weight:400;letter-spacing:.2em;color:#666;margin-bottom:.9em;'),
+    R('h1 .ch-ttl','display:block;'),
+    R('h1 .ch-sub','display:block;font-size:.62em;font-weight:400;color:#444;margin-top:.9em;line-height:1.7;'),
+    R('.ch-author','text-indent:0;text-align:center;font-size:.85em;color:#555;margin:-.6em 0 2.4em;'),
+    R('h2',`font-size:${(1.1*t.headScale).toFixed(2)}em;margin:1.8em 0 .5em;font-weight:700;border-left:3px solid #333;padding-left:.6em;text-indent:0;page-break-after:avoid;break-after:avoid-page;`),
+    R('p',`text-indent:${t.indent}em;margin:${t.paraGap}em 0;`),
+    R('p.pb',`margin-bottom:${t.pbGap}em;`),
+    `${sel}h1+p,${sel}h2+p{text-indent:0;}`,
+    R('strong,b','font-weight:700;'),
+    R('em,i','font-style:italic;'),
+    R('img','max-width:100%;height:auto;'),
+    R('figure','margin:1.2em 0;text-align:center;page-break-inside:avoid;break-inside:avoid-page;page-break-after:avoid;break-after:avoid-page;'),
+    R('figcaption','font-size:.85em;color:#555;text-indent:0;'),
+    R('.sep','margin:2.5em 0;text-indent:0;')
+  ].join('\n');
+}
+function epubPreviewCss(){return '<style>\n'+bookCss('.epubPrev ')+'\n</style>';}
+/* 体裁の設定パネル。
+   Kindleは読者側で文字サイズと書体を変えられるので、その2つは項目として出さない。
+   出すと「プレビューでは合っているのに実機で違う」を必ず作ってしまう。 */
+const KW_TYPO_ITEMS=[
+  {k:'indent',   label:'字下げ（段落の先頭）', opts:[[0,'なし'],[1,'1文字ぶん（標準）'],[2,'2文字ぶん']]},
+  {k:'paraGap',  label:'段落と段落の空き',     opts:[[0.3,'せまい'],[0.6,'標準'],[1,'ひろい']]},
+  {k:'pbGap',    label:'1行空けの余白の大きさ',opts:[[1.2,'ひかえめ'],[1.9,'標準'],[2.8,'たっぷり']]},
+  {k:'pageMargin',label:'ページの余白',        opts:[[0.5,'せまい'],[1,'標準'],[1.8,'ひろい']]},
+  {k:'lineHeight',label:'行の高さ',            opts:[[1.6,'つめる'],[1.9,'標準'],[2.2,'ゆったり']],note:'端末の行間設定が優先されることがあります'},
+  {k:'headScale',label:'見出しの大きさ',       opts:[[0.9,'小さめ'],[1,'標準'],[1.2,'大きめ']]}
+];
+function _typoPanelHtml(){
+  const t=_typo();
+  const rows=KW_TYPO_ITEMS.map(it=>`
+    <label style="display:flex;align-items:center;gap:8px;margin:6px 0;flex-wrap:wrap">
+      <span style="min-width:150px;font-size:13px">${it.label}</span>
+      <select onchange="typoSet('${it.k}',parseFloat(this.value))" style="padding:3px 8px;font-size:13px">
+        ${it.opts.map(([v,l])=>`<option value="${v}" ${Math.abs(t[it.k]-v)<1e-6?'selected':''}>${l}</option>`).join('')}
+      </select>
+      ${it.note?`<span class="muted" style="font-size:11px">${it.note}</span>`:''}
+    </label>`).join('');
+  return `<div class="small" style="background:var(--bg-alt);padding:12px 14px;line-height:1.8">
+    ${rows}
+    <label style="display:flex;align-items:center;gap:8px;margin:6px 0">
+      <input type="checkbox" ${t.justify?'checked':''} onchange="typoSet('justify',this.checked)">
+      <span style="font-size:13px">行の右端をそろえる（両端そろえ）</span>
+    </label>
+    <div class="muted" style="font-size:12px;margin-top:8px;line-height:1.7">
+      文字の大きさと書体は、読者が端末側で選ぶしくみのため、本から指定できません（Kindleの仕様です）。<br>
+      下の見本は、実際に書き出されるEPUBとまったく同じ仕組みで表示しています。
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn gray" style="font-size:12px;padding:5px 14px" onclick="typoReset()">初期設定に戻す</button>
+    </div>
+    <div id="typoPrev" style="margin-top:10px;background:#fff;border:1px solid var(--line-soft);max-height:280px;overflow-y:auto"></div>
+  </div>`;
+}
+function _typoLivePreview(){
+  const el=document.getElementById('typoPrev');if(!el)return;
+  const c=((S.book&&S.book.chapters)||[]).find(x=>(x&&(x.body||'').trim()))
+    ||{title:'見本の章',body:'これは見本の本文です。設定を変えると、ここの見え方がすぐに変わります。\n\n1行空けたところには、こんなふうに余白が入ります。'};
+  el.innerHTML=epubPreviewCss()+`<div class="epubPrev">${_epubPreviewBodyHtml(c)}</div>`;
+}
 // 画像の表示サイズ。ライター・管理者どちらの画面でも同じ選択肢を使う。
 const IMG_SIZE_META={l:{label:'大（画面いっぱい）',pct:100},m:{label:'中',pct:66},s:{label:'小',pct:33},qr:{label:'QRコード用（小さめ）',pct:20}};
 function _imgSizePct(im){return (IMG_SIZE_META[im&&im.size]||IMG_SIZE_META.l).pct;}
@@ -5974,7 +6061,7 @@ function _epubPreviewEdgeImageHtml(image){
 function _epubPreviewHtml(c,nIdx){
   c=c||{};
   const head=getChapH1Xml(c,(nIdx==null?1:nIdx),esc);
-  return EPUB_PREVIEW_CSS+`<div class="epubPrev">
+  return epubPreviewCss()+`<div class="epubPrev">
     ${_epubPreviewEdgeImageHtml(c.frontImage)}
     <h1>${head}</h1>
     ${(S.coauthor&&c.author)?`<p class="ch-author">著：${esc(c.author)}</p>`:''}
@@ -6041,16 +6128,8 @@ async function buildEpub(){
   // navli＝サイドバー用（章名のみ）、tocli＝本文内の目次ページ用（章名＋著者名）
   const spine=[],navli=[],tocli=[];let imgN=0;const imgNRef={get n(){return imgN;},set n(v){imgN=v;}};
   const _tocLi=(href,label,author)=>`<li><a href="${href}"><span class="toc-t">${label}</span>${author?`<span class="toc-a">${escXml(author)}</span>`:''}</a></li>`;
-  files.push({name:'OEBPS/style.css',bytes:sB('body{margin:1em;text-align:justify;}'
-    +'h1{font-size:1.5em;margin:1.6em 0 1.4em;font-weight:700;text-align:center;line-height:1.55;}'
-    +'h1 .ch-no{display:block;font-size:.6em;font-weight:400;letter-spacing:.2em;color:#666;margin-bottom:.9em;}'
-    +'h1 .ch-ttl{display:block;}'
-    +'h1 .ch-sub{display:block;font-size:.62em;font-weight:400;color:#444;margin-top:.9em;line-height:1.7;}'
-    +'.ch-author{text-indent:0;text-align:center;font-size:.85em;color:#555;margin:-.6em 0 2.4em;}'
-    +'h2{font-size:1.1em;margin:1.8em 0 .5em;font-weight:700;border-left:3px solid #333;padding-left:0.6em;page-break-after:avoid;break-after:avoid-page;}'
-    +'p{text-indent:1em;margin:.6em 0;}h1+p,h2+p{text-indent:0;}p.pb{margin-bottom:1.9em;}'
-    +'strong,b{font-weight:700;}em,i{font-style:italic;}img{max-width:100%;height:auto;}'
-    +'figure{margin:1.2em 0;text-align:center;page-break-inside:avoid;break-inside:avoid-page;page-break-after:avoid;break-after:avoid-page;}figcaption{font-size:.85em;color:#555;text-indent:0;}')});
+  // プレビューと同じ bookCss() から作る。ここを直書きに戻さないこと。
+  files.push({name:'OEBPS/style.css',bytes:sB(bookCss(''))});
   let coverSpine='',coverMeta='';
   if(S.book.cover&&S.book.cover.data){
     const cm=S.book.cover.mime||'image/jpeg',cext=(cm==='image/png')?'png':'jpg';
@@ -6342,6 +6421,9 @@ function renderCompile(){
       </div>
     </div>
 
+    <h3 style="margin:18px 0 6px;font-size:15px">本の見た目（体裁）</h3>
+    ${_typoPanelHtml()}
+
     <h3 style="margin:18px 0 6px;font-size:15px">出版前チェックリスト（規約）</h3>
     <div class="small">
       <label style="display:block"><input type="checkbox"> 特典条件はLINE登録のみ（レビュー誘導なし）</label>
@@ -6363,9 +6445,11 @@ function renderCompile(){
       ${total===0?`<button class="btn gray" onclick="exportPlan()" style="display:inline-flex;align-items:center;gap:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><rect x="3" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/><rect x="14" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/><rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/><rect x="14" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/></svg>章割り設計図（メンバー配布用）</button>`:''}
       <button class="btn gray" onclick="exportManuscript()">テキスト(.txt)</button>
       <button class="btn gray" onclick="exportMeta()">メタデータ＋チェックリスト</button>
+      <button class="btn gray" onclick="dl(_kwSafeName(S.book.title)+'_原稿.txt',exportBookAsSplitText(),'text/plain')" title="メモ帳などで直したあと「貼るだけ電子書籍化」に貼れば戻せます">原稿だけテキストで書き出す</button>
     </div>
     <div class="navrow"><button class="btn gray" onclick="goHome()">ホームに戻る</button><span></span></div>
    </div>`;
+  _typoLivePreview();
 }
 
 /* ---------- ChatGPT用テンプレ（話す・まとめるはChatGPTに任せる） ---------- */
