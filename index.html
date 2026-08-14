@@ -5971,7 +5971,7 @@ function _headingText(l){
 const PARA_END_RE=/[。！？」』）\)!?…—]$/;
 // 既定はオン。オフにし忘れるより「入れておいて、おかしい所を直す」ほうが実用的なため。
 function _autoParaGapOn(){return !(S.book&&S.book.autoParaGap===false);}
-function _autoParaGapEvery(){const n=parseInt((S.book&&S.book.autoParaGapEvery)||5,10);return (n>=3&&n<=8)?n:5;}
+function _autoParaGapEvery(){const n=parseInt((S.book&&S.book.autoParaGapEvery)||3,10);return (n>=2&&n<=8)?n:3;}
 // renderLine(line, index) は 1行ぶんのHTMLを返す（空文字/null なら出力しない）
 function _bodyLinesToHtml(raw,renderLine,opts){
   opts=opts||{};
@@ -6700,7 +6700,8 @@ function renderCompile(){
       <div style="margin-top:8px;padding-left:24px;${_autoParaGapOn()?'':'display:none'}">
         <label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <select onchange="S.book.autoParaGapEvery=parseInt(this.value,10);save();renderCompile()" style="padding:3px 8px;font-size:13px">
-            ${[4,5,6].map(n=>`<option value="${n}" ${(_autoParaGapEvery()===n)?'selected':''}>${n}段落ごと</option>`).join('')}
+            ${[[2,'2段落ごと（かなり空ける）'],[3,'3段落ごと（参考書籍に近い）'],[4,'4段落ごと'],[5,'5段落ごと'],[6,'6段落ごと（控えめ）']]
+              .map(([n,l])=>`<option value="${n}" ${(_autoParaGapEvery()===n)?'selected':''}>${l}</option>`).join('')}
           </select>
           <span class="muted" style="font-size:12px">余白は必ず「。」で終わる段落の直後に入ります（文の途中では切りません）</span>
         </label>
