@@ -5979,25 +5979,27 @@ function _bodyLinesToHtml(raw,renderLine,opts){
   const items=[];
   for(let i=0;i<src.length;i++){
     const l=src[i].trim();
-    if(!l){ if(items.length)items[items.length-1].blankAfter=true; continue; }
+    // 空行の「数」も覚えておく。1行空け＝ひと呼吸、2行以上＝大きな区切り、と強弱を付けるため。
+    if(!l){ if(items.length){const p=items[items.length-1];p.blankAfter=true;p.blankCount=(p.blankCount||0)+1;} continue; }
     const html=renderLine(l,i);
     if(html===null||html===undefined||html==='')continue;
     let kind='p';
     if(/^<h[1-6][\s>]/.test(html))kind='head';
     else if(/^<figure[\s>]/.test(html))kind='fig';
     else if(/^<p[^>]*>&nbsp;<\/p>$/.test(html))kind='sep';
-    items.push({html,kind,blankAfter:false,text:l,srcIdx:i});
+    items.push({html,kind,blankAfter:false,blankCount:0,text:l,srcIdx:i});
   }
   const isP=k=>k==='p';
   // 段落に余白クラスを付ける（空の<p>は作らない。Kindleが空段落を削ることがあるため）
-  const mark=new Set();
+  // mark＝ひと呼吸（1行空け）／markBig＝大きな区切り（2行以上空け）
+  const mark=new Set(),markBig=new Set();
   for(let i=0;i<items.length;i++){
     if(!items[i].blankAfter)continue;
     const nx=items[i+1];
     // 見出し・図・区切りの直前直後は元々間隔があるので二重にしない
     if(!isP(items[i].kind))continue;
     if(!nx||!isP(nx.kind))continue;
-    mark.add(i);
+    if((items[i].blankCount||1)>=2)markBig.add(i);else mark.add(i);
   }
   // 空行が一つも無い章にだけ、文の切れ目（句点）で自動的に余白を入れる。
   // 書き手が区切りを設計している章では何もしない。
@@ -6027,7 +6029,7 @@ function _bodyLinesToHtml(raw,renderLine,opts){
   // autoLines＝自動で余白を入れた段落が、原稿の何行目だったか（原稿に書き込むときに使う）
   if(opts.stats){
     opts.stats.auto=autoMark.size;
-    opts.stats.writer=mark.size-autoMark.size;
+    opts.stats.writer=(mark.size-autoMark.size)+markBig.size;
     opts.stats.autoLines=[...autoMark].map(i=>items[i].srcIdx).sort((a,b)=>a-b);
   }
   /* 「段落のはじまり」＝1行空けた直後の段落に pn を付ける。
@@ -6048,6 +6050,7 @@ function _bodyLinesToHtml(raw,renderLine,opts){
   return items.map((it,i)=>{
     const cls=[];
     if(mark.has(i))cls.push('pb');
+    if(markBig.has(i))cls.push('pbb');
     if(newPara.has(i))cls.push('pn');
     // markAuto は確認画面専用の印。実際のEPUBには付けない（本番とプレビューをずらさないため）
     if(opts.markAuto&&autoMark.has(i))cls.push('pa');
@@ -6066,7 +6069,7 @@ function _bodyLinesToHtml(raw,renderLine,opts){
    このアプリの原稿は1文＝1行で書かれることが多く、全行を字下げすると
    「ひと呼吸の改行」にも1文字ぶんの空きが入って階段状に見えてしまう。
    段落を変えたところ（1行空けた次）だけ字下げしたい場合は indentMode:'para'。 */
-const KW_TYPO_DEFAULT={indentMode:'none',indent:1,paraGap:0.6,pbGap:1.9,pageMargin:1,lineHeight:1.9,justify:true,headScale:1};
+const KW_TYPO_DEFAULT={indentMode:'none',indent:1,paraGap:0.6,pbGap:2.6,pageMargin:1,lineHeight:1.9,justify:true,headScale:1};
 function _typo(){return Object.assign({},KW_TYPO_DEFAULT,(S.book&&S.book.typo)||{});}
 function typoSet(k,v){
   if(!S.book)S.book={};
@@ -6095,6 +6098,8 @@ function bookCss(sel){
     R('p',`text-indent:${t.indentMode==='all'?t.indent:0}em;margin:${t.paraGap}em 0;`),
     (t.indentMode==='para'?R('p.pn',`text-indent:${t.indent}em;`):''),
     R('p.pb',`margin-bottom:${t.pbGap}em;`),
+    // 原稿で2行以上空けたところは、もう一段大きく空ける（章の中の大きな区切り）
+    R('p.pbb',`margin-bottom:${(t.pbGap*2).toFixed(2)}em;`),
     `${sel}h1+p,${sel}h2+p{text-indent:0;}`,
     R('strong,b','font-weight:700;'),
     R('em,i','font-style:italic;'),
@@ -6110,7 +6115,7 @@ function epubPreviewCss(){return '<style>\n'+bookCss('.epubPrev ')+'\n</style>';
    出すと「プレビューでは合っているのに実機で違う」を必ず作ってしまう。 */
 const KW_TYPO_ITEMS=[
   {k:'paraGap',  label:'段落と段落の空き',     opts:[[0.3,'せまい'],[0.6,'標準'],[1,'ひろい']]},
-  {k:'pbGap',    label:'1行空けの余白の大きさ',opts:[[1.2,'ひかえめ'],[1.9,'標準'],[2.8,'たっぷり']]},
+  {k:'pbGap',    label:'1行空けの余白の大きさ',opts:[[1.4,'ひかえめ'],[2.0,'標準'],[2.6,'ゆったり'],[3.4,'たっぷり']],note:'2行以上空けたところは、この倍の余白になります'},
   {k:'pageMargin',label:'ページの余白',        opts:[[0.5,'せまい'],[1,'標準'],[1.8,'ひろい']]},
   {k:'lineHeight',label:'行の高さ',            opts:[[1.6,'つめる'],[1.9,'標準'],[2.2,'ゆったり']],note:'端末の行間設定が優先されることがあります'},
   {k:'headScale',label:'見出しの大きさ',       opts:[[0.9,'小さめ'],[1,'標準'],[1.2,'大きめ']]}
