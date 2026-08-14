@@ -6257,7 +6257,12 @@ function _typoPanelHtml(){
       文字の大きさと書体は、読者が端末側で選ぶしくみのため、本から指定できません（Kindleの仕様です）。<br>
       下の見本は、実際に書き出されるEPUBとまったく同じ仕組みで表示しています。
     </div>
-    <div style="display:flex;gap:8px;margin-top:8px">
+    <div class="muted" style="font-size:12px;margin-top:8px;line-height:1.7;padding-top:8px;border-top:1px dashed var(--line-soft)">
+      ここでの設定は<b>本全体に効きます</b>。書き手ごとの空き方の差は自動でならしていますが、
+      <b>章ごとに変えたいとき</b>は下のボタンから。
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+      <button class="btn ok" style="font-size:12px;padding:5px 14px" onclick="showAutoGapReview()">章ごとの余白を確認・調整する →</button>
       <button class="btn gray" style="font-size:12px;padding:5px 14px" onclick="typoReset()">初期設定に戻す</button>
     </div>
     <div id="typoPrev" style="margin-top:10px;background:#fff;border:1px solid var(--line-soft);max-height:280px;overflow-y:auto"></div>
@@ -6316,7 +6321,7 @@ function showAutoGapReview(){
   m.innerHTML=`<div style="background:#fff;max-width:640px;width:100%;max-height:88vh;display:flex;flex-direction:column">
     <div style="padding:16px 20px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;gap:10px">
       <div>
-        <div style="font-size:16px;font-weight:700">自動で入れた余白の確認</div>
+        <div style="font-size:16px;font-weight:700">章ごとの余白と、自動で入った場所</div>
         <div style="font-size:12px;color:var(--sub);margin-top:2px">この本では <b style="color:#b45309">${totalAuto}か所</b> に自動で余白が入っています</div>
       </div>
       <button onclick="document.getElementById('${mid}').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--sub);line-height:1">×</button>
@@ -6840,7 +6845,7 @@ function renderCompile(){
           <span class="muted" style="font-size:12px">余白は必ず「。」で終わる段落の直後に入ります（文の途中では切りません）</span>
         </label>
         <div style="margin-top:8px">
-          <button class="btn ok" style="font-size:12px;padding:6px 16px" onclick="showAutoGapReview()">自動で入った場所を確認する →</button>
+          <button class="btn ok" style="font-size:12px;padding:6px 16px" onclick="showAutoGapReview()">章ごとの余白を確認・調整する →</button>
           <span class="muted" style="font-size:11px;margin-left:6px">${(()=>{try{const n=_autoGapChapterStats().reduce((s,r)=>s+r.auto,0);return n?`この本では ${n}か所`:'今のところ0か所';}catch(e){return '';}})()}</span>
         </div>
       </div>
