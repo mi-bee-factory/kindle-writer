@@ -24,10 +24,14 @@
     position:sticky;top:0;z-index:10;border-bottom:1px solid var(--line-soft)}
   header h1{font-size:17px;margin:0;font-weight:700;letter-spacing:-0.02em;color:var(--ink)}
   header .tag{font-size:12px;background:var(--bg-alt);color:var(--sub);padding:3px 12px;font-weight:500}
-  #appHeader .hdr-back{background:none;border:none;cursor:pointer;font-size:14px;font-weight:600;color:var(--ink);padding:0;display:flex;align-items:center;gap:5px;line-height:1}
+  #appHeader .hdr-back{background:none;border:none;cursor:pointer;font-size:14px;font-weight:600;color:var(--ink);padding:0;display:flex;align-items:center;gap:5px;line-height:1;white-space:nowrap;flex-shrink:0}
   #appHeader .hdr-back:hover{color:var(--brand-dim)}
-  #appHeader .hdr-sep{color:var(--line-soft);font-size:18px;line-height:1;margin:0 2px}
-  #appHeader .hdr-page{font-size:15px;font-weight:700;color:var(--ink);letter-spacing:-0.02em}
+  #appHeader .hdr-sep{color:var(--line-soft);font-size:18px;line-height:1;margin:0 2px;flex-shrink:0}
+  /* 画面名は縮む側。狭い端末で1文字ずつ折り返さないよう省略表示にする */
+  #appHeader .hdr-page{font-size:15px;font-weight:700;color:var(--ink);letter-spacing:-0.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  @media(max-width:520px){
+    #appHeader .hdr-sep,#appHeader .hdr-page{display:none}
+  }
   .wrap{max-width:860px;margin:0 auto;padding:24px 16px 80px;display:flex;flex-direction:column;gap:12px}
   .card{background:var(--card);border:none;padding:22px 24px;box-shadow:0 1px 4px rgba(0,0,0,.08);transition:box-shadow .18s ease}
   .card:hover{box-shadow:0 3px 14px rgba(0,0,0,.12)}
@@ -584,7 +588,10 @@ function _authOnLogin(){
 }
 function _hideAuthOverlay(){const el=document.getElementById('authOverlay');if(el)el.classList.add('hidden');}
 function _syncCoauthorForRole(){
-  if((_sbRole==='owner'||_sbRole==='admin')&&!S.memberMode){S.coauthor=true;}
+  // オーナー／プロデューサーは既定で共著モード。
+  // ただし本人が明示的に単独出版を選んだ場合（S.soloChosen）は、その意思を尊重する。
+  // 以前はここで無条件に true にしていたため、リロードのたびに単独モードが解除されていた。
+  if((_sbRole==='owner'||_sbRole==='admin')&&!S.memberMode&&!S.soloChosen){S.coauthor=true;}
 }
 async function _authLoadProfile(){
   const metaName=_sbUser.user_metadata?.name||'';
@@ -800,6 +807,30 @@ async function _getOwnerId(){
   return data?.id||null;
 }
 function _activeTargetId(){return S._activeTargetId||(_sbUser&&_sbUser.id);}
+/* ---------- プロジェクトの識別 ----------
+   以前は「プロジェクト＝プロデューサーのユーザーID」だったため、同じ人が2冊目の共著を
+   始めると1冊目と同じ枠を指してしまい、同じライターが同じ章番号を書いた瞬間に
+   1冊目の原稿を上書きしていた（member_chapters の一意制約が book_id,user_id,chapter_index のため）。
+   そこで本ごとに projectKey を持たせ、そこから book_id と操作対象IDを導出する。
+   キーが無い＝これまでの本＝従来と完全に同じ値になる（後方互換の要）。 */
+const PROJ_LEGACY='legacy';
+function _projectKey(){return (S.book&&S.book.projectKey)||PROJ_LEGACY;}
+function _newProjectKey(){return 'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
+function _bookIdForKey(k){return (!k||k===PROJ_LEGACY)?BOOK_ID:('kw-'+k);}
+function _projectBookId(){return _bookIdForKey(_projectKey());}
+// 操作対象ID：これまでの本はユーザーIDそのまま、新しい本は "userId#projectKey"
+function _splitTarget(id){
+  const s=String(id||'');const i=s.indexOf('#');
+  return i<0?{userId:s,key:PROJ_LEGACY}:{userId:s.slice(0,i),key:s.slice(i+1)};
+}
+function _makeTarget(uid,key){return (!key||key===PROJ_LEGACY)?String(uid||''):uid+'#'+key;}
+// ライターは招待URLに書かれた book_id を使う。
+// 手元の S.book は別プロジェクトの残骸かもしれないので当てにしない。
+function _chapterBookId(){
+  const inv=S._inviteData||{};
+  if(S.memberMode)return inv.bookId||BOOK_ID;
+  return _projectBookId();
+}
 /* ---------- 章データのマージ（新しい方を採用） ---------- */
 // 中身のある章が1つでもあるか。空データでクラウドを潰さないためのガードに使う。
 function _bookHasContent(book){
@@ -920,7 +951,7 @@ async function _sbSaveProjectData(){
     book:S.book||{},
     theme:S.theme||'',reader:S.reader||'',goal:S.goal||'',
     people:S.people||5,totalTarget:S.totalTarget||25000,
-    coauthor:true,
+    coauthor:(S.coauthor!==false),soloChosen:!!S.soloChosen,
     updatedByName:myName,updatedByEmail:_sbUser.email||''
   };
   await _sb.from('book_settings').upsert({id:targetId,data:saveData,updated_at:new Date().toISOString()});
@@ -967,7 +998,8 @@ async function _sbLoadProjectData(targetId,opts){
   if(d.goal)S.goal=d.goal;
   if(d.people)S.people=d.people;
   if(d.totalTarget)S.totalTarget=d.totalTarget;
-  S.coauthor=true;S.memberMode=false;
+  // 単独出版として保存された本は単独のまま開く（以前は無条件に共著へ戻していた）
+  S.coauthor=(d.coauthor!==false);S.soloChosen=!!d.soloChosen;S.memberMode=false;
   S.coauthorChap=null; // 管理モードに入るので、ライターとしての担当章は解除する
   S._activeTargetId=targetId;
   S._lastUpdatedByName=d.updatedByName||'';
@@ -1405,11 +1437,20 @@ const S = {
   currentChap:null,
   lastScreen:'', lastScreenTime:0, lastScreenLabel:''
 };
+// S を初期状態へ戻すための雛形。プロジェクト切替時に「キーを全部消して終わり」にすると
+// S.book / S.people / S.epubFront が undefined になり buildEpub・mergeBook が落ちるため、
+// 必ずこの雛形から作り直す。
+const S_DEFAULTS=JSON.parse(JSON.stringify(S));
+S_DEFAULTS.epubFront={};
+function _resetSToDefaults(){
+  for(const k of Object.keys(S))delete S[k];
+  Object.assign(S,JSON.parse(JSON.stringify(S_DEFAULTS)));
+}
 function chapterTarget(){return Math.max(500,Math.round((S.totalTarget||25000)/(S.people||5)));}
 function updTarget(){const el=document.getElementById('targetHint');if(el)el.innerHTML=
   `1章あたりの目標：<b>約 ${chapterTarget().toLocaleString()} 字</b>（小見出し3〜5個）。Kindleのビジネス書は全体2万〜2.5万字が標準です。`;}
-function setMode(co){S.coauthor=!!co;if(!co&&!(S.people>=1))S.people=5;save();renderModeUI();updTarget();renderHomeBookCard();}
-function setModeAdmin(){S.coauthor=true;if((S.people||1)<2)S.people=5;save();renderModeUI();renderHomeBookCard();startAdmin();}
+function setMode(co){S.coauthor=!!co;S.soloChosen=!co;if(!co&&!(S.people>=1))S.people=5;save();renderModeUI();updTarget();renderHomeBookCard();}
+function setModeAdmin(){S.coauthor=true;S.soloChosen=false;if((S.people||1)<2)S.people=5;save();renderModeUI();renderHomeBookCard();startAdmin();}
 function setCount(n){S.people=Math.max(1,n);save();renderModeUI();updTarget();}
 function renderModeUI(){
   const co=!!S.coauthor;
@@ -1509,6 +1550,26 @@ function bar(cur,target){const p=Math.min(100,Math.round(cur/target*100));
   return `<div style="background:rgba(0,0,0,.13);height:14px;overflow:hidden"><div style="width:${p}%;height:100%;background:${p>=100?'var(--ok)':'var(--brand)'};transition:.3s"></div></div>
   <div class="small muted" style="margin-top:4px">${cur.toLocaleString()} / ${target.toLocaleString()} 字（${p}%）</div>`;}
 /* ===== プロジェクト管理 ===== */
+// 「本1冊ぶん」の状態だけを初期化する（アカウント単位の設定は残す）。
+// 新しい本を始めるときに、前の本の内容が混ざらないようにするためのもの。
+// 特に S.book.uuid（使い回すとKDPが同じ本とみなす）と
+// S.epubFront（表題紙・奥付は一度作られると再生成されない）は必ず消すこと。
+function _resetProjectScopedState(){
+  S.book={chapters:[],title:'',subtitle:'',desc:'',keywords:'',cats:'',manuscript:''};
+  S.epubFront={};
+  S.people=5;S.totalTarget=25000;
+  S.theme='';S.reader='';S.goal='';S.type='';
+  S.uploadText='';S.uploadChapters=[];S.uploadTitle='';S.uploadAuthor='';
+  S.checklist={};S.memos={};S.outline=['','',''];
+  S.planAnswers={};S.planStep=0;
+  S.talk={};S.deep={};S.talkStep=0;
+  S.tmplPaste='';S.tmplResult='';
+  S.body='';S.edited='';S.chapTitle='';
+  S.currentChap=null;S.coauthorChap=null;S._fetchBackup=null;S._uploadSuccess=0;
+  S.lastScreen='';S.lastScreenTime=0;S.lastScreenLabel='';
+  S._lastUpdatedByName='';S._lastUpdatedAt='';
+  // 残すもの：S.author / S.apiKey / S.memberName（アカウント単位の設定のため）
+}
 function _pmKey(id){return 'kdpwriter_p'+id;}
 function _pmMeta(){
   try{const j=localStorage.getItem('kdpwriter_meta');if(j)return JSON.parse(j);}catch(e){}
@@ -1523,15 +1584,16 @@ function _pmMigrate(){
 }
 function pmCurrentId(){return _pmMeta().current;}
 function pmProjects(){return _pmMeta().projects;}
-function pmNewProject(name){
+function pmNewProject(name,opts){
   const m=_pmMeta();
   const id=m.nextId||1;
   m.projects.push({id,name:name||'プロジェクト'+(m.projects.length+1),created:new Date().toLocaleDateString('ja-JP')});
   m.nextId=(id+1);
   m.current=id;
   _pmSaveMeta(m);
-  // S をリセット
-  for(const k of Object.keys(S))delete S[k];
+  // S をリセット（既定値を入れ直さないと S.book 等が undefined になって書き出しが落ちる）
+  // keepState: クラウド側の新規プロジェクト作成から呼ばれた場合。既に状態を整えてあるので触らない。
+  if(!(opts&&opts.keepState)){_resetSToDefaults();_resetProjectScopedState();}
   _syncCoauthorForRole();save();
   renderProjectSwitcher();
   renderModeUI();renderHomeBookCard();
@@ -1539,7 +1601,7 @@ function pmNewProject(name){
 function pmSwitch(id){
   save(); // 現在のプロジェクトを保存してから切り替え
   const m=_pmMeta();m.current=id;_pmSaveMeta(m);
-  for(const k of Object.keys(S))delete S[k];
+  _resetSToDefaults();
   const r=localStorage.getItem(_pmKey(id));if(r){try{Object.assign(S,JSON.parse(r));}catch(e){}}
   _syncCoauthorForRole();
   const set=(id2,v)=>{const e=document.getElementById(id2);if(e)e.value=v;};
@@ -1568,7 +1630,7 @@ function _pmBookTitle(id){
 function pmDelete(id){
   const m=_pmMeta();
   if(m.projects.length<=1){alert('プロジェクトが1つしかないため削除できません。');return;}
-  if(!confirm('このプロジェクトを削除しますか？元に戻せません。'))return;
+  if(!confirm('このプロジェクトをこの端末の一覧から削除しますか？元に戻せません。\n\n※クラウドに保存された本は消えません。この端末の表示から消えるだけです。'))return;
   try{localStorage.removeItem(_pmKey(id));}catch(e){}
   m.projects=m.projects.filter(p=>p.id!==id);
   if(m.current===id)m.current=m.projects[0].id;
@@ -1674,8 +1736,53 @@ function startNew(){S.mode='new';S.step=1;show();}
 function startPaste(){S.mode='paste';S.step=5;show();}
 
 const PAGE_NAMES={roadmap:'STEP 0 · 出版の全体像',guide:'出版の流れ',checklist:'進捗チェックリスト',talk:'ChatGPTで下書き',tmpl:'テンプレート',convert:'Word変換',compile:'1冊にまとめる',upload:'アップロード',admin:'管理・設定',plan:'本の構成を考える',wizard:'章を書く',chapters:'章の確認・編集',appGuide:'使い方ガイド'};
-function updateHeader(name){const nav=document.getElementById('hdrNav');if(!nav)return;if(name==='home'){nav.innerHTML='<h1>Kindle出版サポート</h1><span class="tag">β版</span>';}else{const label=PAGE_NAMES[name]||'';nav.innerHTML=`<button class="hdr-back" onclick="goHome()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>ホームに戻る</button><span class="hdr-sep">|</span><span class="hdr-page">${label}</span>`;}}
-function screen(name,noHistory){
+/* ---------- 画面の戻り先スタック ----------
+   これまでヘッダーには「ホームに戻る」しか無く、一つ前に戻るにはブラウザの戻るボタンしか
+   手段が無かった。screen() は同じ画面の再描画でも履歴を積むため history.back() は当てにできない。
+   そこで「直前と違う画面のときだけ積む」自前のスタックを持つ。 */
+let _navStack=[],_curScreen='home';
+// 戻り先の画面を描き直すための対応表。start*() を呼ぶと screen() が再度積んでしまうので、
+// 描画関数だけを呼ぶ。
+function _afterScreen(name){
+  try{
+    if(name==='home'){renderHomeBookCard&&renderHomeBookCard();renderResumeCard&&renderResumeCard();}
+    else if(name==='admin')renderAdmin&&renderAdmin();
+    else if(name==='compile')renderCompile&&renderCompile();
+    else if(name==='chapters')renderChaptersPage&&renderChaptersPage();
+    else if(name==='upload')renderUpload&&renderUpload();
+    else if(name==='convert')renderConvert&&renderConvert();
+    else if(name==='tmpl')renderTemplate&&renderTemplate();
+    else if(name==='talk')renderTalk&&renderTalk();
+    else if(name==='plan')renderPlan&&renderPlan();
+    else if(name==='roadmap')renderRoadmap&&renderRoadmap();
+    else if(name==='guide')renderGuide&&renderGuide();
+    else if(name==='checklist')renderChecklist&&renderChecklist();
+    else if(name==='appGuide')renderAppGuide&&renderAppGuide();
+    else if(name==='wizard'){renderSteps&&renderSteps();renderStep&&renderStep();}
+  }catch(e){}
+}
+function navBack(){
+  const prev=_navStack.pop();
+  if(!prev){goHome();return;}
+  screen(prev,false,true);
+  _afterScreen(prev);
+  window.scrollTo(0,0);
+}
+function updateHeader(name){
+  const nav=document.getElementById('hdrNav');if(!nav)return;
+  if(name==='home'){nav.innerHTML='<h1>Kindle出版サポート</h1><span class="tag">β版</span>';return;}
+  const label=PAGE_NAMES[name]||'';
+  const backSvg='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const homeSvg='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M3 10.5L12 3l9 7.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.5 9.5V20h13V9.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const back=_navStack.length?`<button class="hdr-back" onclick="navBack()">${backSvg}戻る</button>`:'';
+  nav.innerHTML=`${back}<button class="hdr-back" onclick="goHome()">${homeSvg}ホーム</button><span class="hdr-sep">|</span><span class="hdr-page">${label}</span>`;
+}
+function screen(name,noHistory,fromBack){
+  if(!fromBack&&_curScreen&&_curScreen!==name){
+    _navStack.push(_curScreen);
+    if(_navStack.length>30)_navStack.shift();
+  }
+  _curScreen=name;
   if(name!=='home'){S.lastScreen=name;S.lastScreenTime=Date.now();S.lastScreenLabel=PAGE_NAMES[name]||name;save();}
   ['home','talk','tmpl','convert','compile','wizard','guide','checklist','admin','roadmap','plan','upload','chapters','appGuide'].forEach(s=>document.getElementById(s).classList.toggle('hide',s!==name));
   updateHeader(name);
@@ -1705,7 +1812,11 @@ window.onpopstate=function(e){
     try{if(entry&&entry.close)entry.close();}catch(err){}
     return;
   }
-  const s=(e.state&&e.state.screen)||'home';screen(s,true);
+  // ブラウザの戻るで画面が変わったときも、自前のスタックを1つ減らして整合を保つ
+  const s=(e.state&&e.state.screen)||'home';
+  if(_navStack.length&&_navStack[_navStack.length-1]===s)_navStack.pop();
+  screen(s,true,true);
+  _afterScreen(s);
 };
 (function(){try{history.replaceState({screen:'home'},'','');}catch(e){}})();
 function show(){
@@ -2114,6 +2225,7 @@ function _renderMemberNoAccess(){
   if(fb)fb.style.display='block';
 }
 function goHome(){
+  _navStack=[]; // ホームは出発点。ここに戻ったら「一つ前」の履歴は畳む
   _stopPendingPoll&&_stopPendingPoll(); // ダッシュボードを離れるので新着の定期確認を止める
   // 招待経由のライターは、プロデューサー向けHomeを見せず担当章ウェルカム画面へ戻す
   if(_sbRole==='member'&&S.memberMode&&S._inviteData&&S._inviteData.v===1){
@@ -4026,13 +4138,6 @@ function renderCoInviteAdmin(){
           ${S._fetchBackup?`<button onclick="_undoFetchChapters()" class="btn gray" style="font-size:12px;padding:6px 16px;margin-left:8px">↩ 直前の取り込みを元に戻す</button>`:''}
         </div>
       </div>
-      ${received>0?`<div style="margin-top:4px;padding:14px 16px;background:var(--ok-soft)">
-        <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--ok)">受取済：${received} / ${ch.length}章</div>
-        <button class="btn ok" onclick="startCompile()" style="display:inline-flex;align-items:center;gap:6px">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M4 19.5A2.5 2.5 0 016.5 17H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
-          全章を確認してEPUBに書き出す →
-        </button>
-      </div>`:''}
     </div>
     <div style="margin-top:28px">
       <div style="font-size:14px;font-weight:700;color:var(--ink);padding-bottom:10px;border-bottom:2px solid var(--brand);margin-bottom:18px;display:flex;align-items:baseline;gap:10px">
@@ -4048,6 +4153,13 @@ function renderCoInviteAdmin(){
         </div>
       </div>
     </div>
+    ${received>0?`<div style="margin-top:20px;padding:14px 16px;background:var(--ok-soft)">
+      <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--ok)">受取済：${received} / ${ch.length}章</div>
+      <button class="btn ok" onclick="startCompile()" style="display:inline-flex;align-items:center;gap:6px">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M4 19.5A2.5 2.5 0 016.5 17H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+        全章＋特別章を確認してEPUBに書き出す →
+      </button>
+    </div>`:''}
     <div style="background:var(--ok-soft);padding:12px 16px;margin-top:24px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <span style="font-size:12px;font-weight:700;color:var(--ok);flex:1">プロジェクトデータのクラウド同期</span>
       <button onclick="_sbSaveProjectData().then(()=>{const t=document.createElement('div');t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:8px 20px;font-size:13px;font-weight:700;z-index:10010;pointer-events:none';t.textContent='✓ クラウドに保存しました';document.body.appendChild(t);setTimeout(()=>t.remove(),2000);})" style="font-size:12px;background:var(--ok);color:#fff;border:none;padding:5px 14px;cursor:pointer;font-weight:700">↑ クラウドに保存</button>
@@ -4662,7 +4774,12 @@ async function unifyBook(){
   if(!(S.apiKey||'').trim()){if(box)box.innerHTML=`<div class="hint"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px;flex-shrink:0"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>文体の統一（AI）にはAIキーが必要です。最初の画面の「AIキー」に入れてください。</div>`+(box.innerHTML||'');return;}
   if(btn){btn.textContent='統一中…（30〜60秒）';btn.disabled=true;}
   try{
-    const sys=`あなたは共著本の編集者です。5人が別々に書いた章を1冊にまとめます。内容や主張は変えず、文体（敬体/常体）・見出しの書式・語調を全体で統一し、章のつなぎを自然にし、誤字脱字を直します。事実や数字を捏造しない。出力は整えた原稿全文のみ（前置き不要）。`;
+    // 実際の人数・単独/共著に合わせる（以前は「5人が」と決め打ちだった）
+    const _uAuthors=[...new Set(((S.book&&S.book.chapters)||[]).map(c=>(c.author||'').trim()).filter(Boolean))];
+    const _uHead=(S.coauthor!==false&&_uAuthors.length>1)
+      ? `あなたは共著本の編集者です。${_uAuthors.length}人が別々に書いた章を1冊にまとめます。`
+      : `あなたは書籍の編集者です。1人の著者が書いた原稿を1冊にまとめます。`;
+    const sys=`${_uHead}内容や主張は変えず、文体（敬体/常体）・見出しの書式・語調を全体で統一し、章のつなぎを自然にし、誤字脱字を直します。事実や数字を捏造しない。出力は整えた原稿全文のみ（前置き不要）。`;
     const out=await callClaude(sys,S.book.manuscript,8000);
     S.book.manuscript=out; save(); renderCompile();
     setTimeout(()=>{const b=document.getElementById('mergePreview');if(b)b.innerHTML=`<div class="hint" style="background:var(--ok-soft);color:var(--ok)">✓ AIが文体を統一しました。</div><div class="box" style="border:1px solid var(--line);padding:12px;max-height:360px;overflow:auto;white-space:pre-wrap;font-size:14px">${esc(out)}</div>`;},0);
@@ -5258,7 +5375,9 @@ async function buildEpub(){
   const files=[{name:'mimetype',bytes:sB('application/epub+zip')},
     {name:'META-INF/container.xml',bytes:sB('<?xml version="1.0"?>\n<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>')}];
   const manifest=['<item id="css" href="style.css" media-type="text/css"/>','<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>'];
-  const spine=[],navli=[];let imgN=0;const imgNRef={get n(){return imgN;},set n(v){imgN=v;}};
+  // navli＝サイドバー用（章名のみ）、tocli＝本文内の目次ページ用（章名＋著者名）
+  const spine=[],navli=[],tocli=[];let imgN=0;const imgNRef={get n(){return imgN;},set n(v){imgN=v;}};
+  const _tocLi=(href,label,author)=>`<li><a href="${href}"><span class="toc-t">${label}</span>${author?`<span class="toc-a">${escXml(author)}</span>`:''}</a></li>`;
   files.push({name:'OEBPS/style.css',bytes:sB('body{margin:1em;text-align:justify;}'
     +'h1{font-size:1.5em;margin:1.6em 0 1.4em;font-weight:700;text-align:center;line-height:1.55;}'
     +'h1 .ch-no{display:block;font-size:.6em;font-weight:400;letter-spacing:.2em;color:#666;margin-bottom:.9em;}'
@@ -5284,13 +5403,27 @@ async function buildEpub(){
   const fmTitle=title,fmSub=S.book.subtitle||'',fmAuthor=S.uploadAuthor||(ch.length>0&&ch[0].author)||'';
   const fmYear=new Date().getFullYear();
   if(!fm.titlePageSkip){
-    let tpFirstDone=false;
-    const _parseTpBody=(txt)=>( txt||'').split(/\n/).map(l=>{l=l.trim();if(!l)return'';if(l.startsWith('■'))return`<h2>${bodyFmt(escXml(l.replace(/^■\s*/,'')))}</h2>`;if(!tpFirstDone){tpFirstDone=true;return`<h1 style="font-size:1.7em;margin:0 0 .7em">${bodyFmt(escXml(l))}</h1>`;}return`<p style="text-indent:0">${bodyFmt(escXml(l))}</p>`;}).filter(x=>x).join('\n');
+    // 表題紙は「1行目＝書名／2行目＝サブタイトル／それ以降＝本文」として描き分ける。
+    // ■ 判定より前に書名を確定させないと、■ で始まる原稿では書名が2行目にずれる。
+    let tpN=0;
+    const _parseTpBody=(txt)=>( txt||'').split(/\n/).map(l=>{
+      l=l.trim();if(!l)return'';
+      tpN++;
+      if(tpN===1)return`<h1 class="tp-title">${bodyFmt(escXml(l))}</h1>`;
+      if(l.startsWith('■'))return`<h2>${bodyFmt(escXml(l.replace(/^■\s*/,'')))}</h2>`;
+      if(tpN===2)return`<p class="tp-sub">${bodyFmt(escXml(l))}</p>`;
+      return`<p>${bodyFmt(escXml(l))}</p>`;
+    }).filter(x=>x).join('\n');
     const tpBody=_parseTpBody(fm.titlePageBody||_fmAutoTp());
-    files.push({name:'OEBPS/titlepage.xhtml',bytes:sB(`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>${escXml(fmTitle)}</title><link rel="stylesheet" type="text/css" href="style.css"/><style>body{text-align:center;}p{text-indent:0;margin:.8em 0;}h1,h2{text-align:center;}</style></head><body style="padding-top:20%">${tpBody}</body></html>`)});
+    // サイズはインライン style 属性ではなく style 要素で指定する（KFX変換でインラインが落ちる保険）
+    const tpCss='body{text-align:center;}p{text-indent:0;margin:.8em 0;}h1,h2{text-align:center;}'
+      +'h1.tp-title{font-size:1.9em;font-weight:700;margin:0 0 .6em;line-height:1.5;}'
+      +'p.tp-sub{font-size:1.05em;color:#444;margin:0 0 2.4em;line-height:1.7;}';
+    files.push({name:'OEBPS/titlepage.xhtml',bytes:sB(`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>${escXml(fmTitle)}</title><link rel="stylesheet" type="text/css" href="style.css"/><style>${tpCss}</style></head><body style="padding-top:20%">${tpBody}</body></html>`)});
     manifest.push('<item id="titlepage" href="titlepage.xhtml" media-type="application/xhtml+xml"/>');
     titlePageSpine='<itemref idref="titlepage"/>';
     navli.push(`<li><a href="titlepage.xhtml">表題紙</a></li>`);
+    tocli.push(_tocLi('titlepage.xhtml','表題紙',''));
   }
   const specialCh=(S.book.specialChapters||[]).filter(c=>(c.body||'').trim());
   const specialFront=specialCh.filter(c=>c.type==='hajimeni'||c.type==='prologue');
@@ -5305,6 +5438,7 @@ async function buildEpub(){
     manifest.push(`<item id="${id}" href="${id}.xhtml" media-type="application/xhtml+xml"/>`);
     spine.push(`<itemref idref="${id}"/>`);
     navli.push(`<li><a href="${id}.xhtml">${heading}</a></li>`);
+    tocli.push(_tocLi(id+'.xhtml',heading,''));
     const backRef=_epubEdgeImageItemref(files,manifest,id+'-back',c.backImage);
     if(backRef)spine.push(backRef);
   };
@@ -5357,6 +5491,7 @@ async function buildEpub(){
     manifest.push(`<item id="${id}" href="${id}.xhtml" media-type="application/xhtml+xml"/>`);
     spine.push(`<itemref idref="${id}"/>`);
     navli.push(`<li><a href="${id}.xhtml">${chapH1Text}</a></li>`);
+    tocli.push(_tocLi(id+'.xhtml',chapH1Text,(S.coauthor&&c.author)?c.author:''));
     const backRef=_epubEdgeImageItemref(files,manifest,id+'-back',c.backImage);
     if(backRef)spine.push(backRef);
   }
@@ -5374,6 +5509,7 @@ async function buildEpub(){
     manifest.push('<item id="ctapage" href="cta.xhtml" media-type="application/xhtml+xml"/>');
     spine.push('<itemref idref="ctapage"/>');
     navli.push(`<li><a href="cta.xhtml">${escXml(cta.heading||'読者特典')}</a></li>`);
+    tocli.push(_tocLi('cta.xhtml',escXml(cta.heading||'読者特典'),''));
   }
   // 奥付
   let colophonSpine='';
@@ -5383,17 +5519,29 @@ async function buildEpub(){
     manifest.push('<item id="colophon" href="colophon.xhtml" media-type="application/xhtml+xml"/>');
     colophonSpine='<itemref idref="colophon"/>';
     navli.push(`<li><a href="colophon.xhtml">奥付</a></li>`);
+    tocli.push(_tocLi('colophon.xhtml','奥付',''));
   }
   // 目次ページ（本文内。サイドバーのnav.xhtmlとは別に、1ページ目付近に実ページとして入れる）
   let tocSpine='';
   {
-    files.push({name:'OEBPS/toc.xhtml',bytes:sB(`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>目次</title><link rel="stylesheet" type="text/css" href="style.css"/><style>.toclist{list-style:none;padding:0;margin:0;}.toclist li{margin:.9em 0;text-indent:0;}.toclist a{text-decoration:none;color:inherit;}</style></head><body><h1>目次</h1><ol class="toclist">${navli.join('')}</ol></body></html>`)});
+    const tocCss='.toclist{list-style:none;padding:0;margin:0;}'
+      +'.toclist li{margin:1.1em 0;text-indent:0;}'
+      +'.toclist a{text-decoration:none;color:inherit;}'
+      +'.toc-t{display:block;}'
+      +'.toc-a{display:block;font-size:.82em;color:#555;margin-top:.25em;}';
+    files.push({name:'OEBPS/toc.xhtml',bytes:sB(`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>目次</title><link rel="stylesheet" type="text/css" href="style.css"/><style>${tocCss}</style></head><body><h1>目次</h1><ol class="toclist">${tocli.join('')}</ol></body></html>`)});
     manifest.push('<item id="tocpage" href="toc.xhtml" media-type="application/xhtml+xml"/>');
     tocSpine='<itemref idref="tocpage"/>';
   }
   const landmarks=`<nav epub:type="landmarks" id="landmarks" hidden="hidden"><h2>ガイド</h2><ol><li><a epub:type="toc" href="nav.xhtml">目次</a></li>${ch.length?`<li><a epub:type="bodymatter" href="ch1.xhtml">本文の先頭</a></li>`:''}</ol></nav>`;
   files.push({name:'OEBPS/nav.xhtml',bytes:sB(`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="ja"><head><meta charset="utf-8"/><title>目次</title></head><body><nav epub:type="toc" id="toc"><h1>目次</h1><ol>${navli.join('')}</ol></nav>${landmarks}</body></html>`)});
-  const authors=[...new Set(ch.map(c=>(c.author||'').trim()).filter(Boolean))];
+  let authors=[...new Set(ch.map(c=>(c.author||'').trim()).filter(Boolean))];
+  // 単独出版だと章に著者名が入らないため、そのままだと dc:creator が1つも出ず
+  // KDPで著者が空欄になる。書き手として分かっている名前を順に拾う。
+  if(!authors.length){
+    const solo=(S.uploadAuthor||'').trim()||(fmAuthor||'').trim()||(S.author||'').trim();
+    if(solo)authors=[solo];
+  }
   const creatorTags=authors.map(a=>`<dc:creator>${escXml(a)}</dc:creator>`).join('');
   if(!S.book.uuid){S.book.uuid=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return (c==='x'?r:(r&3|8)).toString(16);});save();}
   files.push({name:'OEBPS/content.opf',bytes:sB(`<?xml version="1.0" encoding="utf-8"?>\n<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="bookid">urn:uuid:${S.book.uuid}</dc:identifier><dc:title>${escXml(title)}</dc:title><dc:language>ja</dc:language>${creatorTags}${coverMeta}<meta property="dcterms:modified">2026-01-01T00:00:00Z</meta></metadata><manifest>${manifest.join('')}</manifest><spine>${coverSpine}${titlePageSpine}${tocSpine}${spine.join('')}${colophonSpine}</spine></package>`)});
@@ -6249,11 +6397,15 @@ function previewChapter(i){
 function previewTitlePage(){
   const fm=S.epubFront||{};
   const body=fm.titlePageBody||_fmAutoTp();
-  let tpPrevFirstDone=false;
+  // 実際の書き出し（buildEpub の _parseTpBody）と同じ描き分けにする
+  const _tpFont="font-family:'Noto Sans JP','Hiragino Kaku Gothic Pro','Yu Gothic',sans-serif";
+  let tpN=0;
   const bodyHtml=body.split(/\n/).map(l=>{
     l=l.trim();if(!l)return'';
-    if(l.startsWith('■'))return`<h2 style="font-size:1.1em;font-weight:700;border-left:3px solid #333;padding-left:10px;text-align:left;margin:1.4em 0 .5em;font-family:'Noto Sans JP','Hiragino Kaku Gothic Pro','Yu Gothic',sans-serif">${bodyFmt(esc(l.replace(/^■\s*/,'')))}</h2>`;
-    if(!tpPrevFirstDone){tpPrevFirstDone=true;return`<h1 style="font-size:1.6em;font-weight:900;margin:0 0 .8em;line-height:1.5;font-family:'Noto Sans JP','Hiragino Kaku Gothic Pro','Yu Gothic',sans-serif">${bodyFmt(esc(l))}</h1>`;}
+    tpN++;
+    if(tpN===1)return`<h1 style="font-size:1.9em;font-weight:700;margin:0 0 .6em;line-height:1.5;${_tpFont}">${bodyFmt(esc(l))}</h1>`;
+    if(l.startsWith('■'))return`<h2 style="font-size:1.1em;font-weight:700;border-left:3px solid #333;padding-left:10px;text-align:left;margin:1.4em 0 .5em;${_tpFont}">${bodyFmt(esc(l.replace(/^■\s*/,'')))}</h2>`;
+    if(tpN===2)return`<p style="text-indent:0;font-size:1.05em;color:#444;margin:0 0 2.4em;line-height:1.7">${bodyFmt(esc(l))}</p>`;
     return`<p style="text-indent:0;margin:.8em 0;line-height:1.8">${bodyFmt(esc(l))}</p>`;
   }).filter(x=>x).join('');
   _fmPreviewModal('表題紙プレビュー',bodyHtml,'center');
