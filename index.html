@@ -4793,10 +4793,11 @@ function buildBookHTML(){
   const chapHead=(c,i)=>(_effChapterType(c)!=='custom')?getChapH1(c,calcNIdx(ch,i)):(c.title||`第${i+1}章`);
   const toc=ch.map((c,i)=>`<li><a href="#ch${i+1}">${esc(chapHead(c,i))}</a></li>`).join('');
   const body=ch.map((c,i)=>{
-    const inner=(c.body||'').split(/\n/).map(l=>{l=l.trim();if(!l)return '';
+    const inner=_bodyLinesToHtml(c.body,(l)=>{
       const hd=_headingText(l);
       if(hd!==null)return `<h2>${bodyFmt(esc(hd))}</h2>`;
-      return `<p${_isLinkOnlyLine(l)?' style="text-indent:0"':''}>${bodyFmt(esc(l))}</p>`;}).filter(Boolean).join('\n');
+      return `<p${_isLinkOnlyLine(l)?' style="text-indent:0"':''}>${bodyFmt(esc(l))}</p>`;
+    });
     return `<h1 id="ch${i+1}">${esc(chapHead(c,i))}</h1>\n${c.author?`<p class="author">著：${esc(c.author)}</p>`:''}\n${inner}`;
   }).join('\n');
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>${esc(S.book.title||'無題')}</title>
@@ -4805,6 +4806,7 @@ body{font-family:"Yu Mincho","Hiragino Mincho ProN",serif;line-height:1.85;}
 h1{page-break-before:always;font-size:1.6em;border-bottom:2px solid #333;padding-bottom:.2em;}
 h2{font-size:1.25em;margin-top:1.4em;}
 p{text-indent:1em;margin:.4em 0;}
+p.pb{margin-bottom:1.9em;}
 .title-page{text-align:center;margin-top:30%;page-break-after:always;}
 .title-page h1{page-break-before:auto;border:none;font-size:2em;}
 .author{text-align:right;color:#555;text-indent:0;}
@@ -5224,6 +5226,69 @@ function _headingText(l){
   if(m)return m[1].trim();
   return null;
 }
+/* ---------- 本文の行→HTML変換（プレビューと本番の共通処理） ----------
+   以前は書き出し・特別章・プレビュー・まとめの4箇所が別々に本文を組み立てており、
+   しかもどれも「空行は捨てる」実装だった。書き手が「ここでひと呼吸」と思って入れた
+   1行空けが、そのまま消えていたということ。意味が分かっているのは書いた本人だけなので、
+   その区切りを尊重するのが正しい。ここに集約して、4箇所の見え方を必ず一致させる。 */
+const PARA_END_RE=/[。！？」』）\)!?…—]$/;
+function _autoParaGapOn(){return !!(S.book&&S.book.autoParaGap);}
+function _autoParaGapEvery(){const n=parseInt((S.book&&S.book.autoParaGapEvery)||5,10);return (n>=3&&n<=8)?n:5;}
+// renderLine(line, index) は 1行ぶんのHTMLを返す（空文字/null なら出力しない）
+function _bodyLinesToHtml(raw,renderLine,opts){
+  opts=opts||{};
+  const src=String(raw==null?'':raw).split(/\n/);
+  const items=[];
+  let writerBlank=false;   // 書き手が空行を入れているか（入れていれば自動余白は出しゃばらない）
+  for(let i=0;i<src.length;i++){
+    const l=src[i].trim();
+    if(!l){ if(items.length){items[items.length-1].blankAfter=true;writerBlank=true;} continue; }
+    const html=renderLine(l,i);
+    if(html===null||html===undefined||html==='')continue;
+    let kind='p';
+    if(/^<h[1-6][\s>]/.test(html))kind='head';
+    else if(/^<figure[\s>]/.test(html))kind='fig';
+    else if(/^<p[^>]*>&nbsp;<\/p>$/.test(html))kind='sep';
+    items.push({html,kind,blankAfter:false,text:l});
+  }
+  const isP=k=>k==='p';
+  // 段落に余白クラスを付ける（空の<p>は作らない。Kindleが空段落を削ることがあるため）
+  const mark=new Set();
+  for(let i=0;i<items.length;i++){
+    if(!items[i].blankAfter)continue;
+    const nx=items[i+1];
+    // 見出し・図・区切りの直前直後は元々間隔があるので二重にしない
+    if(!isP(items[i].kind))continue;
+    if(!nx||!isP(nx.kind))continue;
+    mark.add(i);
+  }
+  // 空行が一つも無い章にだけ、文の切れ目（句点）で自動的に余白を入れる。
+  // 書き手が区切りを設計している章では何もしない。
+  const autoOn=(opts.autoGap!==undefined?opts.autoGap:_autoParaGapOn());
+  if(autoOn&&!writerBlank){
+    const N=(opts.gapEvery||_autoParaGapEvery());
+    let run=0;
+    for(let i=0;i<items.length;i++){
+      if(!isP(items[i].kind)){run=0;continue;}
+      run++;
+      if(run<N)continue;
+      const nx=items[i+1];
+      if(!nx||!isP(nx.kind))continue;
+      // 文の途中では絶対に切らない。句点で終わる段落が見つかるまで送る（見つからなければ入れない）
+      if(!PARA_END_RE.test(items[i].text)){ if(run>=N+3)run=0; continue; }
+      mark.add(i);run=0;
+    }
+  }
+  return items.map((it,i)=>{
+    if(!mark.has(i))return it.html;
+    return it.html.replace(/^<p(\s[^>]*)?>/,(m,attrs)=>{
+      attrs=attrs||'';
+      return /\sclass="/.test(attrs)
+        ? `<p${attrs.replace(/\sclass="([^"]*)"/,' class="$1 pb"')}>`
+        : `<p class="pb"${attrs}>`;
+    });
+  }).join(opts.join!==undefined?opts.join:'\n');
+}
 /* ---------- EPUBと同じ見た目のプレビュー ----------
    本文の変換規則（見出し・区切り・図・太字）はEPUB書き出しと揃えてある。
    CSSも buildEpub() の style.css と同じ値を使っているので、見え方が一致する。 */
@@ -5236,6 +5301,7 @@ const EPUB_PREVIEW_CSS=`<style>
 .epubPrev .ch-author{text-indent:0;text-align:center;font-size:.85em;color:#555;margin:-.6em 0 2.4em}
 .epubPrev h2{font-size:1.1em;margin:1.8em 0 .5em;font-weight:700;border-left:3px solid #333;padding-left:.6em;text-indent:0;page-break-after:avoid;break-after:avoid-page}
 .epubPrev p{text-indent:1em;margin:.6em 0}
+.epubPrev p.pb{margin-bottom:1.9em}
 .epubPrev h1+p,.epubPrev h2+p{text-indent:0}
 .epubPrev img{max-width:100%;height:auto}
 .epubPrev figure{margin:1.2em 0;text-align:center;page-break-inside:avoid;break-inside:avoid-page;page-break-after:avoid;break-after:avoid-page}
@@ -5279,9 +5345,7 @@ function _epubPreviewBodyHtml(c){
   c=c||{};
   const imgs=c.images||[];
   const placed=new Set();
-  const lines=(c.body||'').replace(/，/g,'、').replace(/．/g,'。').split(/\n/).map(l=>{
-    l=l.trim();
-    if(!l)return '';
+  const lines=_bodyLinesToHtml((c.body||'').replace(/，/g,'、').replace(/．/g,'。'),(l)=>{
     if(/^-{3,}$/.test(l))return '<p class="sep">&nbsp;</p>';
     let m=l.match(/^\[図(\d+)\]$/);
     if(m){const k=parseInt(m[1])-1;if(imgs[k]){placed.add(k);return _epubPreviewImgTag(imgs[k]);}return '';}
@@ -5295,7 +5359,7 @@ function _epubPreviewBodyHtml(c){
     const h=_headingText(l);
     if(h!==null)return `<h2>${bodyFmt(esc(h))}</h2>`;
     return `<p${_isLinkOnlyLine(l)?' style="text-indent:0"':''}>${bodyFmt(esc(l))}</p>`;
-  }).filter(x=>x).join('');
+  },{join:''});
   // 本文で位置指定した画像だけを表示する（未配置の写真は自動で出さない。EPUBと同じ）
   return lines||'<p style="color:#aaa;text-indent:0">（本文がありません）</p>';
 }
@@ -5356,14 +5420,14 @@ async function _epubBuildSpecialChapterXhtml(c,files,manifest,imgNRef){
     }
   }
   const placed=new Set();
-  const body=(c.body||'').replace(/，/g,'、').replace(/．/g,'。').split(/\n/).map(l=>{l=l.trim();
-    if(!l)return '';
+  const body=_bodyLinesToHtml((c.body||'').replace(/，/g,'、').replace(/．/g,'。'),(l)=>{
     if(/^-{3,}$/.test(l))return '<p style="margin:2.5em 0;text-indent:0">&nbsp;</p>';
     const m=l.match(/^\[図(\d+)\]$/);if(m){const k=parseInt(m[1])-1;const im=imgs[k];if(im){placed.add(k);return im._tag;}return '';}
     const mw=l.match(/^\[画像[：:](.+?)\]$/);if(mw){const desc=(mw[1]||'').trim();const k=_findChapImage(imgs,desc,placed);if(k>=0){placed.add(k);return imgs[k]._tag;}return `<p style="text-indent:0">🖼 ${escXml(desc||'画像')}（未登録）</p>`;}
     const hd=_headingText(l);
     if(hd!==null)return `<h2>${bodyFmt(escXml(hd))}</h2>`;
-    return `<p${_isLinkOnlyLine(l)?' style="text-indent:0"':''}>${bodyFmt(escXml(l))}</p>`;}).filter(x=>x).join('\n');
+    return `<p${_isLinkOnlyLine(l)?' style="text-indent:0"':''}>${bodyFmt(escXml(l))}</p>`;
+  });
   imgs.forEach(im=>{delete im._tag;});
   return {heading,xhtml:`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>${heading}</title><link rel="stylesheet" type="text/css" href="style.css"/></head><body><h1><span class="ch-ttl">${heading}</span></h1>\n${body}</body></html>`};
 }
@@ -5385,7 +5449,7 @@ async function buildEpub(){
     +'h1 .ch-sub{display:block;font-size:.62em;font-weight:400;color:#444;margin-top:.9em;line-height:1.7;}'
     +'.ch-author{text-indent:0;text-align:center;font-size:.85em;color:#555;margin:-.6em 0 2.4em;}'
     +'h2{font-size:1.1em;margin:1.8em 0 .5em;font-weight:700;border-left:3px solid #333;padding-left:0.6em;page-break-after:avoid;break-after:avoid-page;}'
-    +'p{text-indent:1em;margin:.6em 0;}h1+p,h2+p{text-indent:0;}'
+    +'p{text-indent:1em;margin:.6em 0;}h1+p,h2+p{text-indent:0;}p.pb{margin-bottom:1.9em;}'
     +'strong,b{font-weight:700;}em,i{font-style:italic;}img{max-width:100%;height:auto;}'
     +'figure{margin:1.2em 0;text-align:center;page-break-inside:avoid;break-inside:avoid-page;page-break-after:avoid;break-after:avoid-page;}figcaption{font-size:.85em;color:#555;text-indent:0;}')});
   let coverSpine='',coverMeta='';
@@ -5470,8 +5534,7 @@ async function buildEpub(){
       }
     }
     const placed=new Set();
-    let body=(c.body||'').replace(/，/g,'、').replace(/．/g,'。').split(/\n/).map(l=>{l=l.trim();
-      if(!l)return '';
+    let body=_bodyLinesToHtml((c.body||'').replace(/，/g,'、').replace(/．/g,'。'),(l)=>{
       if(/^-{3,}$/.test(l))return '<p style="margin:2.5em 0;text-indent:0">&nbsp;</p>';
       const m=l.match(/^\[図(\d+)\]$/);if(m){const k=parseInt(m[1])-1;const im=imgs[k];if(im){placed.add(k);return im._tag;}return '';}
       const mf=l.match(/^[<＜]図[：:](.+?)[>＞]$|^[<＜]図[>＞]$/);if(mf){const cap=(mf[1]||'').trim();const k=cap?imgs.findIndex((im,idx)=>!placed.has(idx)&&im.caption.trim()===cap):imgs.findIndex((_,idx)=>!placed.has(idx));if(k>=0){placed.add(k);return imgs[k]._tag;}return '';}
@@ -5479,7 +5542,8 @@ async function buildEpub(){
       const mw=l.match(/^\[画像[：:](.+?)\]$/);if(mw){const desc=(mw[1]||'').trim();const k=_findChapImage(imgs,desc,placed);if(k>=0){placed.add(k);return imgs[k]._tag;}return `<p style="text-indent:0">🖼 ${escXml(desc||'画像')}（未登録）</p>`;}
       const hd=_headingText(l);
       if(hd!==null)return `<h2>${bodyFmt(escXml(hd))}</h2>`;
-      return `<p${_isLinkOnlyLine(l)?' style="text-indent:0"':''}>${bodyFmt(escXml(l))}</p>`;}).filter(x=>x).join('\n');
+      return `<p${_isLinkOnlyLine(l)?' style="text-indent:0"':''}>${bodyFmt(escXml(l))}</p>`;
+    });
     // 本文で位置指定した画像だけを埋め込む（未配置の写真は出さない。まとめ画面の「未配置」表示で気づける）
     imgs.forEach(im=>{delete im._tag;}); // 組み立て用の一時データを保存データに残さない
     if(ctaOn&&cta.perChapter&&(cta.url||'').trim())body+=`\n<hr/>\n<p style="text-indent:0">▶ ${escXml(cta.linkText||'LINEで読者特典を受け取る')}：<a href="${escXml(cta.url)}">${escXml(cta.url)}</a></p>`;
@@ -5657,6 +5721,26 @@ function renderCompile(){
     <input type="text" value="${esc(S.book.keywords)}" oninput="S.book.keywords=this.value;save()">
     <label class="f">カテゴリ（3枠・ニッチ）</label>
     <input type="text" value="${esc(S.book.cats)}" oninput="S.book.cats=this.value;save()" placeholder="競合の弱いニッチ3枠">
+
+    <h3 style="margin:18px 0 6px;font-size:15px">本文の余白</h3>
+    <div class="small" style="background:var(--bg-alt);padding:12px 14px;line-height:1.8">
+      <div style="margin-bottom:8px">書き手が入れた <b>1行空け</b> は、そのまま本の余白になります。</div>
+      <label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <input type="checkbox" ${S.book.autoParaGap?'checked':''} onchange="S.book.autoParaGap=this.checked;save();renderCompile()">
+        <span>1行空けが一度も無い章は、文の切れ目で自動的に余白を入れる</span>
+      </label>
+      <div style="margin-top:8px;padding-left:24px;${S.book.autoParaGap?'':'display:none'}">
+        <label style="display:flex;align-items:center;gap:8px">
+          <select onchange="S.book.autoParaGapEvery=parseInt(this.value,10);save()" style="padding:3px 8px;font-size:13px">
+            ${[4,5,6].map(n=>`<option value="${n}" ${(_autoParaGapEvery()===n)?'selected':''}>${n}段落ごと</option>`).join('')}
+          </select>
+          <span class="muted" style="font-size:12px">余白は必ず「。」で終わる段落の直後に入ります（文の途中では切りません）</span>
+        </label>
+      </div>
+      <div class="muted" style="font-size:12px;margin-top:8px">
+        書き手が1行空けを使っている章では、この自動処理は働きません。人が入れた区切りが優先されます。
+      </div>
+    </div>
 
     <h3 style="margin:18px 0 6px;font-size:15px">出版前チェックリスト（規約）</h3>
     <div class="small">
