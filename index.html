@@ -1029,7 +1029,7 @@ async function _sbSaveProjectData(){
   if(!targetId)return;
   const {userId,key}=_splitTarget(targetId);
   if(!userId)return;
-  const {data:existing}=await _sb.from('book_settings').select('data').eq('id',userId).single();
+  const {data:existing}=await _sb.from('book_settings').select('data,updated_at').eq('id',userId).single();
   const curData=(existing&&existing.data)||{};
   const curKey=curData.projectKey||PROJ_LEGACY;
   // ガード1：クラウドが別の本を最前面に持っている＝状態がずれている。
@@ -1041,6 +1041,16 @@ async function _sbSaveProjectData(){
   }
   // ガード2：空の本でクラウドを潰さない（プロジェクト新規作成・切替直後の誤爆防止）
   if(!_bookHasContent(S.book)&&_bookHasContent(curData.book))return;
+  /* ガード3：自分が最後に見たあとに、他の人が保存していないか。
+     共同管理では、相手が保存したあとにこちらが古い内容で保存すると相手の作業が消える。
+     見つけたら上書きせず、章ごとに新しい方を採って取り込んでから書く。 */
+  const cloudAt=(existing&&existing.updated_at)?new Date(existing.updated_at).getTime():0;
+  const seenAt=S._cloudSeenAt?new Date(S._cloudSeenAt).getTime():0;
+  let mergedFrom='';
+  if(cloudAt&&seenAt&&cloudAt>seenAt&&_bookHasContent(curData.book)){
+    S.book=_mergeBooksForSave(S.book,curData.book,cloudAt);
+    mergedFrom=curData.updatedByName||'ほかの管理者';
+  }
   const saveData={
     ...curData,
     projectKey:key,
@@ -1059,9 +1069,92 @@ async function _sbSaveProjectData(){
     reader:saveData.reader,goal:saveData.goal,people:saveData.people,
     totalTarget:saveData.totalTarget,coauthor:saveData.coauthor,soloChosen:saveData.soloChosen
   }));}catch(e){h='';}
-  if(h&&h===_sbLastSavedHash)return;
-  const {error}=await _sb.from('book_settings').upsert({id:userId,data:saveData,updated_at:new Date().toISOString()});
-  if(!error&&h)_sbLastSavedHash=h;
+  if(h&&h===_sbLastSavedHash&&!mergedFrom)return;
+  const nowIso=new Date().toISOString();
+  const {error}=await _sb.from('book_settings').upsert({id:userId,data:saveData,updated_at:nowIso});
+  if(!error){
+    if(h)_sbLastSavedHash=h;
+    S._cloudSeenAt=nowIso;          // ここまでの内容を土台にした、という印
+    S._lastUpdatedByName=myName;S._lastUpdatedAt=nowIso;
+    if(mergedFrom){
+      _toastMerged(mergedFrom);
+      renderHomeBookCard&&renderHomeBookCard();
+      if(document.getElementById('compile')&&!document.getElementById('compile').classList.contains('hide'))renderCompile();
+      if(document.getElementById('admin')&&!document.getElementById('admin').classList.contains('hide'))renderCoInviteAdmin&&renderCoInviteAdmin();
+    }
+  }
+}
+/* 保存の直前に、他の管理者の更新を取り込む。
+   章は _mergeChapter で「フィールドごとに新しい方」を採る（読み込み時と同じ考え方）。
+   タイトルや表紙のように時刻を持たない項目は、こちらの内容を優先する（空なら相手を採る）。 */
+/* 1つの章を突き合わせる。
+   行全体の保存時刻ではなく、章が持つ更新時刻どうしを比べるのが要点。
+   相手が第2章だけ直した場合、行の時刻は新しくても第1章は触っていないので、
+   行の時刻で判定すると、こちらの第1章の変更まで巻き戻ってしまう。 */
+function _mergeChapterPair(local,cloud,cloudRowTs){
+  const L=local||{},C=cloud||{};
+  const out={...C,...L};
+  const has=v=>v!==undefined&&v!==null&&String(v).trim()!=='';
+  const pick=(f,tf)=>{
+    const lv=L[f],cv=C[f];
+    if(!has(cv))return;                       // 相手が空ならこちらのまま
+    if(!has(lv)){out[f]=cv;out[tf]=C[tf]||out[tf];return;}
+    if(String(lv)===String(cv))return;        // 同じなら何もしない
+    const lts=Number(L[tf]||0),cts=Number(C[tf]||0);
+    if(lts||cts){                             // どちらかが時刻を持つ＝新しい方を採る
+      if(cts>lts){out[f]=cv;out[tf]=cts;}else{out[f]=lv;out[tf]=lts;}
+      return;
+    }
+    // どちらも時刻なし＝こちらの内容は前回クラウドから読んだものと考えられるので相手を採る
+    if(cloudRowTs)out[f]=cv;
+  };
+  pick('title','titleUpdatedAt');
+  pick('subtitle','subtitleUpdatedAt');
+  pick('body','bodyUpdatedAt');
+  pick('author','authorUpdatedAt');
+  // 画像は実データを持っている方を残す（片方が参照だけになっていることがある）
+  const li=(L.images||[]).filter(x=>x&&x.data).length,ci=(C.images||[]).filter(x=>x&&x.data).length;
+  if(ci>li)out.images=C.images;
+  // 修正依頼は新しい方
+  if(Number(C.reviseRequestedAt||0)>Number(L.reviseRequestedAt||0)){
+    out.status=C.status;out.reviseNote=C.reviseNote;out.reviseRequestedAt=C.reviseRequestedAt;
+  }
+  return out;
+}
+function _mergeBooksForSave(localBook,cloudBook,cloudTs){
+  const L=localBook||{},C=cloudBook||{};
+  const out={...C,...L};
+  const lc=L.chapters||[],cc=C.chapters||[];
+  const len=Math.max(lc.length,cc.length);
+  out.chapters=[];
+  for(let i=0;i<len;i++)out.chapters[i]=_mergeChapterPair(lc[i],cc[i],cloudTs);
+  const ls=L.specialChapters||[],cs=C.specialChapters||[];
+  if(ls.length&&!cs.length)out.specialChapters=ls;
+  else if(!ls.length&&cs.length)out.specialChapters=cs;
+  else if(ls.length&&cs.length){
+    out.specialChapters=cs.map((c,i)=>{
+      const l=ls[i];
+      // 片方だけ本文があるなら、ある方を残す
+      if(l&&(l.body||'').trim()&&!(c&&(c.body||'').trim()))return l;
+      if(c&&(c.body||'').trim()&&!(l&&(l.body||'').trim()))return c;
+      return l||c;
+    });
+    if(ls.length>cs.length)out.specialChapters=out.specialChapters.concat(ls.slice(cs.length));
+  }
+  // 空でこちらが上書きしないようにする
+  ['title','subtitle','desc','keywords','cats'].forEach(k=>{
+    if(!String(L[k]||'').trim()&&String(C[k]||'').trim())out[k]=C[k];
+  });
+  if(!L.cover&&C.cover)out.cover=C.cover;
+  return out;
+}
+function _toastMerged(who){
+  const t=document.createElement('div');
+  t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#403129;color:#fff;'
+    +'padding:12px 20px;font-size:13px;font-weight:700;z-index:10075;max-width:88%;text-align:center;line-height:1.8';
+  t.innerHTML=`${esc(who)}さんの変更を取り込んでから保存しました<br>`
+    +`<span style="font-weight:400;font-size:12px">同じ章を同時に直していた場合は、あとから直したほうが残ります</span>`;
+  document.body.appendChild(t);setTimeout(()=>t.remove(),6000);
 }
 async function _sbLoadProjectData(targetId,opts){
   targetId=targetId||_activeTargetId();
@@ -1121,6 +1214,8 @@ async function _sbLoadProjectData(targetId,opts){
   S._activeTargetId=targetId;
   S._lastUpdatedByName=d.updatedByName||'';
   S._lastUpdatedAt=d.updatedAt||data.updated_at||'';
+  // 「この時点のクラウドを土台にしている」という印。次の保存で他の人の更新を検知するのに使う。
+  S._cloudSeenAt=data.updated_at||'';
   save();
   const el=document.getElementById('theme');if(el)el.value=S.theme||'';
   const el2=document.getElementById('people');if(el2)el2.value=S.people||5;
@@ -1802,7 +1897,7 @@ function _resetProjectScopedState(){
   S.body='';S.edited='';S.chapTitle='';
   S.currentChap=null;S.coauthorChap=null;S._fetchBackup=null;S._uploadSuccess=0;
   S.lastScreen='';S.lastScreenTime=0;S.lastScreenLabel='';
-  S._lastUpdatedByName='';S._lastUpdatedAt='';
+  S._lastUpdatedByName='';S._lastUpdatedAt='';S._cloudSeenAt='';
   // 残すもの：S.author / S.apiKey / S.memberName（アカウント単位の設定のため）
 }
 function _pmKey(id){return 'kdpwriter_p'+id;}
@@ -5303,7 +5398,7 @@ function dl(name,text,mime){const b=new Blob([text],{type:(mime||'text/plain')+'
 const KW_BACKUP_VERSION=1;
 // バックアップに入れないもの（APIキー・招待情報・一時的な状態）
 const KW_BACKUP_OMIT=['apiKey','_inviteData','_fetchBackup','_activeTargetId','_uploadSuccess',
-                      '_lastUpdatedByName','_lastUpdatedAt','_saveFailed','_restoredFrom'];
+                      '_lastUpdatedByName','_lastUpdatedAt','_cloudSeenAt','_saveFailed','_restoredFrom'];
 function _kwExtractAssets(node,assets,seen){
   if(node===null||typeof node!=='object')return node;
   if(Array.isArray(node))return node.map(v=>_kwExtractAssets(v,assets,seen));
