@@ -1216,6 +1216,8 @@ async function _sbLoadProjectData(targetId,opts){
   S._lastUpdatedAt=d.updatedAt||data.updated_at||'';
   // 「この時点のクラウドを土台にしている」という印。次の保存で他の人の更新を検知するのに使う。
   S._cloudSeenAt=data.updated_at||'';
+  // 自分の枠にオーナーからのお知らせが入っていれば出す
+  if(_sbUser&&userId===_sbUser.id)_sbShowNoticeIfAny(data.data);
   save();
   const el=document.getElementById('theme');if(el)el.value=S.theme||'';
   const el2=document.getElementById('people');if(el2)el2.value=S.people||5;
@@ -1289,6 +1291,7 @@ async function _sbListManagedProjects(){
   const mineData=((map[myId]||{}).data)||{};
   const myName=(profiles.find(p=>p.id===myId)||{}).name||'（名前未設定）';
   Object.keys(mineData.archive||{}).forEach(k=>{
+    if(k.indexOf(KW_DEL_PREFIX)===0)return;   // 削除済みの控えは一覧に出さない
     const a=mineData.archive[k]||{};
     out.push({
       id:_makeTarget(myId,k),ownerId:myId,projectKey:k,isMine:true,archived:true,
@@ -1355,6 +1358,88 @@ async function _sbSwitchTarget(id){
   t.textContent='✓ このプロジェクトを管理対象に切り替えました';
   document.body.appendChild(t);setTimeout(()=>t.remove(),2200);
   return true;
+}
+/* 一覧から本を削除する（オーナーのみ）。
+   実際にはデータを消さず、同じ行の archive に「_del_」付きで退避する。
+   一覧には出さないので消えたように見えるが、必要ならSupabaseから取り出せる。
+   相手（その本の持ち主）には、次にアプリを開いたときに知らせる。 */
+const KW_DEL_PREFIX='_del_';
+/* 削除後の data を作る純粋な処理。通信から切り離してあるので単体で検証できる。
+   データは消さず archive の「_del_」付きキーへ移し、最上位を空にする。
+   持ち主向けのお知らせも同じオブジェクトに入れて、1回のupsertで書く。 */
+function _buildDeleteData(rootIn,key,meta){
+  const root={...(rootIn||{})};
+  const k=key||PROJ_LEGACY;
+  const d=_pickProjectData(root,k);
+  if(!d||!d.book)return null;
+  const at=(meta&&meta.at)||new Date().toISOString();
+  const by=(meta&&meta.by)||'オーナー';
+  const archive={...(root.archive||{})};
+  archive[KW_DEL_PREFIX+Date.parse(at)]={...d,deletedAt:at,deletedBy:by,deletedTitle:(d.book.title||'')};
+  const rootKey=root.projectKey||PROJ_LEGACY;
+  let next;
+  if(k===rootKey){
+    // 今その行の最前面にある本を消す → 最上位を空にする
+    next={...root,archive,
+      book:{chapters:[],title:'',subtitle:'',desc:'',keywords:'',cats:'',manuscript:''},
+      theme:'',reader:'',goal:'',people:5,totalTarget:25000};
+  }else{
+    // 退避中の本を消す → archive から外す（控えは _del_ 側に残る）
+    next={...root,archive};
+    delete next.archive[k];
+  }
+  next.notice={at,by,
+    text:`「${d.book.title||'（タイトル未設定）'}」を一覧から削除しました。`
+        +`必要な場合は復元できますので、オーナーにご連絡ください。`};
+  return next;
+}
+async function _sbDeleteProject(targetId){
+  if(_sbRole!=='owner'){alert('本の削除はオーナーだけができます。');return;}
+  const {userId,key}=_splitTarget(targetId);
+  if(!userId)return;
+  if(_sbUser&&userId===_sbUser.id&&(key||PROJ_LEGACY)===_projectKey()){
+    alert('いま管理中の本は削除できません。\n先に別の本に切り替えてから削除してください。');return;
+  }
+  const {data:row}=await _sb.from('book_settings').select('data,updated_at').eq('id',userId).single();
+  const root=(row&&row.data)||{};
+  const d=_pickProjectData(root,key);
+  if(!d||!d.book){alert('この本のデータが見つかりませんでした。');return;}
+  const {data:prof}=await _sb.from('profiles').select('name').eq('id',userId).single();
+  const who=(prof&&prof.name)||'（名前未設定）';
+  const chs=(d.book.chapters||[]).filter(c=>(c&&(c.body||'').trim()));
+  const chars=chs.reduce((s,c)=>s+(c.body||'').replace(/\s/g,'').length,0);
+  if(!confirm(`${who}さんの本を一覧から削除します。\n\n`
+    +`タイトル：${d.book.title||'（タイトル未設定）'}\n`
+    +`本文のある章：${chs.length}章／約${chars.toLocaleString()}字\n`
+    +`最終更新：${row&&row.updated_at?new Date(row.updated_at).toLocaleString('ja-JP'):'不明'}\n\n`
+    +`先にバックアップファイルを保存します。\n続けますか？`))return;
+  // 1) まずファイルに残す（消してから「戻したい」に応えられるように）
+  try{
+    const base=`kw_削除前_${_kwSafeName(who)}_${_kwSafeName(d.book.title)}_${_kwStamp()}`;
+    dl(base+'.kwbook.json',_kwBuildBackup(d,{projectName:who+'（削除前の控え）'}),'application/json');
+    dl(base+'_原稿.txt',exportBookAsSplitText(d.book),'text/plain');
+  }catch(e){
+    if(!confirm('バックアップファイルの保存に失敗しました。\nこのまま削除を続けますか？'))return;
+  }
+  // 2) 消さずに退避し、最上位を空にする＋3) 持ち主に知らせる
+  const next=_buildDeleteData(root,key,{
+    by:(S.author||_sbUser.user_metadata?.name||_sbUser.email||'オーナー'),
+    at:new Date().toISOString()
+  });
+  if(!next){alert('この本のデータが見つかりませんでした。');return;}
+  const {error}=await _sb.from('book_settings').upsert({id:userId,data:next,updated_at:new Date().toISOString()});
+  if(error){alert('削除に失敗しました。\n'+(error.message||''));return;}
+  _sbLastSavedHash='';
+  alert(`削除しました。\n\nバックアップファイルは保存済みです。\n${who}さんには、次にアプリを開いたときにお知らせが出ます。`);
+  renderHomeProjectPanel&&renderHomeProjectPanel();
+}
+/* 自分の本について、オーナーからのお知らせがあれば1回だけ出す */
+async function _sbShowNoticeIfAny(root){
+  const n=root&&root.notice;
+  if(!n||!n.at)return;
+  if(S._noticeSeenAt&&new Date(S._noticeSeenAt).getTime()>=new Date(n.at).getTime())return;
+  S._noticeSeenAt=n.at;save();
+  alert(`${n.by||'オーナー'}さんからのお知らせ\n\n${n.text||''}`);
 }
 /* 新しい book_id でライターが保存できるかを、本文を1文字も触らずに事前確認する。
    RLSポリシーが book_id を固定していると新しい本ではライターが保存できないため、
@@ -2617,6 +2702,7 @@ async function _renderHomeManagedProjects(){
         <div style="display:flex;gap:6px;flex-shrink:0">
           ${isActive?'':`<button onclick="_sbSwitchTarget('${p.id}')" style="font-size:11px;background:#fff;color:var(--brand-dim);border:1px solid var(--brand);padding:4px 10px;cursor:pointer;font-weight:700;white-space:nowrap">これを管理する</button>`}
           <button onclick="_sbOpenProjectDashboard('${p.id}')" style="font-size:11px;background:var(--brand);color:#403129;border:none;padding:4px 10px;cursor:pointer;font-weight:700;white-space:nowrap">管理画面を開く →</button>
+          ${(isOwner&&!isActive)?`<button onclick="_sbDeleteProject('${p.id}')" title="一覧から削除（先にバックアップを保存します）" style="font-size:11px;background:none;border:1px solid #fca5a5;color:#ef4444;padding:4px 8px;cursor:pointer;font-weight:700;white-space:nowrap">削除</button>`:''}
         </div>
       </div>
       ${shareUi}
