@@ -3902,7 +3902,9 @@ function _mwSaveDraftLocal(){
     S.book.chapters[idx].draftSavedAt=now;
     // この端末で編集した時刻を記録し、クラウドの古い値に負けないようにする
     S.book.chapters[idx].bodyUpdatedAt=now;
-    if(draft.title)S.book.chapters[idx].titleUpdatedAt=now;
+    // 以前はここで時刻だけ記録して肝心のタイトル本体を更新していなかったため、
+    // 下書きの自動保存はされていても、プレビューや状態表示には反映されないままだった。
+    if(draft.title){S.book.chapters[idx].title=draft.title.trim();S.book.chapters[idx].titleUpdatedAt=now;}
     // サブタイトルは空にした場合も「消した」として反映する
     if(subEl){S.book.chapters[idx].subtitle=draft.subtitle.trim();S.book.chapters[idx].subtitleUpdatedAt=now;}
   }
