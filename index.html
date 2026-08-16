@@ -2702,6 +2702,7 @@ async function _renderHomeManagedProjects(){
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
           ${isActive?'':`<button onclick="_sbSwitchTarget('${p.id}')" style="font-size:11px;background:#fff;color:var(--brand-dim);border:1px solid var(--brand);padding:4px 10px;cursor:pointer;font-weight:700;white-space:nowrap">これを管理する</button>`}
+          ${(isActive&&p.title)?`<button onclick="backupProject()" title="この本をファイルに保存する" style="font-size:11px;background:none;border:1px solid var(--ok);color:var(--ok);padding:4px 10px;cursor:pointer;font-weight:700;white-space:nowrap">バックアップ</button>`:''}
           <button onclick="_sbOpenProjectDashboard('${p.id}')" style="font-size:11px;background:var(--brand);color:#403129;border:none;padding:4px 10px;cursor:pointer;font-weight:700;white-space:nowrap">管理画面を開く →</button>
           ${(isOwner&&!isActive)?`<button onclick="_sbDeleteProject('${p.id}')" title="一覧から削除（先にバックアップを保存します）" style="font-size:11px;background:none;border:1px solid #fca5a5;color:#ef4444;padding:4px 8px;cursor:pointer;font-weight:700;white-space:nowrap">削除</button>`:''}
         </div>
