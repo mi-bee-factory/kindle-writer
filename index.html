@@ -1132,18 +1132,16 @@ function _mergeBooksForSave(localBook,cloudBook,cloudTs){
   const len=Math.max(lc.length,cc.length);
   out.chapters=[];
   for(let i=0;i<len;i++)out.chapters[i]=_mergeChapterPair(lc[i],cc[i],cloudTs);
+  // 特別章（はじめに・あとがき等）も、通常の章と同じく更新時刻で突き合わせる。
+  // 以前は「本文が無い方を優先的に捨てる」だけで時刻を見ていなかったため、
+  // 両方に本文がある場合は常にローカル側が勝ち、相手の新しい編集を消すことがあった。
   const ls=L.specialChapters||[],cs=C.specialChapters||[];
   if(ls.length&&!cs.length)out.specialChapters=ls;
   else if(!ls.length&&cs.length)out.specialChapters=cs;
   else if(ls.length&&cs.length){
-    out.specialChapters=cs.map((c,i)=>{
-      const l=ls[i];
-      // 片方だけ本文があるなら、ある方を残す
-      if(l&&(l.body||'').trim()&&!(c&&(c.body||'').trim()))return l;
-      if(c&&(c.body||'').trim()&&!(l&&(l.body||'').trim()))return c;
-      return l||c;
-    });
-    if(ls.length>cs.length)out.specialChapters=out.specialChapters.concat(ls.slice(cs.length));
+    const spLen=Math.max(ls.length,cs.length);
+    out.specialChapters=[];
+    for(let i=0;i<spLen;i++)out.specialChapters[i]=_mergeChapterPair(ls[i],cs[i],cloudTs);
   }
   // 空でこちらが上書きしないようにする
   ['title','subtitle','desc','keywords','cats'].forEach(k=>{
@@ -1183,17 +1181,16 @@ async function _sbLoadProjectData(targetId,opts){
         merged.chapters[i]=_mergeChapter(S.book.chapters[i],cloudCh[i],cloudTs);
       }
       if((S.book.title||'').trim()&&!(d.book.title||'').trim())merged.title=S.book.title;
-      // 特別章（はじめに・おわりに等）も、クラウドの空データでローカルを潰さないようにする
+      // 特別章（はじめに・おわりに等）も、通常の章と同じく「更新が新しい方」を採用する。
+      // 以前は「クラウドが空でなければクラウドを採用」という粗い判定だったため、
+      // ローカルの編集がまだクラウドへ届いていないだけ（保存は15秒おき）でも、
+      // リロードのタイミング次第でクラウドの古い内容に巻き戻ってしまっていた。
       const localSp=S.book.specialChapters||[],cloudSp=d.book.specialChapters||[];
       if(localSp.length&&!cloudSp.length)merged.specialChapters=localSp;
       else if(localSp.length&&cloudSp.length){
-        merged.specialChapters=cloudSp.map((cs,i)=>{
-          const ls=localSp[i];
-          // ローカルに本文があってクラウドが空なら、ローカルを残す
-          if(ls&&(ls.body||'').trim()&&!(cs&&(cs.body||'').trim()))return ls;
-          return cs;
-        });
-        if(localSp.length>cloudSp.length)merged.specialChapters=merged.specialChapters.concat(localSp.slice(cloudSp.length));
+        const spLen=Math.max(localSp.length,cloudSp.length);
+        merged.specialChapters=[];
+        for(let i=0;i<spLen;i++)merged.specialChapters[i]=_mergeChapter(localSp[i],cloudSp[i],cloudTs);
       }
       S.book=merged;
     }else{
@@ -4861,7 +4858,7 @@ function _renderSpecialChapters(){
       <span style="font-size:11px;font-weight:700;color:var(--sub)">${_SPECIAL_LABELS[c.type]||c.type}</span>
       <input type="text" value="${esc(c.title||'')}" placeholder="タイトル（例：はじめに）"
         style="flex:1;border:1px solid var(--line-soft);padding:3px 8px;font-size:13px;font-weight:700"
-        oninput="(S.book.specialChapters[${i}].title=this.value,save())">
+        oninput="(S.book.specialChapters[${i}].title=this.value,S.book.specialChapters[${i}].titleUpdatedAt=Date.now(),save())">
       <span style="font-size:11px;color:var(--sub)">${(c.body||'').length.toLocaleString()}文字</span>
       <button onclick="removeSpecialChapter(${i})" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:18px;line-height:1;padding:0 4px" title="削除">×</button>
     </div>
@@ -4869,7 +4866,7 @@ function _renderSpecialChapters(){
     <textarea id="specialTA_${i}" ondblclick="_mwExpandTA(this)"
       style="width:100%;min-height:200px;border:none;padding:12px 14px;font-size:13px;line-height:1.8;resize:vertical;box-sizing:border-box;font-family:inherit;outline:none"
       placeholder="${esc((_SPECIAL_LABELS[c.type]||'この章')+'の本文をここに書いてください...')}"
-      oninput="(S.book.specialChapters[${i}].body=this.value,save(),this.closest('div').querySelector('span[data-cnt]').textContent=this.value.length.toLocaleString()+'文字')"
+      oninput="(S.book.specialChapters[${i}].body=this.value,S.book.specialChapters[${i}].bodyUpdatedAt=Date.now(),save(),this.closest('div').querySelector('span[data-cnt]').textContent=this.value.length.toLocaleString()+'文字')"
     >${esc(c.body||'')}</textarea>
     <div style="padding:8px 12px;border-top:1px solid var(--line-soft);display:flex;justify-content:space-between;align-items:center">
       <span data-cnt style="font-size:11px;color:var(--sub)">${(c.body||'').length.toLocaleString()}文字</span>
