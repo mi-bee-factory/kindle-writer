@@ -5878,8 +5878,9 @@ function _kwFitImage(dataUrl,mime,maxEdge){
     const img=new Image();
     img.onload=()=>{
       const long=Math.max(img.width,img.height);
-      if(long<=maxEdge){resolve({data:dataUrl,mime});return;}
-      const r=maxEdge/long;
+      // ピクセル数がmaxEdge以下でも、PNGなど重い形式のままなら素通りしてしまうため、
+      // サイズに関わらずJPEGへ再エンコードする（すでに小さいJPEGは再圧縮でほぼ変わらない）。
+      const r=long<=maxEdge?1:maxEdge/long;
       const cv=document.createElement('canvas');
       cv.width=Math.max(1,Math.round(img.width*r));
       cv.height=Math.max(1,Math.round(img.height*r));
