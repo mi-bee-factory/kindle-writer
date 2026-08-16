@@ -6219,8 +6219,16 @@ function _chapGapDensity(c){return _rawGapDensity(c);}
 function _bookGapMedian(){
   const ds=[].concat((S.book&&S.book.chapters)||[],(S.book&&S.book.specialChapters)||[])
     .map(_rawGapDensity).filter(d=>d!==null).sort((a,b)=>a-b);
-  if(ds.length<2)return null;
-  return ds.length%2?ds[(ds.length-1)/2]:Math.round((ds[ds.length/2-1]+ds[ds.length/2])/2);
+  if(ds.length>=2){
+    const m=ds.length%2?ds[(ds.length-1)/2]:Math.round((ds[ds.length/2-1]+ds[ds.length/2])/2);
+    // 本全体が手元にある人（オーナー・プロデューサー）が計算した基準値は、
+    // 他の人（担当章1つしか持たないライターなど）とも共有できるよう控えておく。
+    // これが無いと、本の一部しか持たない端末では中央値が計算できず、
+    // 同じ章なのに人によって空き方の見た目が変わってしまう。
+    if(S.book)S.book._gapMedian=m;
+    return m;
+  }
+  return (S.book&&typeof S.book._gapMedian==='number')?S.book._gapMedian:null;
 }
 function _chapGapScale(c){
   // 章ごとに手で指定してあれば、それが最優先
