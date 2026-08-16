@@ -4860,6 +4860,7 @@ function _renderSpecialChapters(){
         style="flex:1;border:1px solid var(--line-soft);padding:3px 8px;font-size:13px;font-weight:700"
         oninput="(S.book.specialChapters[${i}].title=this.value,S.book.specialChapters[${i}].titleUpdatedAt=Date.now(),save())">
       <span style="font-size:11px;color:var(--sub)">${(c.body||'').length.toLocaleString()}文字</span>
+      <button id="spSaveBtn_${i}" onclick="_saveSpecialChapterNow(${i})" style="background:var(--ok-soft);border:1px solid var(--ok);color:var(--ok);padding:3px 12px;cursor:pointer;font-weight:700;font-size:12px;white-space:nowrap">今すぐ保存</button>
       <button onclick="removeSpecialChapter(${i})" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:18px;line-height:1;padding:0 4px" title="削除">×</button>
     </div>
     ${_mwInsertToolbar('specialTA_'+i)}
@@ -4884,6 +4885,15 @@ function addSpecialChapter(type){
   if(!S.book.specialChapters)S.book.specialChapters=[];
   S.book.specialChapters.push({type,title:_SPECIAL_LABELS[type]||'',body:''});
   save();renderCoInviteAdmin();
+}
+// 特別章（はじめに・あとがき等）を、15秒待たずにすぐクラウドへ保存する。
+// 直後にリロードしても巻き戻らないようにするための、明示的な保存ボタン用。
+async function _saveSpecialChapterNow(i){
+  const btn=document.getElementById('spSaveBtn_'+i);
+  if(btn){btn.textContent='保存中...';btn.disabled=true;}
+  save();
+  await _sbFlushPendingSaves();
+  if(btn){btn.textContent='✓ 保存しました';setTimeout(()=>{if(document.getElementById('spSaveBtn_'+i)){btn.textContent='今すぐ保存';btn.disabled=false;}},1800);}
 }
 function removeSpecialChapter(i){
   if(!S.book||!S.book.specialChapters)return;
