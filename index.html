@@ -2120,7 +2120,8 @@ function renderProjectSwitcher(){
     ${roleBadge}
     ${m.projects.length>1?`<span style="font-size:11px;color:var(--sub)">${m.projects.length}件</span>`:''}
     <span style="font-size:11px;color:var(--sub);white-space:nowrap;flex-shrink:0">切り替え / 追加 ›</span>
-  </div>`;
+  </div>
+  ${(_sbRole==='owner'||_sbRole==='admin')?`<div style="font-size:11px;color:var(--muted);margin:-8px 0 12px;padding:0 16px">※これはこの端末だけの下書き一覧です（バックアップの復元もここ）。チームの誰を管理するかは、下の「管理するプロジェクトを選ぶ」で選びます。</div>`:''}`;
 }
 /* ===== /プロジェクト管理 ===== */
 /* 保存の成否を返す。
