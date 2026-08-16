@@ -568,6 +568,10 @@ async function authInit(){
       // 書き込んでしまうため、ここで確実に初期化する
       _sbRole='member';
       S._activeTargetId=null;S.coauthorChap=null;S._inviteData=null;S.memberMode=false;
+      // authSignOut() はこの直後に location.reload() する。ここで保存しておかないと、
+      // 再読み込み時に load() が localStorage の古い値（memberMode:true のまま）を読み直し、
+      // 今リセットしたはずの内容が上書きされて消えてしまう。
+      try{save();}catch(e){}
       _stopPendingPoll&&_stopPendingPoll();
       document.getElementById('authOverlay').classList.remove('hidden');
       return;
