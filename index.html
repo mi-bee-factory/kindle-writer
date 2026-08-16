@@ -4234,6 +4234,14 @@ function copyInviteUrl(i){
   }).catch(()=>showUrlModal());
   showUrlModal();
 }
+// 章1つぶんだけをテキストでダウンロードする。バックアップとして個々のライターへ渡せるように。
+function downloadChapterText(i){
+  const c=(S.book&&S.book.chapters&&S.book.chapters[i])||{};
+  const title=(c.title||'').replace(/^\*+$/,'').trim()||`第${i+1}章`;
+  const author=c.author||'';
+  const text=title+(author?`（${author}）`:'')+'\n\n'+(c.body||'');
+  dl(_kwSafeName(author||title)+'_'+_kwSafeName(S.book.title)+'.txt', text, 'text/plain');
+}
 function _chapEnc(d){return 'KWCHAP1.'+btoa(unescape(encodeURIComponent(JSON.stringify(d))));}
 function _chapDec(s){try{const b=(s||'').trim().replace(/^KWCHAP1\./,'');return JSON.parse(decodeURIComponent(escape(atob(b))));}catch(e){return null;}}
 function applyChapterCode(){
@@ -4768,6 +4776,7 @@ function renderCoInviteAdmin(){
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         招待URLをコピー
       </button>
+      ${hasBody?`<button onclick="downloadChapterText(${i})" title="この章だけをテキストファイルで保存します" style="background:none;border:1px solid var(--ok);color:var(--ok);padding:4px 14px;font-size:12px;cursor:pointer;font-weight:700;margin-left:6px">この章をダウンロード</button>`:''}
     </div>`;
   }).join('');
   el.innerHTML=`
