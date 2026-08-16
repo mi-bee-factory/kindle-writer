@@ -2224,12 +2224,12 @@ async function shrinkAllImages(){
     obj.data=r.data;obj.mime=r.mime;
   };
   const b=S.book||{};
-  await fit(b.cover,2560);
-  await fit((b.cta||{}).image,1600);
+  await fit(b.cover,1800);
+  await fit((b.cta||{}).image,1400);
   const walk=async(arr)=>{
     for(const c of (arr||[])){
-      for(const im of (c.images||[]))await fit(im,1600);
-      await fit(c.frontImage,1600);await fit(c.backImage,1600);
+      for(const im of (c.images||[]))await fit(im,1200);
+      await fit(c.frontImage,1200);await fit(c.backImage,1200);
     }
   };
   await walk(b.chapters);await walk(b.specialChapters);await walk(S.uploadChapters);
@@ -5887,7 +5887,7 @@ function _kwFitImage(dataUrl,mime,maxEdge){
       const cx=cv.getContext('2d');
       cx.fillStyle='#fff';cx.fillRect(0,0,cv.width,cv.height);
       cx.drawImage(img,0,0,cv.width,cv.height);
-      try{resolve({data:cv.toDataURL('image/jpeg',0.85),mime:'image/jpeg'});}
+      try{resolve({data:cv.toDataURL('image/jpeg',0.72),mime:'image/jpeg'});}
       catch(e){resolve({data:dataUrl,mime});}
     };
     img.onerror=()=>resolve({data:dataUrl,mime});
