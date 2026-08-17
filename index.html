@@ -921,6 +921,7 @@ const FLOW_LONG_RUN=5; // 1行空けなしで何段落続いたら「長い」�
 function _flowSkipLine(l){
   if(!l)return true;
   if(/^-{3,}$/.test(l))return true;
+  if(/^\[改ページ\]$/.test(l))return true;
   if(/^\[図\d+\]$/.test(l))return true;
   if(/^\[画像[：:].+\]$/.test(l))return true;
   if(/^[<＜]図/.test(l))return true;
@@ -3569,6 +3570,7 @@ function _mwInsertBold(taId){
   ta.dispatchEvent(new Event('input'));
 }
 function _mwInsertDivider(taId){_mwInsertAtCursor(taId,'---');}
+function _mwInsertPageBreak(taId){_mwInsertAtCursor(taId,'[改ページ]');}
 /* 本文の途中にリンクを差し込む。
    文章を選んでいればそれを表示文字に使い、選んでいなければ文言から尋ねる。
    （_mwInsertAtCursor は前後に改行を入れてしまうので使わない） */
@@ -3698,6 +3700,7 @@ function _mwInsertToolbar(taId,opts){
       <button onclick="_mwInsertHeading('${taId}')" style="${btnStyle}" ${hover}>■ 見出しを追加</button>
       <button onclick="_mwInsertBold('${taId}')" style="${btnStyle}" ${hover}>太字にする</button>
       <button onclick="_mwInsertDivider('${taId}')" style="${btnStyle}" ${hover}>－ 区切りを入れる</button>
+      <button onclick="_mwInsertPageBreak('${taId}')" style="${btnStyle}" ${hover} title="ここで必ずページを変える（Kindleの改ページ）">📄 改ページを入れる</button>
       <button onclick="_mwInsertImage('${taId}')" style="${btnStyle}" ${hover}>画像位置を挿入</button>
       <button onclick="_mwInsertLink('${taId}')" style="${btnStyle}" ${hover} title="「こちらをタップ」のような文字にリンクを付けます">🔗 リンクを入れる</button>
       ${opts.compact?'':`<button onclick="_mwTidyText('${taId}')" style="${tidyStyle}" ${hover} title="句読点をそろえ、文の切れ目で改行して段落に分けます">✨ 読みやすく整える</button>`}
@@ -5249,7 +5252,7 @@ function tidyBodyText(src){
   const _stashRe=new RegExp('^\\uE000(\\d+)\\uE001$');
   const _isStashedLink=(l)=>{const m=l.match(_stashRe);return !!m&&/^\[リンク/.test(holds[+m[1]]||'');};
   // そのまま残す行（見出し・区切り・画像の位置指定・単独のリンク）
-  const keepAsIs=(l)=>/^■/.test(l)||/^#{1,4}[\s　]/.test(l)||/^-{3,}$/.test(l)||/^\[図\d+\]$/.test(l)||/^\[画像[：:].+?\]$/.test(l)||/^[<＜]図/.test(l)||/^\[リンク[：:].+?\]$/.test(l)||_isStashedLink(l);
+  const keepAsIs=(l)=>/^■/.test(l)||/^#{1,4}[\s　]/.test(l)||/^-{3,}$/.test(l)||/^\[改ページ\]$/.test(l)||/^\[図\d+\]$/.test(l)||/^\[画像[：:].+?\]$/.test(l)||/^[<＜]図/.test(l)||/^\[リンク[：:].+?\]$/.test(l)||_isStashedLink(l);
   // 箇条書きの行。前後とつなげず、1行のまま残す（番号が本文に飲み込まれるのを防ぐ）
   const isListLine=(l)=>/^([0-9０-９]{1,3}|[一二三四五六七八九十]{1,3}|[①-⑳])[。．.、）)][\s　]*(?![0-9０-９])\S/.test(l)
                       ||/^[・･※◯○●▶▪✓][\s　]*\S/.test(l)
@@ -6404,7 +6407,8 @@ function bookCss(sel){
     R('img','max-width:100%;height:auto;'),
     R('figure','margin:1.2em 0;text-align:center;page-break-inside:avoid;break-inside:avoid-page;page-break-after:avoid;break-after:avoid-page;'),
     R('figcaption','font-size:.85em;color:#555;text-indent:0;'),
-    R('.sep','margin:2.5em 0;text-indent:0;')
+    R('.sep','margin:2.5em 0;text-indent:0;'),
+    R('.pgbreak','margin:0;text-indent:0;font-size:1px;line-height:0;page-break-before:always;break-before:page;')
   ].filter(Boolean).join('\n');
 }
 function epubPreviewCss(){return '<style>\n'+bookCss('.epubPrev ')+'\n</style>';}
@@ -6687,6 +6691,7 @@ function _epubPreviewBodyHtml(c,opts){
   const placed=new Set();
   const lines=_bodyLinesToHtml((c.body||'').replace(/，/g,'、').replace(/．/g,'。'),(l)=>{
     if(/^-{3,}$/.test(l))return '<p class="sep">&nbsp;</p>';
+    if(/^\[改ページ\]$/.test(l))return '<p class="pgbreak">&nbsp;</p>';
     let m=l.match(/^\[図(\d+)\]$/);
     if(m){const k=parseInt(m[1])-1;if(imgs[k]){placed.add(k);return _epubPreviewImgTag(imgs[k]);}return '';}
     m=l.match(/^\[画像[：:](.+?)\]$/);
@@ -6762,6 +6767,7 @@ async function _epubBuildSpecialChapterXhtml(c,files,manifest,imgNRef){
   const placed=new Set();
   const body=_bodyLinesToHtml((c.body||'').replace(/，/g,'、').replace(/．/g,'。'),(l)=>{
     if(/^-{3,}$/.test(l))return '<p style="margin:2.5em 0;text-indent:0">&nbsp;</p>';
+    if(/^\[改ページ\]$/.test(l))return '<p class="pgbreak">&nbsp;</p>';
     const m=l.match(/^\[図(\d+)\]$/);if(m){const k=parseInt(m[1])-1;const im=imgs[k];if(im){placed.add(k);return im._tag;}return '';}
     const mw=l.match(/^\[画像[：:](.+?)\]$/);if(mw){const desc=(mw[1]||'').trim();const k=_findChapImage(imgs,desc,placed);if(k>=0){placed.add(k);return imgs[k]._tag;}return `<p style="text-indent:0">🖼 ${escXml(desc||'画像')}（未登録）</p>`;}
     const hd=_headingText(l);
@@ -6859,6 +6865,7 @@ async function buildEpub(){
     const placed=new Set();
     let body=_bodyLinesToHtml((c.body||'').replace(/，/g,'、').replace(/．/g,'。'),(l)=>{
       if(/^-{3,}$/.test(l))return '<p style="margin:2.5em 0;text-indent:0">&nbsp;</p>';
+      if(/^\[改ページ\]$/.test(l))return '<p class="pgbreak">&nbsp;</p>';
       const m=l.match(/^\[図(\d+)\]$/);if(m){const k=parseInt(m[1])-1;const im=imgs[k];if(im){placed.add(k);return im._tag;}return '';}
       const mf=l.match(/^[<＜]図[：:](.+?)[>＞]$|^[<＜]図[>＞]$/);if(mf){const cap=(mf[1]||'').trim();const k=cap?imgs.findIndex((im,idx)=>!placed.has(idx)&&im.caption.trim()===cap):imgs.findIndex((_,idx)=>!placed.has(idx));if(k>=0){placed.add(k);return imgs[k]._tag;}return '';}
       // ライター画面の「画像位置を挿入」ボタンが入れるタグ：[画像：説明]
@@ -7785,6 +7792,7 @@ function previewChapter(i){
   const bodyHtml=(c.body||'').split(/\n/).map(l=>{
     l=l.trim();if(!l)return'';
     if(/^-{3,}$/.test(l))return'<div style="margin:2.5em 0"></div>';
+    if(/^\[改ページ\]$/.test(l))return'<div class="pgbreak" style="margin:0">&nbsp;</div>';
     if(l.startsWith('■'))return`<h2 style="font-size:1.05em;margin:1.8em 0 .5em;font-weight:900;font-family:'Noto Sans JP','Hiragino Kaku Gothic Pro','Yu Gothic',sans-serif;border-left:3px solid #333;padding-left:10px;letter-spacing:.02em">${bodyFmt(esc(l.replace(/^■\s*/,'')))}</h2>`;
     return`<p style="text-indent:1em;margin:.4em 0;line-height:2">${bodyFmt(esc(l))}</p>`;
   }).filter(x=>x).join('');
