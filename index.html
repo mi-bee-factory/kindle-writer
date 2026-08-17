@@ -6034,7 +6034,10 @@ function _fmAutoTp(){
 }
 function _fmAutoCo(){
   const title=S.uploadTitle||(S.book&&S.book.title)||'';
-  const author=S.uploadAuthor||'';
+  // 共著の場合、単独出版用のS.uploadAuthorは空のまま。
+  // 各章に入っている著者名を重複無しで拾って「・」でつなぐ（例：sayo・西原さおり・河上恵美）。
+  const chapAuthors=[...new Set((S.book&&S.book.chapters||[]).map(c=>(c.author||'').trim()).filter(Boolean))];
+  const author=S.uploadAuthor||chapAuthors.join('・');
   const year=new Date().getFullYear();
   return (title||'無題')+'\n\n著者　'+(author||'著者名')+'\n発行　'+year+'年\n\n© '+year+' '+(author||'著者名');
 }
@@ -7013,6 +7016,8 @@ function renderCompile(){
       <button class="btn gray" id="goUnify" onclick="unifyBook()">文体を統一（AI）</button>
     </div>
     <div id="mergePreview"></div>
+
+    ${renderFrontMatterSettings()}
 
     <h3 style="margin:18px 0 6px;font-size:15px;display:flex;align-items:center;gap:6px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M20 12v9H4v-9M2 7h20v5H2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 22V7M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>巻末の読者特典（LINE誘導）</h3>
     <p class="muted small"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-1px;margin-right:3px"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 8h.01M12 11v5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><b>Kindle規約</b>：特典の条件は<b>LINE登録だけ</b>（「レビューしたら特典」はNG）／<b>本そのものを特典にしない</b>（テンプレ・動画など別物に）／<b>個人情報フォームの直リンクはNG・公式LINEはOK</b>。本の<b>いちばん最後のページ</b>に置くのが定番です。</p>
