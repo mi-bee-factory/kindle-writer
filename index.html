@@ -6839,6 +6839,21 @@ async function buildEpub(){
   const specialFront=specialCh.filter(c=>c.type==='hajimeni'||c.type==='prologue');
   const specialBack=specialCh.filter(c=>!(c.type==='hajimeni'||c.type==='prologue'));
   let spN=0;
+  // 章末のリンクページ（SNS・特典など）を独立した1ページとして差し込む。
+  // 通常の章にも特別章（はじめに・あとがき等）にも、同じ仕組みとして使えるよう共通化してある。
+  const _pushBackLinksPage=(id,c)=>{
+    if(!(c.backLinksBody||'').trim())return;
+    const blId=id+'-bl';
+    const blBody=_bodyLinesToHtml(c.backLinksBody,(l)=>{
+      const hd=_headingText(l);
+      if(hd!==null)return `<h2>${bodyFmt(escXml(hd))}</h2>`;
+      return `<p${_isLinkOnlyLine(l)?' style="text-indent:0"':''}>${bodyFmt(escXml(l))}</p>`;
+    },{});
+    const blHtml=`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title></title><link rel="stylesheet" type="text/css" href="style.css"/><style>html,body{margin:0;padding:0;height:100%;}body{display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:0 8%;box-sizing:border-box;}h2{text-align:center;border:none;padding:0;text-indent:0;}p{text-indent:0;}</style></head><body>${blBody}</body></html>`;
+    files.push({name:'OEBPS/'+blId+'.xhtml',bytes:sB(blHtml)});
+    manifest.push(`<item id="${blId}" href="${blId}.xhtml" media-type="application/xhtml+xml"/>`);
+    spine.push(`<itemref idref="${blId}"/>`);
+  };
   const _pushSpecialChapter=async(c)=>{
     spN++;const id='sp'+spN;
     const frontRef=_epubEdgeImageItemref(files,manifest,id+'-front',c.frontImage);
@@ -6851,6 +6866,7 @@ async function buildEpub(){
     tocli.push(_tocLi(id+'.xhtml',heading,''));
     const backRef=_epubEdgeImageItemref(files,manifest,id+'-back',c.backImage);
     if(backRef)spine.push(backRef);
+    _pushBackLinksPage(id,c);
   };
   for(const c of specialFront)await _pushSpecialChapter(c);
   for(let i=0;i<ch.length;i++){
@@ -6914,19 +6930,7 @@ async function buildEpub(){
       manifest.push(`<item id="${linkId}" href="${linkId}.xhtml" media-type="application/xhtml+xml"/>`);
       spine.push(`<itemref idref="${linkId}"/>`);
     }
-    // 章ごとに違うSNS・特典リンクを、独立した1ページとして画像ページの後ろに入れる。
-    if((c.backLinksBody||'').trim()){
-      const blId=id+'-bl';
-      const blBody=_bodyLinesToHtml(c.backLinksBody,(l)=>{
-        const hd=_headingText(l);
-        if(hd!==null)return `<h2>${bodyFmt(escXml(hd))}</h2>`;
-        return `<p${_isLinkOnlyLine(l)?' style="text-indent:0"':''}>${bodyFmt(escXml(l))}</p>`;
-      },{});
-      const blHtml=`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title></title><link rel="stylesheet" type="text/css" href="style.css"/><style>html,body{margin:0;padding:0;height:100%;}body{display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:0 8%;box-sizing:border-box;}h2{text-align:center;border:none;padding:0;text-indent:0;}p{text-indent:0;}</style></head><body>${blBody}</body></html>`;
-      files.push({name:'OEBPS/'+blId+'.xhtml',bytes:sB(blHtml)});
-      manifest.push(`<item id="${blId}" href="${blId}.xhtml" media-type="application/xhtml+xml"/>`);
-      spine.push(`<itemref idref="${blId}"/>`);
-    }
+    _pushBackLinksPage(id,c);
   }
   for(const c of specialBack)await _pushSpecialChapter(c);
   if(ctaOn){
