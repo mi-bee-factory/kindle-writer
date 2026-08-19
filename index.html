@@ -6262,15 +6262,35 @@ function _bookGapMedian(){
   }
   return (S.book&&typeof S.book._gapMedian==='number')?S.book._gapMedian:null;
 }
-// 本文の中の「改ページ→画像→改ページ」を見つけて、章を
-// [テキスト, 画像, テキスト, ...] のセグメントに分割する。
+// マーカー（[図N] や [画像：説明]）が指している画像を取得する（配置状態は変更しない、下見用）。
+function _resolveImgForMarker(marker,imgs){
+  imgs=imgs||[];
+  let m=marker.match(/^\[図(\d+)\]$/);
+  if(m)return imgs[parseInt(m[1])-1]||null;
+  m=marker.match(/^\[画像[：:](.+?)\]$/);
+  if(m){const k=_findChapImage(imgs,(m[1]||'').trim(),new Set());return k>=0?imgs[k]:null;}
+  return null;
+}
+// 本文の中の「改ページ→画像→改ページ」、または表示サイズが「画面全体」の画像を見つけて、
+// 章を [テキスト, 画像, テキスト, ...] のセグメントに分割する。
 // 画像セグメントだけを独立した1ページ（上下左右センター）として組み立てるための下準備。
-function _splitBodyOnFullPageImages(rawBody){
+function _splitBodyOnFullPageImages(rawBody,imgs){
   const lines=String(rawBody||'').split(/\n/);
   const segs=[];let buf=[];
   const isBreak=l=>l.trim()==='[改ページ]';
   const isImgLine=l=>{const t=l.trim();return /^\[図\d+\]$/.test(t)||/^\[画像[：:].+?\]$/.test(t);};
   for(let i=0;i<lines.length;i++){
+    if(isImgLine(lines[i])){
+      const im=_resolveImgForMarker(lines[i].trim(),imgs);
+      if(im&&im.size==='full'){
+        // 「画面全体」を選んだ画像は、改ページで挟んでいなくても自動で独立ページにする。
+        // 前後に手で入れた[改ページ]があれば、そのぶんは素通りさせて二重に処理しない。
+        segs.push({type:'text',lines:buf});buf=[];
+        segs.push({type:'image',marker:lines[i].trim()});
+        let k=i+1;while(k<lines.length&&(lines[k].trim()===''||isBreak(lines[k])))k++;
+        i=k-1;continue;
+      }
+    }
     if(isBreak(lines[i])){
       let j=i+1;while(j<lines.length&&lines[j].trim()==='')j++;
       if(j<lines.length&&isImgLine(lines[j])){
@@ -6694,7 +6714,7 @@ function _typoLivePreview(){
   el.innerHTML=epubPreviewCss()+`<div class="epubPrev">${_epubPreviewBodyHtml(c)}</div>`;
 }
 // 画像の表示サイズ。ライター・管理者どちらの画面でも同じ選択肢を使う。
-const IMG_SIZE_META={l:{label:'大（画面いっぱい）',pct:100},m:{label:'中',pct:66},s:{label:'小',pct:33},qr:{label:'QRコード用（小さめ）',pct:20}};
+const IMG_SIZE_META={l:{label:'大（画面いっぱい）',pct:100},m:{label:'中',pct:66},s:{label:'小',pct:33},qr:{label:'QRコード用（小さめ）',pct:20},full:{label:'画面全体（独立ページ）',pct:100}};
 function _imgSizePct(im){return (IMG_SIZE_META[im&&im.size]||IMG_SIZE_META.l).pct;}
 // 画像の表示サイズを選ぶ小さなボタン列。onClickExpr(v) が各サイズの onclick 用JS文字列を返す。
 function _imgSizePickerHtml(current,onClickExpr){
@@ -6937,7 +6957,7 @@ async function buildEpub(){
     const chapH1Body=getChapH1Xml(c,chapNIdx,escXml);// body用（br付き）
     // 「改ページ→画像→改ページ」で挟まれた図は、本文の途中でも上下左右センターの独立ページとして
     // 扱えるよう、その部分だけ章を複数のxhtmlファイルに分けて組み立てる。
-    const segs=_splitBodyOnFullPageImages((c.body||'').replace(/，/g,'、').replace(/．/g,'。'));
+    const segs=_splitBodyOnFullPageImages((c.body||'').replace(/，/g,'、').replace(/．/g,'。'),imgs);
     let partN=0;
     for(let s=0;s<segs.length;s++){
       const seg=segs[s];
