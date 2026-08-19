@@ -6743,7 +6743,7 @@ function _epubEdgeImageItemref(files,manifest,idPrefix,image){
   const imgTag=`<img src="images/${idPrefix}.${ext}" alt=""/>`;
   const url=(image.url||'').trim();
   const linked=/^https?:\/\//.test(url)?`<a href="${escXml(url)}">${imgTag}</a>`:imgTag;
-  files.push({name:`OEBPS/${idPrefix}.xhtml`,bytes:sB(`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title></title><style>html,body{margin:0;padding:0;}img{max-width:100%;height:auto;display:block;margin:0 auto;}</style></head><body><figure style="margin:0">${linked}</figure></body></html>`)});
+  files.push({name:`OEBPS/${idPrefix}.xhtml`,bytes:sB(`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title></title><style>html,body{margin:0;padding:0;height:100%;}body{display:flex;flex-direction:column;justify-content:center;align-items:center;}img{max-width:100%;max-height:100%;height:auto;display:block;margin:0 auto;}</style></head><body><figure style="margin:0">${linked}</figure></body></html>`)});
   manifest.push(`<item id="${idPrefix}" href="${idPrefix}.xhtml" media-type="application/xhtml+xml"/>`);
   return `<itemref idref="${idPrefix}"/>`;
 }
