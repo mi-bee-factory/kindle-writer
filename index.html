@@ -8454,11 +8454,11 @@ function chapDropImage(event,i,kind){
   const files=Array.prototype.slice.call((event.dataTransfer&&event.dataTransfer.files)||[]).filter(f=>f.type&&f.type.indexOf('image')===0);
   if(!files.length)return;
   let done=0;
-  files.forEach(f=>{const r=new FileReader();r.onload=()=>{
+  files.forEach(f=>{_readImageCompressed(f,(data,mime)=>{
     const c=_chapArrFor(kind)[i];if(!c)return;if(!c.images)c.images=[];
-    c.images.push({data:String(r.result),mime:(f.type||'image/jpeg'),name:_nextUnmatchedImgLabel(i,kind)});
+    c.images.push({data,mime,name:_nextUnmatchedImgLabel(i,kind)});
     done++;if(done===files.length){save();refreshImgPanel(i,kind);}
-  };r.readAsDataURL(f);});
+  });});
 }
 
 /* ---------- init ---------- */
