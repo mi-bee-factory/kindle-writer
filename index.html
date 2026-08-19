@@ -5989,10 +5989,22 @@ function _chapEdgeImagePanelHtml(kind,i,c){
       <input type="text" value="${esc((img&&img.url)||'')}" oninput="${fnUrl}" placeholder="タップ時に開くURL（任意・例：LINE登録ページ）" style="margin-top:4px;font-size:11px;padding:4px 8px;width:100%;box-sizing:border-box">`:`<label class="btn gray" style="cursor:pointer;font-size:11px;padding:5px 10px;display:inline-flex;align-items:center;gap:4px">画像を選ぶ<input type="file" accept="image/*" style="display:none" onchange="${fnSet}"></label>`}
     </div>`;
   };
+  const linkFn=`setChapterBackLinks('${kind}',${i},this.value)`;
   return `<div style="display:flex;gap:12px;flex-wrap:wrap;padding:8px 0;border-top:1px dashed var(--line-soft);margin-top:8px">
     ${mk('frontImage','章の最初に入れる画像')}
     ${mk('backImage','章の最後に入れる画像')}
+  </div>
+  <div style="padding:8px 0;border-top:1px dashed var(--line-soft);margin-top:4px">
+    <div style="font-size:11px;color:var(--sub);font-weight:700;margin-bottom:4px">章末のリンクページ（SNS・特典など／任意）</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:4px">この章だけの独立したページとして、画像ページ（設定していれば）の後ろに入ります。[リンク：表示文字|URL] の形で書けます。</div>
+    <textarea oninput="${linkFn}" placeholder="例：${'⬜'} SNS・特典\n[リンク：Instagram|https://instagram.com/xxx]\n[リンク：公式LINE|https://lin.ee/xxxxxxx]" style="width:100%;min-height:70px;font-size:12px;line-height:1.7;box-sizing:border-box">${esc(c.backLinksBody||'')}</textarea>
   </div>`;
+}
+function setChapterBackLinks(kind,i,val){
+  const c=_chapArrFor(kind)[i];if(!c)return;
+  c.backLinksBody=val;
+  if(kind!=='special')_markChapterEdited(i,[]);
+  save();
 }
 function ctaSet(k,v){if(!S.book.cta)S.book.cta={};S.book.cta[k]=v;save();}
 function ctaTemplate(){if(!S.book.cta)S.book.cta={};const c=S.book.cta;c.enabled=true;if(!c.heading)c.heading='読者限定プレゼントのお知らせ';if(!c.linkText)c.linkText='LINEで読者特典を受け取る';c.body='最後までお読みいただき、ありがとうございました。\n\n本書で紹介した内容を、今日からすぐ実践できる「◯◯◯（特典名）」を、読者の方限定で無料プレゼントしています。\n\n受け取りは、下のボタン（公式LINE）にご登録いただくだけ。登録後すぐにお送りします。\n\nあなたの最初の一歩を、心から応援しています。';save();renderCompile();}
@@ -6901,6 +6913,19 @@ async function buildEpub(){
       files.push({name:'OEBPS/'+linkId+'.xhtml',bytes:sB(linkHtml)});
       manifest.push(`<item id="${linkId}" href="${linkId}.xhtml" media-type="application/xhtml+xml"/>`);
       spine.push(`<itemref idref="${linkId}"/>`);
+    }
+    // 章ごとに違うSNS・特典リンクを、独立した1ページとして画像ページの後ろに入れる。
+    if((c.backLinksBody||'').trim()){
+      const blId=id+'-bl';
+      const blBody=_bodyLinesToHtml(c.backLinksBody,(l)=>{
+        const hd=_headingText(l);
+        if(hd!==null)return `<h2>${bodyFmt(escXml(hd))}</h2>`;
+        return `<p${_isLinkOnlyLine(l)?' style="text-indent:0"':''}>${bodyFmt(escXml(l))}</p>`;
+      },{});
+      const blHtml=`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title></title><link rel="stylesheet" type="text/css" href="style.css"/><style>html,body{margin:0;padding:0;height:100%;}body{display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:0 8%;box-sizing:border-box;}h2{text-align:center;border:none;padding:0;text-indent:0;}p{text-indent:0;}</style></head><body>${blBody}</body></html>`;
+      files.push({name:'OEBPS/'+blId+'.xhtml',bytes:sB(blHtml)});
+      manifest.push(`<item id="${blId}" href="${blId}.xhtml" media-type="application/xhtml+xml"/>`);
+      spine.push(`<itemref idref="${blId}"/>`);
     }
   }
   for(const c of specialBack)await _pushSpecialChapter(c);
