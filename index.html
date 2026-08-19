@@ -882,9 +882,12 @@ function _mergeChapter(prev,incoming,incomingTs){
   // （例：本の一部しか無い状態から誤って上書きされた等）ときに
   // 「提出済み」の記録が消えて未着手扱いに見えてしまう事故があった。
   // prev に無ければ incoming から補うだけの、無害な保険として入れておく。
-  ['status','submittedAt','affiliation','cloudUpdatedAt'].forEach(f=>{
+  ['status','submittedAt','affiliation','cloudUpdatedAt','frontImage','backImage','backLinksBody','gapScale','draft'].forEach(f=>{
     if(out[f]==null&&incoming[f]!=null)out[f]=incoming[f];
   });
+  // images は破損時に「空配列」で残ることがあり、null判定だけでは救えない。
+  // こちら側が空で、相手に中身があるときだけ補う（こちら側に画像がある場合は上書きしない）。
+  if((!out.images||!out.images.length)&&incoming.images&&incoming.images.length)out.images=incoming.images;
   return out;
 }
 // 管理者が章に手を入れたことを記録する（状態バッジ・マージ判定の両方で使う）
