@@ -877,6 +877,14 @@ function _mergeChapter(prev,incoming,incomingTs){
   pick('subtitle','subtitleUpdatedAt');
   pick('body','bodyUpdatedAt');
   pick('author','authorUpdatedAt');
+  // 状態にまつわる項目は時刻を持たないため pick() の対象外だが、
+  // out は prev をベースにしているので、prev 側がまるごと欠けている
+  // （例：本の一部しか無い状態から誤って上書きされた等）ときに
+  // 「提出済み」の記録が消えて未着手扱いに見えてしまう事故があった。
+  // prev に無ければ incoming から補うだけの、無害な保険として入れておく。
+  ['status','submittedAt','affiliation','cloudUpdatedAt'].forEach(f=>{
+    if(out[f]==null&&incoming[f]!=null)out[f]=incoming[f];
+  });
   return out;
 }
 // 管理者が章に手を入れたことを記録する（状態バッジ・マージ判定の両方で使う）
