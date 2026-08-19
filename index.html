@@ -6262,6 +6262,31 @@ function _bookGapMedian(){
   }
   return (S.book&&typeof S.book._gapMedian==='number')?S.book._gapMedian:null;
 }
+// 本文の中の「改ページ→画像→改ページ」を見つけて、章を
+// [テキスト, 画像, テキスト, ...] のセグメントに分割する。
+// 画像セグメントだけを独立した1ページ（上下左右センター）として組み立てるための下準備。
+function _splitBodyOnFullPageImages(rawBody){
+  const lines=String(rawBody||'').split(/\n/);
+  const segs=[];let buf=[];
+  const isBreak=l=>l.trim()==='[改ページ]';
+  const isImgLine=l=>{const t=l.trim();return /^\[図\d+\]$/.test(t)||/^\[画像[：:].+?\]$/.test(t);};
+  for(let i=0;i<lines.length;i++){
+    if(isBreak(lines[i])){
+      let j=i+1;while(j<lines.length&&lines[j].trim()==='')j++;
+      if(j<lines.length&&isImgLine(lines[j])){
+        let k=j+1;while(k<lines.length&&lines[k].trim()==='')k++;
+        if(k<lines.length&&isBreak(lines[k])){
+          segs.push({type:'text',lines:buf});buf=[];
+          segs.push({type:'image',marker:lines[j].trim()});
+          i=k;continue;
+        }
+      }
+    }
+    buf.push(lines[i]);
+  }
+  segs.push({type:'text',lines:buf});
+  return segs;
+}
 function _chapGapScale(c){
   // 章ごとに手で指定してあれば、それが最優先
   if(c&&c.gapScale!==undefined&&c.gapScale!==null&&!isNaN(c.gapScale))return Number(c.gapScale);
@@ -6896,7 +6921,7 @@ async function buildEpub(){
       }
     }
     const placed=new Set();
-    let body=_bodyLinesToHtml((c.body||'').replace(/，/g,'、').replace(/．/g,'。'),(l)=>{
+    const chapRenderLine=(l)=>{
       if(/^-{3,}$/.test(l))return '<p style="margin:2.5em 0;text-indent:0">&nbsp;</p>';
       if(/^\[改ページ\]$/.test(l))return '<p class="pgbreak">&nbsp;</p>';
       const m=l.match(/^\[図(\d+)\]$/);if(m){const k=parseInt(m[1])-1;const im=imgs[k];if(im){placed.add(k);return im._tag;}return '';}
@@ -6906,18 +6931,45 @@ async function buildEpub(){
       const hd=_headingText(l);
       if(hd!==null)return `<h2>${bodyFmt(escXml(hd))}</h2>`;
       return `<p${_isLinkOnlyLine(l)?' style="text-indent:0"':''}>${bodyFmt(escXml(l))}</p>`;
-    },{gapScale:_chapGapScale(c)});
-    // 本文で位置指定した画像だけを埋め込む（未配置の写真は出さない。まとめ画面の「未配置」表示で気づける）
-    imgs.forEach(im=>{delete im._tag;}); // 組み立て用の一時データを保存データに残さない
+    };
     const chapNIdx=calcNIdx(ch,i);
     const chapH1Text=escXml(getChapH1(c,chapNIdx));// TOC用テキスト
     const chapH1Body=getChapH1Xml(c,chapNIdx,escXml);// body用（br付き）
-    const xhtml=`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>${chapH1Text}</title><link rel="stylesheet" type="text/css" href="style.css"/></head><body><h1>${chapH1Body}</h1>${(S.coauthor&&c.author)?`<p class="ch-author">著：${escXml(c.author)}</p>`:''}\n${body}</body></html>`;
-    files.push({name:'OEBPS/'+id+'.xhtml',bytes:sB(xhtml)});
-    manifest.push(`<item id="${id}" href="${id}.xhtml" media-type="application/xhtml+xml"/>`);
-    spine.push(`<itemref idref="${id}"/>`);
-    navli.push(`<li><a href="${id}.xhtml">${chapH1Text}</a></li>`);
-    tocli.push(_tocLi(id+'.xhtml',chapH1Text,(S.coauthor&&c.author)?c.author:''));
+    // 「改ページ→画像→改ページ」で挟まれた図は、本文の途中でも上下左右センターの独立ページとして
+    // 扱えるよう、その部分だけ章を複数のxhtmlファイルに分けて組み立てる。
+    const segs=_splitBodyOnFullPageImages((c.body||'').replace(/，/g,'、').replace(/．/g,'。'));
+    let partN=0;
+    for(let s=0;s<segs.length;s++){
+      const seg=segs[s];
+      if(seg.type==='image'){
+        const mm=seg.marker;
+        const tagHtml=chapRenderLine(mm)||'';
+        if(!tagHtml)continue; // 対応する図が見つからなければ何も出さない
+        partN++;const pid=id+'-p'+partN;
+        const pageHtml=`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title></title><link rel="stylesheet" type="text/css" href="style.css"/><style>html,body{margin:0;padding:0;height:100%;}body{display:flex;flex-direction:column;justify-content:center;align-items:center;}figure{margin:0;}</style></head><body>${tagHtml}</body></html>`;
+        files.push({name:'OEBPS/'+pid+'.xhtml',bytes:sB(pageHtml)});
+        manifest.push(`<item id="${pid}" href="${pid}.xhtml" media-type="application/xhtml+xml"/>`);
+        spine.push(`<itemref idref="${pid}"/>`);
+        continue;
+      }
+      const segText=seg.lines.join('\n');
+      if(!segText.trim())continue;
+      const segBody=_bodyLinesToHtml(segText,chapRenderLine,{gapScale:_chapGapScale(c)});
+      if(!segBody.trim())continue;
+      const isFirst=(s===0)||segs.slice(0,s).every(x=>x.type==='image'||!x.lines.join('').trim());
+      partN++;const pid=isFirst?id:id+'-p'+partN;
+      const headHtml=isFirst?`<h1>${chapH1Body}</h1>${(S.coauthor&&c.author)?`<p class="ch-author">著：${escXml(c.author)}</p>`:''}\n`:'';
+      const pageHtml=`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title>${chapH1Text}</title><link rel="stylesheet" type="text/css" href="style.css"/></head><body>${headHtml}${segBody}</body></html>`;
+      files.push({name:'OEBPS/'+pid+'.xhtml',bytes:sB(pageHtml)});
+      manifest.push(`<item id="${pid}" href="${pid}.xhtml" media-type="application/xhtml+xml"/>`);
+      spine.push(`<itemref idref="${pid}"/>`);
+      if(isFirst){
+        navli.push(`<li><a href="${pid}.xhtml">${chapH1Text}</a></li>`);
+        tocli.push(_tocLi(pid+'.xhtml',chapH1Text,(S.coauthor&&c.author)?c.author:''));
+      }
+    }
+    // 本文で位置指定した画像だけを埋め込む（未配置の写真は出さない。まとめ画面の「未配置」表示で気づける）
+    imgs.forEach(im=>{delete im._tag;}); // 組み立て用の一時データを保存データに残さない
     const backRef=_epubEdgeImageItemref(files,manifest,id+'-back',c.backImage);
     if(backRef)spine.push(backRef);
     // 章末の特典リンクは、以前は本文の末尾にそのまま追記していたため、
