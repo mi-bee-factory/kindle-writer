@@ -6269,7 +6269,7 @@ function _bodyLinesToHtml(raw,renderLine,opts){
     const l=src[i].trim();
     // 空行の「数」も覚えておく。1行空け＝ひと呼吸、2行以上＝大きな区切り、と強弱を付けるため。
     if(!l){ if(items.length){const p=items[items.length-1];p.blankAfter=true;p.blankCount=(p.blankCount||0)+1;} continue; }
-    const html=renderLine(l,i);
+    const html=renderLine(l,i,src);
     if(html===null||html===undefined||html==='')continue;
     let kind='p';
     if(/^<h[1-6][\s>]/.test(html))kind='head';
@@ -6881,7 +6881,6 @@ async function buildEpub(){
     },{gapScale:_chapGapScale(c)});
     // 本文で位置指定した画像だけを埋め込む（未配置の写真は出さない。まとめ画面の「未配置」表示で気づける）
     imgs.forEach(im=>{delete im._tag;}); // 組み立て用の一時データを保存データに残さない
-    if(ctaOn&&cta.perChapter&&(cta.url||'').trim())body+=`\n<hr/>\n<p style="text-indent:0">▶ ${escXml(cta.linkText||'LINEで読者特典を受け取る')}：<a href="${escXml(cta.url)}">${escXml(cta.url)}</a></p>`;
     const chapNIdx=calcNIdx(ch,i);
     const chapH1Text=escXml(getChapH1(c,chapNIdx));// TOC用テキスト
     const chapH1Body=getChapH1Xml(c,chapNIdx,escXml);// body用（br付き）
@@ -6893,6 +6892,16 @@ async function buildEpub(){
     tocli.push(_tocLi(id+'.xhtml',chapH1Text,(S.coauthor&&c.author)?c.author:''));
     const backRef=_epubEdgeImageItemref(files,manifest,id+'-back',c.backImage);
     if(backRef)spine.push(backRef);
+    // 章末の特典リンクは、以前は本文の末尾にそのまま追記していたため、
+    // 「章の最後に入れる画像」（独立した1ページ）より前に出てしまっていた。
+    // 画像ページの後ろに来るよう、独立した1ページとして分けて差し込む。
+    if(ctaOn&&cta.perChapter&&(cta.url||'').trim()){
+      const linkId=id+'-link';
+      const linkHtml=`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/><title></title><style>html,body{margin:0;padding:0;height:100%;}body{display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:0 8%;box-sizing:border-box;}</style></head><body><p style="text-indent:0">▶ ${escXml(cta.linkText||'LINEで読者特典を受け取る')}<br/><a href="${escXml(cta.url)}">${escXml(cta.url)}</a></p></body></html>`;
+      files.push({name:'OEBPS/'+linkId+'.xhtml',bytes:sB(linkHtml)});
+      manifest.push(`<item id="${linkId}" href="${linkId}.xhtml" media-type="application/xhtml+xml"/>`);
+      spine.push(`<itemref idref="${linkId}"/>`);
+    }
   }
   for(const c of specialBack)await _pushSpecialChapter(c);
   if(ctaOn){
