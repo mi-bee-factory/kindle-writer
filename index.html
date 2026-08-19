@@ -5873,8 +5873,8 @@ function _nextUnmatchedImgLabel(i,kind){
 function addImage(i,input,kind){
   const arr=Array.prototype.slice.call(input.files||[]).filter(f=>f.type&&f.type.indexOf('image')===0);
   if(!arr.length)return;let done=0;
-  arr.forEach(f=>{const r=new FileReader();r.onload=()=>{const c=_chapArrFor(kind)[i];if(!c)return;if(!c.images)c.images=[];
-    c.images.push({data:String(r.result),mime:(f.type||'image/jpeg'),name:_nextUnmatchedImgLabel(i,kind)});done++;if(done===arr.length){if(kind!=='special')_markChapterEdited(i,[]);save();refreshImgPanel(i,kind);}};r.readAsDataURL(f);});}
+  arr.forEach(f=>{_readImageCompressed(f,(data,mime)=>{const c=_chapArrFor(kind)[i];if(!c)return;if(!c.images)c.images=[];
+    c.images.push({data,mime,name:_nextUnmatchedImgLabel(i,kind)});done++;if(done===arr.length){if(kind!=='special')_markChapterEdited(i,[]);save();refreshImgPanel(i,kind);}});});}
 function pasteImage(e,i,kind){
   e.preventDefault();
   const cd=e.clipboardData||window.clipboardData; if(!cd)return;
@@ -5882,8 +5882,8 @@ function pasteImage(e,i,kind){
   for(const it of (cd.items||[])){ if(it.type&&it.type.indexOf('image')===0){const f=it.getAsFile();if(f)blobs.push(f);} }
   for(const f of (cd.files||[])){ if(f.type&&f.type.indexOf('image')===0)blobs.push(f); }
   if(!blobs.length){const z=document.getElementById('pz'+i);if(z)z.textContent='⚠ 画像が見つかりません。画像をコピー／スクショしてから、ここでCtrl+Vしてください';return;}
-  blobs.forEach(f=>{const r=new FileReader();r.onload=()=>{const c=_chapArrFor(kind)[i];if(!c)return;if(!c.images)c.images=[];
-    c.images.push({data:String(r.result),mime:(f.type||'image/png'),name:_nextUnmatchedImgLabel(i,kind)});if(kind!=='special')_markChapterEdited(i,[]);save();refreshImgPanel(i,kind);};r.readAsDataURL(f);});
+  blobs.forEach(f=>{_readImageCompressed(f,(data,mime)=>{const c=_chapArrFor(kind)[i];if(!c)return;if(!c.images)c.images=[];
+    c.images.push({data,mime,name:_nextUnmatchedImgLabel(i,kind)});if(kind!=='special')_markChapterEdited(i,[]);save();refreshImgPanel(i,kind);});});
 }
 function delImage(i,k,kind){const c=_chapArrFor(kind)[i];if(!c)return;c.images.splice(k,1);if(kind!=='special')_markChapterEdited(i,[]);save();refreshImgPanel(i,kind);}
 /* 本文のカーソル位置を覚えておく（「本文に入れる」ボタン用） */
@@ -5954,15 +5954,13 @@ function _chapEdgeRefresh(kind,i){
 }
 function setChapterEdgeImage(kind,i,pos,input){
   const f=input.files&&input.files[0];if(!f)return;
-  const r=new FileReader();
-  r.onload=()=>{
+  _readImageCompressed(f,(data,mime)=>{
     const arr=_chapArrFor(kind);const c=arr[i];if(!c)return;
     const prevUrl=(c[pos]&&c[pos].url)||'';
-    c[pos]={data:String(r.result),mime:(f.type||'image/jpeg'),url:prevUrl};
+    c[pos]={data,mime,url:prevUrl};
     if(kind!=='special')_markChapterEdited(i,[]);
     save();_chapEdgeRefresh(kind,i);
-  };
-  r.readAsDataURL(f);
+  });
 }
 function setChapterEdgeImageUrl(kind,i,pos,val){
   const arr=_chapArrFor(kind);const c=arr[i];if(!c||!c[pos])return;
@@ -5998,7 +5996,7 @@ function _chapEdgeImagePanelHtml(kind,i,c){
 }
 function ctaSet(k,v){if(!S.book.cta)S.book.cta={};S.book.cta[k]=v;save();}
 function ctaTemplate(){if(!S.book.cta)S.book.cta={};const c=S.book.cta;c.enabled=true;if(!c.heading)c.heading='読者限定プレゼントのお知らせ';if(!c.linkText)c.linkText='LINEで読者特典を受け取る';c.body='最後までお読みいただき、ありがとうございました。\n\n本書で紹介した内容を、今日からすぐ実践できる「◯◯◯（特典名）」を、読者の方限定で無料プレゼントしています。\n\n受け取りは、下のボタン（公式LINE）にご登録いただくだけ。登録後すぐにお送りします。\n\nあなたの最初の一歩を、心から応援しています。';save();renderCompile();}
-function ctaImage(input){const f=input.files&&input.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{if(!S.book.cta)S.book.cta={};S.book.cta.image={data:String(r.result),mime:(f.type||'image/png')};save();renderCompile();};r.readAsDataURL(f);}
+function ctaImage(input){const f=input.files&&input.files[0];if(!f)return;_readImageCompressed(f,(data,mime)=>{if(!S.book.cta)S.book.cta={};S.book.cta.image={data,mime};save();renderCompile();});}
 function ctaDelImage(){if(S.book.cta)S.book.cta.image=null;save();renderCompile();}
 
 /* ---------- 本物のEPUB生成（外部ライブラリなし・ZIPを自前生成） ---------- */
@@ -7290,8 +7288,8 @@ async function pasteFromClipboard(i){
       const type=(it.types||[]).find(t=>t.indexOf('image/')===0);
       if(!type)continue;
       const blob=await it.getType(type);
-      const data=await new Promise(res=>{const r=new FileReader();r.onload=()=>res(String(r.result));r.readAsDataURL(blob);});
-      const c=S.book.chapters[i];if(!c.images)c.images=[];c.images.push({data,mime:type,name:_nextUnmatchedImgLabel(i)});added++;
+      const fitted=await new Promise(res=>_readImageCompressed(blob,(data,mime)=>res({data,mime})));
+      const c=S.book.chapters[i];if(!c.images)c.images=[];c.images.push({data:fitted.data,mime:fitted.mime,name:_nextUnmatchedImgLabel(i)});added++;
     }
     if(added){save();refreshImgPanel(i);}
     else alert('クリップボードに画像がありません。\nWin+Shift+S でスクショを撮ってから、もう一度このボタンを押してください。');
@@ -7305,8 +7303,8 @@ function dropImage(e,i){
   const fs=(e.dataTransfer&&e.dataTransfer.files)||[];
   const imgs=Array.prototype.slice.call(fs).filter(f=>f.type&&f.type.indexOf('image')===0);
   if(!imgs.length){const z=document.getElementById('pz'+i);if(z)z.textContent='⚠ 画像ファイルではありません';return;}
-  let done=0;imgs.forEach(f=>{const r=new FileReader();r.onload=()=>{const c=S.book.chapters[i];if(!c.images)c.images=[];
-    c.images.push({data:String(r.result),mime:(f.type||'image/png'),name:_nextUnmatchedImgLabel(i)});done++;if(done===imgs.length){save();refreshImgPanel(i);}};r.readAsDataURL(f);});
+  let done=0;imgs.forEach(f=>{_readImageCompressed(f,(data,mime)=>{const c=S.book.chapters[i];if(!c.images)c.images=[];
+    c.images.push({data,mime,name:_nextUnmatchedImgLabel(i)});done++;if(done===imgs.length){save();refreshImgPanel(i);}});});
 }
 /* 編集できる枠での Ctrl+V 用 */
 function pasteZone(e,i){
@@ -7316,8 +7314,8 @@ function pasteZone(e,i){
   for(const f of (cd.files||[])){ if(f&&f.type&&f.type.indexOf('image')===0)blobs.push(f); }
   if(!blobs.length) return; // 画像でなければ普通の貼り付けに任せる
   e.preventDefault();
-  let done=0;blobs.forEach(f=>{const r=new FileReader();r.onload=()=>{const c=S.book.chapters[i];if(!c.images)c.images=[];
-    c.images.push({data:String(r.result),mime:(f.type||'image/png'),name:_nextUnmatchedImgLabel(i)});done++;if(done===blobs.length){save();refreshImgPanel(i);}};r.readAsDataURL(f);});
+  let done=0;blobs.forEach(f=>{_readImageCompressed(f,(data,mime)=>{const c=S.book.chapters[i];if(!c.images)c.images=[];
+    c.images.push({data,mime,name:_nextUnmatchedImgLabel(i)});done++;if(done===blobs.length){save();refreshImgPanel(i);}});});
 }
 
 
