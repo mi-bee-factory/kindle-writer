@@ -5822,6 +5822,34 @@ function _physicallyResizeForSize(dataUrl,mime,pct){
     img.src=dataUrl;
   });
 }
+/* 画像の実寸とデータ量を画面で確認できるようにする。
+   data URL の長さからデータ量を、読み込み後の naturalWidth/Height から実寸を出す。
+   アップロード時に長辺1600pxへ縮めているので、ここに出るのは「本に入る実際の値」。
+   長辺800px未満は「画面全体（独立ページ）」で粗く見えるため色を変えて知らせる。 */
+function _dataUrlBytes(src){
+  src=String(src||'');
+  const i=src.indexOf(',');
+  if(i<0)return 0;
+  return Math.round((src.length-i-1)*0.75); // base64は元バイトの約4/3
+}
+function _fmtBytes(n){
+  if(!n)return '';
+  return n>=1048576?(n/1048576).toFixed(1)+'MB':Math.max(1,Math.round(n/1024))+'KB';
+}
+function _imgShowSize(el){
+  const box=el.parentNode&&el.parentNode.querySelector('.kwImgSize');
+  if(!box)return;
+  const w=el.naturalWidth,h=el.naturalHeight;
+  if(!w||!h)return;
+  const small=Math.max(w,h)<800;
+  box.textContent=`${w}×${h}／${_fmtBytes(_dataUrlBytes(el.src))}`;
+  box.style.color=small?'#c2410c':'var(--sub)';
+  box.title=small?'長辺が800px未満です。「画面全体（独立ページ）」で使うと粗く見えることがあります。':'';
+}
+function _imgsTotalLabel(imgs){
+  let b=0;(imgs||[]).forEach(im=>{b+=_dataUrlBytes(im&&im.data);});
+  return b?`合計 ${_fmtBytes(b)}`:'';
+}
 function _readImageCompressed(file,cb){
   const MAX=1600, Q=0.82;
   const fr=new FileReader();
@@ -5994,7 +6022,10 @@ function _chapEdgeImagePanelHtml(kind,i,c){
     return `<div style="flex:1;min-width:160px">
       <div style="font-size:11px;color:var(--sub);font-weight:700;margin-bottom:4px">${label}（任意）</div>
       ${img&&img.data?`<div style="display:flex;align-items:center;gap:6px">
-        <img src="${img.data}" style="height:48px;border:1px solid var(--line-soft);object-fit:cover">
+        <div style="text-align:center;flex-shrink:0">
+          <img src="${img.data}" style="height:48px;border:1px solid var(--line-soft);object-fit:cover;display:block" onload="_imgShowSize(this)">
+          <div class="kwImgSize" style="font-size:10px;color:var(--sub);line-height:1.3;margin-top:2px;white-space:nowrap"></div>
+        </div>
         <button class="btn gray" style="font-size:11px;padding:3px 8px" onclick="${fnDel}">外す</button>
       </div>
       <input type="text" value="${esc((img&&img.url)||'')}" oninput="${fnUrl}" placeholder="タップ時に開くURL（任意・例：LINE登録ページ）" style="margin-top:4px;font-size:11px;padding:4px 8px;width:100%;box-sizing:border-box">`:`<label class="btn gray" style="cursor:pointer;font-size:11px;padding:5px 10px;display:inline-flex;align-items:center;gap:4px">画像を選ぶ<input type="file" accept="image/*" style="display:none" onchange="${fnSet}"></label>`}
@@ -8445,8 +8476,9 @@ function renderChapImgPanelHtml(i,kind){
   const thumbs=imgs.length?imgs.map((img,k)=>`
     <div style="display:flex;align-items:flex-start;gap:10px;padding:10px;background:#fff;margin:6px 0;border:1px solid var(--line)">
       <div style="flex-shrink:0;text-align:center">
-        <img src="${esc(img.data)}" style="width:64px;height:64px;object-fit:cover;display:block">
+        <img src="${esc(img.data)}" style="width:64px;height:64px;object-fit:cover;display:block" onload="_imgShowSize(this)">
         <span style="font-size:11px;font-weight:700;color:var(--brand-dim);background:var(--brand-soft);padding:1px 7px;margin-top:3px;display:inline-block">図${k+1}</span>
+        <div class="kwImgSize" style="font-size:10px;color:var(--sub);line-height:1.3;margin-top:3px;white-space:nowrap"></div>
       </div>
       <div style="flex:1;min-width:0">
         <input type="text" style="margin:0 0 6px;padding:6px 10px;font-size:13px" placeholder="識別名（本文の [画像：◯◯] に書いた文字と一致させる）" value="${esc(img.name||'')}" oninput="updateImgName(${i},${k},this.value,'${kind||''}')">
@@ -8459,7 +8491,7 @@ function renderChapImgPanelHtml(i,kind){
     </div>`).join('')
   :`<p class="muted small" style="margin:8px 0 10px">まだ図はありません。下のボタンで追加できます。</p>`;
   return `<div style="padding:14px;background:#fafafa;border:1px solid var(--line);margin-top:4px">
-    <b style="font-size:14px;display:flex;align-items:center;gap:5px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/><path d="M3 14l5-5 5 5" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M13 12l3-3 5 5" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/></svg>この章の図（任意）</b>
+    <b style="font-size:14px;display:flex;align-items:center;gap:5px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/><path d="M3 14l5-5 5 5" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M13 12l3-3 5 5" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/></svg>この章の図（任意）${_imgsTotalLabel(imgs)?`<span style="font-weight:400;font-size:11px;color:var(--sub);margin-left:auto">${_imgsTotalLabel(imgs)}</span>`:''}</b>
     <p class="muted small" style="margin:4px 0 10px">本文中に <code style="background:#f0f0f2;padding:1px 6px">[図1]</code> と書くと、EPUB出力時にその位置に画像が挿入されます</p>
     ${_pendingImgListHtml(i,kind)}
     ${_unplacedImgNoticeHtml(i,kind)}
