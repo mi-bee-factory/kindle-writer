@@ -654,7 +654,18 @@ async function authSignIn(){
   const btn=document.getElementById('loginBtn');if(btn){btn.textContent='ログイン中...';btn.disabled=true;}
   const {error}=await _sb.auth.signInWithPassword({email,password:pw});
   if(btn){btn.textContent='ログイン →';btn.disabled=false;}
-  if(error){err.textContent='ログイン失敗：メールまたはパスワードが違います';err.style.display='block';}
+  if(error){
+    // 以前はどんな原因でも「メールまたはパスワードが違います」と出していたため、
+    // メール未確認・回数制限・通信断のときに原因が分からず切り分けできなかった。
+    const m=String((error&&error.message)||'');
+    let msg='ログイン失敗：メールまたはパスワードが違います';
+    if(/email not confirmed/i.test(m))msg='ログイン失敗：メールアドレスの確認がまだ済んでいません。登録時に届いた確認メールのリンクを開いてから、もう一度お試しください。';
+    else if(/too many|rate limit/i.test(m))msg='ログイン失敗：短時間に試しすぎたため、一時的に止められています。5〜10分おいてから、もう一度お試しください。';
+    else if(/failed to fetch|networkerror|load failed/i.test(m))msg='ログイン失敗：サーバーに接続できませんでした。通信環境を確認するか、少し時間をおいてお試しください。';
+    else if(/user not found/i.test(m))msg='ログイン失敗：このメールアドレスは登録されていません。アドレスの打ち間違いがないか確認してください。';
+    err.innerHTML=esc(msg)+`<div style="font-size:11px;color:#8a8a8a;margin-top:5px;font-weight:400">詳細コード：${esc(m||'(なし)')}</div>`;
+    err.style.display='block';
+  }
   else{_freshLogin=true;}
 }
 async function authSignUp(){
