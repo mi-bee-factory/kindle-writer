@@ -5861,6 +5861,34 @@ function _imgsTotalLabel(imgs){
   let b=0;(imgs||[]).forEach(im=>{b+=_dataUrlBytes(im&&im.data);});
   return b?`合計 ${_fmtBytes(b)}`:'';
 }
+/* data URL のまま縮める。Wordから取り込んだ画像には File が無いので、
+   _readImageCompressed と同じ基準（長辺1600・品質0.82）をこちらでも使う。
+   基準を片方だけ変えると「貼った経路によって画質が違う」が起きるので、必ず揃えること。 */
+function _compressDataUrl(src,cb){
+  const MAX=1600,Q=0.82;
+  src=String(src||'');
+  const approx=_dataUrlBytes(src);
+  if(!approx||approx<=200*1024||/^data:image\/(gif|svg)/i.test(src)){cb(src);return;}
+  const img=new Image();
+  img.onload=()=>{
+    const r=Math.min(1,MAX/Math.max(img.width,img.height));
+    if(r>=1&&approx<600*1024){cb(src);return;}
+    const cv=document.createElement('canvas');
+    cv.width=Math.max(1,Math.round(img.width*r));
+    cv.height=Math.max(1,Math.round(img.height*r));
+    const cx=cv.getContext('2d');
+    cx.fillStyle='#fff';cx.fillRect(0,0,cv.width,cv.height);
+    cx.drawImage(img,0,0,cv.width,cv.height);
+    try{cb(cv.toDataURL('image/jpeg',Q));}catch(e){cb(src);}
+  };
+  img.onerror=()=>cb(src);
+  img.src=src;
+}
+function _compressImageList(list){
+  return Promise.all((list||[]).map(im=>new Promise(res=>{
+    _compressDataUrl(im.data,d=>res({...im,data:d}));
+  })));
+}
 function _readImageCompressed(file,cb){
   const MAX=1600, Q=0.82;
   const fr=new FileReader();
@@ -7744,7 +7772,15 @@ async function handleUploadFile(file){
       }
       const ab=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsArrayBuffer(file);});
       const result=await mammoth.convertToHtml({arrayBuffer:ab});
-      text=mammothHtmlToMd(result.value||'');
+      const sink={images:[]};
+      text=mammothHtmlToMd(result.value||'',sink);
+      // Wordに貼られた写真は数MBあることがあるので、取り込んだ時点で縮めておく
+      if(sink.images.length){
+        if(status)status.innerHTML=`<div class="hint">画像${sink.images.length}点を読み込み中…</div>`;
+        S.uploadImages=await _compressImageList(sink.images);
+      }else{
+        S.uploadImages=[];
+      }
     }else if(['jpg','jpeg','png','webp','gif'].indexOf(ext)>=0){
       if(!(S.apiKey||'').trim()){
         if(status)status.innerHTML=`<div class="hint"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:4px;flex-shrink:0"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>画像・手書き写真の読み取りにはAIキーが必要です（OCRにClaudeを使用）。最初の画面の「AIキー」に入力してください。</div>`;return;
@@ -7775,16 +7811,32 @@ async function handleUploadFile(file){
     if(status)status.innerHTML=`<div class="hint">⚠ 読み込みエラー：${esc(String(e.message||e))}</div>`;
   }
 }
-function mammothHtmlToMd(html){
+/* Wordから来たHTMLを、このアプリの本文記法に落とす。
+   sink（{images:[]}）を渡すと、本文中の画像を [図N] の目印に置き換えて実体をそこに預ける。
+   渡さなければ従来どおり画像は落ちる。
+
+   ここは「相手が作った構造をそのまま持ち込む」ための要。過去の実装には2つの取りこぼしがあった：
+   (1) <img> を一切扱っていなかったため、mammoth が取り出せている画像を捨てていた
+   (2) h1〜h4 を全部 ■ に潰していたため、見出し1（章）と見出し2（小見出し）の区別が消えていた
+   いま h1 は章の切れ目（CHAP_SEP_LINE）として出すので、既存の manualSplitChapters が
+   そのまま章に割ってくれる。**この2点を元に戻さないこと。** */
+function mammothHtmlToMd(html,sink){
   const doc=new DOMParser().parseFromString(html,'text/html');
   function walk(node){
     if(node.nodeType===3)return node.textContent;
     if(node.nodeType!==1)return'';
     const tag=node.tagName.toLowerCase();
+    if(tag==='img'){
+      const src=node.getAttribute('src')||'';
+      if(!src||!sink)return '';
+      sink.images.push({data:src,name:'',caption:''});
+      return `\n[図${sink.images.length}]\n`;
+    }
     const kids=Array.from(node.childNodes).map(walk).join('');
     if(tag==='strong'||tag==='b')return kids.trim()?`**${kids.trim()}**`:'';
     if(tag==='em'||tag==='i')return kids.trim()?`*${kids.trim()}*`:'';
-    if(/^h[1-4]$/.test(tag)){const t=kids.replace(/\*\*/g,'').trim();return t?`■ ${t}\n`:'';}
+    if(tag==='h1'){const t=kids.replace(/\*\*/g,'').trim();return t?`\n${CHAP_SEP_LINE}\n${t}\n`:'';}
+    if(/^h[2-6]$/.test(tag)){const t=kids.replace(/\*\*/g,'').trim();return t?`■ ${t}\n`:'';}
     if(tag==='p'){const t=kids.trim();return t?t+'\n':'';}
     if(tag==='br')return'\n';
     if(tag==='li')return`・${kids.trim()}\n`;
@@ -7792,6 +7844,22 @@ function mammothHtmlToMd(html){
     return kids;
   }
   return Array.from(doc.body.childNodes).map(walk).join('\n').replace(/\n{3,}/g,'\n\n').trim();
+}
+/* 取り込んだ画像を、本文に残した [図N]（全体通し番号）を手がかりに章へ配る。
+   章ごとに番号を1から振り直すのは、EPUB出力が「その章の images の何番目か」で解決するため。 */
+function _assignUploadImages(chapters){
+  const all=S.uploadImages||[];
+  if(!all.length)return chapters;
+  return chapters.map(c=>{
+    const used=[];
+    const body=String(c.body||'').replace(/\[図(\d+)\]/g,(m,n)=>{
+      const im=all[Number(n)-1];
+      if(!im)return m;
+      used.push({...im});
+      return `[図${used.length}]`;
+    });
+    return {...c,body,images:used};
+  });
 }
 function fileToBase64(file){
   return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>{const d=String(r.result);res(d.split(',')[1]||'');};r.onerror=rej;r.readAsDataURL(file);});
@@ -7944,7 +8012,9 @@ function manualSplitChapters(){
     const body=looksLikeTitle?lines.slice(1).join('\n').trim():p;
     return{chapterType,title,body,images:[]};
   });
-  S.book.chapters=S.uploadChapters.map(c=>({author:S.uploadAuthor||'',title:c.title||'',chapterType:c.chapterType||'custom',body:c.body||'',purpose:'',images:[]}));
+  // Wordから取り込んだ画像を各章へ配る（取り込んでいなければ何も起きない）
+  S.uploadChapters=_assignUploadImages(S.uploadChapters);
+  S.book.chapters=S.uploadChapters.map(c=>({author:S.uploadAuthor||'',title:c.title||'',chapterType:c.chapterType||'custom',body:c.body||'',purpose:'',images:(c.images||[]).map(im=>({...im}))}));
   S.book.title=S.uploadTitle||S.book.title||'無題';
   S.coauthor=false;
   save();
