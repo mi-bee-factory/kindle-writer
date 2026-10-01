@@ -217,6 +217,11 @@ Supabaseから `Your Supabase Project kindle-writer has been paused.` という�
 「エラーが返る＝サーバーは生きている」と誤って判断した。現在は原因別の案内と
 サーバーが返した詳細コードを併記するよう修正済み（`authSignIn`）。**この表示を元に戻さないこと。**
 
+### 自動アクセス（2026-10-02）
+`.github/workflows/supabase-keepalive.yml` が3日おきに `rpc/keepalive`（`select 1` を返すだけ。テーブルは読まない）を呼ぶ。
+関数はSQL Editorで作成する（SQLはworkflowファイル冒頭に記載）。手動実行は Actions → Supabase keepalive → Run workflow。
+**GitHubはリポジトリに60日更新が無いと定期実行を止める**ので、ローカルの定期チェック（kindle-supabase-keepalive）は見張り役として残す。
+
 ### 恒久対策（未決・みほさん判断待ち）
 Proプラン（月$25）にすれば自動停止されない。2026-08-18 には
 `exceeded its usage quota` の通知も来ており、無料枠自体が手狭になっている可能性がある。
