@@ -1,0 +1,30 @@
+# Supabase無料プランは7日間アクセスが無いと自動停止される（2026-09-04に実際に停止）。
+# 3日おきに keepalive()（1を返すだけ。テーブルは読まない）を呼んでデータベースを起こしておく。
+# keepalive() はみほさんがSQL Editorで作成する：
+#   create or replace function public.keepalive() returns int
+#   language sql stable as $$ select 1 $$;
+#   grant execute on function public.keepalive() to anon;
+# 注意：GitHubはリポジトリに60日更新が無いと定期実行を止める。
+name: Supabase keepalive
+
+on:
+  schedule:
+    - cron: '17 0 */3 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: keepalive() を呼ぶ
+        run: |
+          url=$(grep -oP "_SB_URL\s*=\s*'\K[^']+" index.html | head -1)
+          key=$(grep -oP "_SB_KEY\s*=\s*'\K[^']+" index.html | head -1)
+          code=$(curl -s -o res.txt -w '%{http_code}' -X POST "$url/rest/v1/rpc/keepalive" \
+            -H "apikey: $key" -H "Authorization: Bearer $key" -H "Content-Type: application/json" -d '{}')
+          echo "HTTP $code: $(head -c 200 res.txt)"
+          test "$code" = "200"
